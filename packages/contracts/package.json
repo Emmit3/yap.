@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./posters": {
+      "types": "./src/posters.ts",
+      "import": "./dist/posters.js"
+    },
     "./creator": {
       "types": "./src/creator.ts",
       "import": "./dist/creator.js"
