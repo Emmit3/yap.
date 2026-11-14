@@ -38,6 +38,13 @@ export interface PromoWorkspaceProps {
   onDirty(value: boolean): void;
   initialInput?: string;
   research?: SocialHandoff;
+  onContextChange?: (context: {
+    topic: string;
+    audience?: string;
+    research?: SocialHandoff;
+    resourceId?: string;
+    isBusy?: boolean;
+  }) => void;
 }
 
 type BriefForm = {
@@ -212,6 +219,7 @@ export function PromoWorkspace({
   onDirty,
   initialInput = '',
   research,
+  onContextChange,
 }: PromoWorkspaceProps) {
   const [envelope, setEnvelope] = useState<WorkflowResponse | null>(null);
   const [draft, setDraftState] = useState<Drafts>({
@@ -292,6 +300,25 @@ export function PromoWorkspace({
     kit.workflowVersion === workflow.version &&
     !hasEdits,
   );
+  useEffect(() => {
+    onContextChange?.({
+      topic: draft.brief.productName || input,
+      audience: draft.brief.audience,
+      research: researchContext,
+      resourceId: workflow?.id,
+      isBusy: Boolean(busy || loading || polling),
+    });
+  }, [
+    draft.brief.productName,
+    draft.brief.audience,
+    input,
+    researchContext,
+    workflow?.id,
+    busy,
+    loading,
+    polling,
+    onContextChange,
+  ]);
   const incompatibleConflict = Boolean(
     conflict?.latest &&
     ((conflict.flags.script && conflict.base.script?.id !== conflict.latest.workflow.script?.id) ||
@@ -1869,12 +1896,18 @@ export function PromoWorkspace({
                       </button>
                       <button
                         className="text-button"
-                        onClick={() =>
-                          void navigator.clipboard
-                            .writeText(kit.caption)
-                            .then(() => setNotice('Caption copied.'))
-                            .catch(() => setNotice('Select the caption text to copy it.'))
-                        }
+                        onClick={async () => {
+                          try {
+                            if (!navigator.clipboard?.writeText)
+                              throw new Error('Clipboard access is unavailable.');
+                            await navigator.clipboard.writeText(kit.caption);
+                            setNotice('Caption copied.');
+                          } catch {
+                            setNotice(
+                              'The browser could not copy the caption. Select its text and copy it manually, or use Download caption.',
+                            );
+                          }
+                        }}
                       >
                         Copy caption
                       </button>

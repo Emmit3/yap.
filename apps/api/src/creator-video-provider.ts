@@ -8,14 +8,28 @@ export interface CreatorVideoRequest {
   clip: CreatorClip;
   image?: Buffer;
   signal: AbortSignal;
+  /** Final revision/approval check after preprocessing and before the paid POST. */
+  beforeSubmit?(): Promise<void>;
   onSubmitted(id: string): Promise<void>;
 }
 export interface CreatorVideoProvider {
   readonly configured: boolean;
+  readonly profile?: CreatorVideoProfile;
   generate(request: CreatorVideoRequest): Promise<Buffer>;
   cancel(id: string): Promise<void>;
 }
+export interface CreatorVideoProfile {
+  provider: 'fal' | 'runway';
+  model: 'seedance-v1.5-pro' | 'gen4.5';
+  minSeconds: number;
+  maxSeconds: number;
+  /** Conservative reservation ceiling, not the provider's final invoice. */
+  rateCentsPerSecond: number;
+  priceSourceUrl: string;
+  pricingCheckedAt: string;
+}
 export interface CreatorVideoConfig {
+  provider?: 'fal' | 'runway';
   apiKey?: string;
   timeoutMs?: number;
   pollMs?: number;
@@ -153,6 +167,15 @@ export function createCreatorVideoProvider(
   }
   return {
     configured: Boolean(apiKey),
+    profile: {
+      provider: 'runway',
+      model: 'gen4.5',
+      minSeconds: 2,
+      maxSeconds: 10,
+      rateCentsPerSecond: 16,
+      priceSourceUrl: 'https://docs.dev.runwayml.com/guides/pricing/',
+      pricingCheckedAt: '2026-11-14T00:00:00.000Z',
+    },
     cancel,
     async generate(request) {
       if (!apiKey)
@@ -187,6 +210,8 @@ export function createCreatorVideoProvider(
             'CREATOR_PROMPT_TOO_LONG',
             'The combined visual, camera and lighting prompt must stay within 1,000 characters.',
           );
+        await request.beforeSubmit?.();
+        signal.throwIfAborted();
         const result = z.object({ id: z.uuid() }).parse(
           await json(promptImage ? '/image_to_video' : '/text_to_video', 'POST', signal, {
             model: 'gen4.5',

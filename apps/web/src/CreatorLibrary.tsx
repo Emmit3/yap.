@@ -38,7 +38,7 @@ export function CreatorLibrary({
     return sessions.filter(
       (session) =>
         !term ||
-        `${session.input.prompt} ${session.input.location ?? ''}`
+        `${session.answers.find((answer) => answer.questionId === 'productName')?.answer ?? ''} ${session.input.prompt} ${session.input.location ?? ''}`
           .toLocaleLowerCase()
           .includes(term),
     );

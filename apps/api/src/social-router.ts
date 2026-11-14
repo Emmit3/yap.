@@ -219,7 +219,7 @@ export async function createSocialRouter(
     options.deepAgentsRunner ??
     (async (context) => {
       const { runSocialDeepAgents } = await import('./social-deepagents.js');
-      return runSocialDeepAgents(context);
+      return runSocialDeepAgents(context, { fetch: options.fetch });
     });
   const deepAvailability = options.deepAgentsAvailable ?? socialDeepAgentsAvailable;
   const legacyCollections = new Map<AbortController, Promise<void>>();

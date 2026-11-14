@@ -106,7 +106,8 @@ export const creatorPlanSchema = z
     sourceScenesId: z.uuid(),
     caption: z.string().max(3000),
     clips: z.array(creatorClipSchema).min(1).max(12),
-    model: z.literal('gen4.5'),
+    provider: z.enum(['runway', 'fal']).optional(),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
     ratio: z.literal('720:1280'),
     hasAudio: z.literal(false),
     maxAttemptsPerClip: z.literal(2),
@@ -120,6 +121,7 @@ export const creatorApprovalSchema = z
     planId: z.uuid(),
     workflowVersion: version,
     approvedAt: z.iso.datetime(),
+    quoteId: z.uuid().optional(),
   })
   .strict();
 export const creatorSessionSchema = z
@@ -154,6 +156,7 @@ export const creatorClipReceiptSchema = z
     status: z.enum(['queued', 'generating', 'auditing', 'passed', 'failed']),
     audit: creatorAuditSchema.nullable(),
     prompt: z.string().max(1000).optional(),
+    reservationId: z.uuid().optional(),
     output: z
       .object({ bytes: version, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
       .strict()
@@ -171,6 +174,9 @@ export const creatorJobSchema = z
     sourceVersion: version,
     workflowVersion: version,
     approvalId: z.uuid().nullable(),
+    quoteId: z.uuid().optional(),
+    planId: z.uuid().optional(),
+    reservationIds: z.array(z.uuid()).max(12).optional(),
     clips: z.array(creatorClipReceiptSchema).max(24),
     events: z.array(z.object({ at: z.iso.datetime(), message: text(1000) }).strict()).max(100),
     output: z
@@ -220,9 +226,16 @@ export const creatorUpdatePlanSchema = creatorPrepareSchema.extend({
 export const creatorApproveSchema = creatorPrepareSchema.extend({
   planId: z.uuid(),
   reviewed: z.literal(true),
+  quoteId: z.uuid(),
+  costReviewed: z.literal(true),
 });
 export const creatorProduceSchema = z
-  .object({ expectedVersion: version, approvalId: z.uuid(), requestId: z.uuid() })
+  .object({
+    expectedVersion: version,
+    approvalId: z.uuid(),
+    quoteId: z.uuid(),
+    requestId: z.uuid(),
+  })
   .strict();
 export const creatorSessionResponseSchema = z
   .object({ session: creatorSessionSchema, workflow: workflowSchema })
@@ -235,14 +248,76 @@ export const creatorCapabilitiesSchema = z
     configured: z.boolean(),
     researchConfigured: z.boolean(),
     visionConfigured: z.boolean(),
-    provider: z.literal('runway'),
-    model: z.literal('gen4.5'),
+    provider: z.enum(['runway', 'fal']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
     hasAudio: z.literal(false),
     maxAttemptsPerClip: z.literal(2),
     maxGeneratedSeconds: z.literal(120),
     reason: z.string().max(1000),
   })
   .strict();
+
+const cents = z.number().int().nonnegative().max(1_000_000);
+export const creatorBudgetSchema = z
+  .object({
+    scope: z.literal('creator_app'),
+    currency: z.literal('USD'),
+    limitCents: cents,
+    reservedCents: cents,
+    chargedCents: cents,
+    availableCents: cents,
+  })
+  .strict();
+export const creatorQuoteSchema = z
+  .object({
+    estimateKind: z.literal('conservative_ceiling'),
+    id: z.uuid(),
+    sessionId: z.uuid(),
+    sessionVersion: version,
+    workflowVersion: version,
+    planId: z.uuid(),
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+    provider: z.enum(['runway', 'fal']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    ratio: z.literal('720:1280'),
+    hasAudio: z.literal(false),
+    currency: z.literal('USD'),
+    maxCostCents: cents,
+    createdAt: z.iso.datetime(),
+    expiresAt: z.iso.datetime(),
+    approvedApprovalId: z.uuid().nullable(),
+    consumedByJobId: z.uuid().nullable(),
+    clips: z
+      .array(
+        z
+          .object({
+            clipId: z.uuid(),
+            seconds: z.number().int().min(2).max(10),
+            attempt: z.number().int().min(1).max(2),
+            videoCents: cents,
+            visionCents: cents,
+            costCents: cents,
+            reuse: z
+              .object({
+                jobId: z.uuid(),
+                attempt: z.number().int().min(1).max(2),
+                sha256: z.string().regex(/^[a-f0-9]{64}$/),
+              })
+              .strict()
+              .nullable(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+  })
+  .strict();
+export const creatorQuoteResponseSchema = z
+  .object({ quote: creatorQuoteSchema, budget: creatorBudgetSchema })
+  .strict();
+export const creatorBudgetResponseSchema = z.object({ budget: creatorBudgetSchema }).strict();
+export type CreatorQuote = z.infer<typeof creatorQuoteSchema>;
+export type CreatorBudgetSnapshot = z.infer<typeof creatorBudgetSchema>;
 
 export type CreatorInput = z.infer<typeof creatorInputSchema>;
 export type CreatorAnswer = z.infer<typeof creatorAnswerSchema>;

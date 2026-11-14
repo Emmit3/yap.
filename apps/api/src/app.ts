@@ -19,6 +19,9 @@ import { createWorkflowRouter } from './workflow-router.js';
 import type { VideoWorkflowProvider, WorkflowProviderConfig } from './workflow-provider.js';
 import type { PromoRenderer } from './video-render-queue.js';
 import { createCreatorRouter, type CreatorRouterOptions } from './creator-router.js';
+import { createCreatorPaidRequests, BUDGET_OPENAI_MODEL } from './creator-paid-requests.js';
+import { createCreatorResearch, creatorResearchConfigFromEnv } from './creator-research.js';
+import { createCreatorVisionAuditor } from './creator-media.js';
 
 export interface AppOptions {
   dataFile?: string;
@@ -28,6 +31,7 @@ export interface AppOptions {
   rendersDirectory?: string;
   workflowProviderConfig?: WorkflowProviderConfig;
   workflowProvider?: VideoWorkflowProvider;
+  workflowFetch?: typeof globalThis.fetch;
   promoRenderer?: PromoRenderer;
   onError?: (error: unknown) => void;
   socialDataFile?: string;
@@ -36,7 +40,10 @@ export interface AppOptions {
   creatorDataFile?: string;
   creatorDirectory?: string;
   creatorOptions?: Partial<
-    Pick<CreatorRouterOptions, 'videoConfig' | 'video' | 'auditor' | 'analyze' | 'fetch'>
+    Pick<
+      CreatorRouterOptions,
+      'videoConfig' | 'video' | 'auditor' | 'analyze' | 'fetch' | 'withBudget' | 'budgetLimitCents'
+    >
   >;
 }
 
@@ -70,6 +77,9 @@ function validate<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 export async function createApp(options: AppOptions = {}) {
+  const workflowSpending = createCreatorPaidRequests(options.workflowFetch);
+  const socialSpending = createCreatorPaidRequests(options.socialFetch);
+  const creatorSpending = createCreatorPaidRequests(options.creatorOptions?.fetch);
   const projectDataFile = options.dataFile ?? resolve(process.cwd(), 'data/projects.json');
   const repository = await ProjectRepository.open(projectDataFile);
   const workflow = await createWorkflowRouter({
@@ -78,6 +88,7 @@ export async function createApp(options: AppOptions = {}) {
     rendersDirectory: options.rendersDirectory ?? join(dirname(projectDataFile), 'videos'),
     providerConfig: options.workflowProviderConfig,
     provider: options.workflowProvider,
+    fetch: workflowSpending.fetch,
     renderer: options.promoRenderer,
     onError: options.onError,
   });
@@ -231,7 +242,7 @@ export async function createApp(options: AppOptions = {}) {
       dataFile:
         options.socialDataFile ?? resolve(dirname(projectDataFile), 'social-investigations.json'),
       config: options.socialProviderConfig,
-      fetch: options.socialFetch,
+      fetch: socialSpending.fetch,
     });
   } catch (error) {
     await workflow.close();
@@ -240,6 +251,44 @@ export async function createApp(options: AppOptions = {}) {
   app.use('/api/social', social);
   let creator: Awaited<ReturnType<typeof createCreatorRouter>>;
   try {
+    const researchConfig = creatorResearchConfigFromEnv();
+    const research =
+      options.creatorOptions?.analyze ??
+      createCreatorResearch(researchConfig, {
+        fetch: creatorSpending.fetch,
+      });
+    const liveResearch = Boolean(
+      researchConfig.firecrawlApiKey ||
+      (researchConfig.deepAgentsApiKey && researchConfig.deepAgentsModel),
+    );
+    const rawAuditor =
+      options.creatorOptions?.auditor ??
+      createCreatorVisionAuditor(
+        {
+          apiKey: process.env.OPENAI_API_KEY,
+          model: process.env.OPENAI_MODEL || BUDGET_OPENAI_MODEL,
+        },
+        creatorSpending.fetch,
+      );
+    const supportedAudit =
+      Boolean(options.creatorOptions?.auditor) ||
+      !process.env.OPENAI_MODEL?.trim() ||
+      process.env.OPENAI_MODEL.trim() === BUDGET_OPENAI_MODEL;
+    const suppliedBudget = process.env.CREATOR_BUDGET_LIMIT_USD?.trim();
+    const budgetLimitCents =
+      options.creatorOptions?.budgetLimitCents ??
+      (suppliedBudget ? Math.round(Number(suppliedBudget) * 100) : 3000);
+    if (
+      !Number.isInteger(budgetLimitCents) ||
+      budgetLimitCents < 1 ||
+      budgetLimitCents > 3000 ||
+      (suppliedBudget && !/^\d+(?:\.\d{1,2})?$/.test(suppliedBudget))
+    )
+      throw new ApiError(
+        503,
+        'CREATOR_BUDGET_CONFIGURATION',
+        'Set CREATOR_BUDGET_LIMIT_USD between 0.01 and 30.00.',
+      );
     creator = await createCreatorRouter({
       dataFile: options.creatorDataFile ?? join(dirname(projectDataFile), 'creator-sessions.json'),
       directory: options.creatorDirectory ?? join(dirname(projectDataFile), 'creator-videos'),
@@ -248,6 +297,35 @@ export async function createApp(options: AppOptions = {}) {
       provider: workflow.provider,
       onError: options.onError,
       ...options.creatorOptions,
+      budgetLimitCents,
+      fetch: creatorSpending.fetch,
+      auditor: {
+        configured: rawAuditor.configured && supportedAudit,
+        audit: (...args) => creatorSpending.prepaid(() => rawAuditor.audit(...args), args[4]),
+      },
+      withBudget(ledger) {
+        workflowSpending.attach(ledger);
+        socialSpending.attach(ledger);
+        creatorSpending.attach(ledger);
+        const custom = options.creatorOptions?.withBudget?.(ledger);
+        const analyzed = creatorSpending.research(async (...args) => {
+          if (
+            researchConfig.deepAgentsModel &&
+            researchConfig.deepAgentsApiKey &&
+            researchConfig.deepAgentsModel !== BUDGET_OPENAI_MODEL
+          )
+            throw new ApiError(
+              503,
+              'CREATOR_BUDGET_MODEL',
+              'Use gpt-6-luna for Deep Agents in the budget profile.',
+            );
+          return research(...args);
+        }, liveResearch);
+        return {
+          provider: custom?.provider ?? workflow.provider,
+          analyze: custom?.analyze ?? analyzed,
+        };
+      },
     });
   } catch (error) {
     await Promise.all([workflow.close(), social.closeSocialRuns()]);

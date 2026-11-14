@@ -85,7 +85,10 @@ export async function loadFilmCatalog(signal: AbortSignal): Promise<FilmReferenc
 }
 
 export function selectedFilm(film: FilmReference, techniques: string[]): CreatorExternalReference {
-  if (!techniques.length || techniques.some((technique) => !film.techniques.includes(technique))) {
+  if (
+    (film.techniques.length > 0 && !techniques.length) ||
+    techniques.some((technique) => !film.techniques.includes(technique))
+  ) {
     throw new Error('Choose techniques listed for this film.');
   }
   return creatorExternalReferenceSchema.parse({

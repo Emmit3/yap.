@@ -1,9 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, useMemo } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   FilmSlate,
-  FolderSimple,
   Lightbulb,
   Plus,
   Question,
@@ -17,16 +16,12 @@ import { NewProject } from './NewProject';
 import { ProjectLibrary } from './ProjectLibrary';
 import { ProjectEditor } from './ProjectEditor';
 import { LandingPage } from './landing/LandingPage';
-import { PromoWorkspace } from './promo/PromoWorkspace';
 import { PromoLibrary } from './promo/PromoLibrary';
-import { CreatorWorkspace } from './creator/CreatorWorkspace';
 import { CreatorLibrary } from './CreatorLibrary';
-import SocialWorkspace from './social/SocialWorkspace';
-import {
-  readPendingResearch,
-  savePendingResearch,
-  validateResearchContext,
-} from './research-context';
+import { CreationWorkspace } from './creation/CreationWorkspace';
+import { ReferenceRoom } from './creation/ReferenceRoom';
+import { referenceIdsFromRoute, routePath } from './creation/bridge';
+import { readPendingResearch, savePendingResearch } from './research-context';
 
 function currentRoute() {
   return window.location.hash.replace(/^#/, '') || '/';
@@ -34,6 +29,11 @@ function currentRoute() {
 
 export function App() {
   const [route, setRoute] = useState(currentRoute);
+  const [creationKey, setCreationKey] = useState(() => crypto.randomUUID());
+  const path = routePath(route);
+  const referenceIds = useMemo(() => referenceIdsFromRoute(route), [route]);
+  const analyticsEntry =
+    path === '/social' || new URLSearchParams(route.split('?')[1]).get('view') === 'analytics';
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -46,18 +46,21 @@ export function App() {
   const dialogRef = useRef<HTMLElement>(null);
   const navigationNoticeRef = useRef<HTMLDivElement>(null);
   const navigationFocusRef = useRef<HTMLElement | null>(null);
+  const preserveFocus = useRef(false);
   const changeDirty = useCallback((value: boolean) => {
     dirtyRef.current = value;
     setDirty(value);
   }, []);
   const acceptRoute = useCallback(
-    (next: string) => {
+    (next: string, preserveCreation = false) => {
+      preserveFocus.current = preserveCreation;
       navigationFocusRef.current = null;
       routeRef.current = next;
       setRoute(next);
-      changeDirty(false);
+      if (!preserveCreation) setCreationKey(crypto.randomUUID());
+      if (!preserveCreation) changeDirty(false);
       setPendingRoute('');
-      window.scrollTo({ top: 0 });
+      if (!preserveCreation) window.scrollTo({ top: 0 });
     },
     [changeDirty],
   );
@@ -90,7 +93,7 @@ export function App() {
     return () => window.removeEventListener('hashchange', change);
   }, [refresh, acceptRoute]);
   useEffect(() => {
-    if (route.startsWith('/projects') || route === '/new') void refresh();
+    if (path.startsWith('/projects') || path === '/new') void refresh();
   }, [route, refresh]);
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -101,27 +104,33 @@ export function App() {
   }, [dirty]);
   useEffect(() => {
     document.title =
-      route === '/'
-        ? 'yap. — good ideas, made REEL'
-        : route === '/films'
-          ? 'Your films — Yap'
-          : route === '/create' || route.startsWith('/create/')
-            ? 'Create your film — Yap'
-            : route === '/promos/new'
-              ? 'New photo promo — Yap'
-              : route.startsWith('/promos/')
-                ? 'Your photo promo — Yap'
-                : route === '/promos'
-                  ? 'Your promos — Yap'
-                  : route === '/social'
-                    ? 'Social research — Yap'
-                    : route === '/new'
-                      ? 'New project — Yap'
-                      : route.startsWith('/projects/')
-                        ? 'Your studio — Yap'
-                        : 'Your projects — Yap';
+      path === '/references'
+        ? 'Film reference room — Yap'
+        : path === '/'
+          ? 'yap. — good ideas, made REEL'
+          : path === '/films'
+            ? 'Your films — Yap'
+            : path === '/create' || path.startsWith('/create/')
+              ? 'Create your film — Yap'
+              : path === '/promos/new'
+                ? 'New photo promo — Yap'
+                : path.startsWith('/promos/')
+                  ? 'Your photo promo — Yap'
+                  : path === '/promos'
+                    ? 'Your promos — Yap'
+                    : path === '/social'
+                      ? 'Social research — Yap'
+                      : path === '/new'
+                        ? 'New project — Yap'
+                        : path.startsWith('/projects/')
+                          ? 'Your studio — Yap'
+                          : 'Your projects — Yap';
   }, [route]);
   useEffect(() => {
+    if (preserveFocus.current) {
+      preserveFocus.current = false;
+      return;
+    }
     if (route !== '/') document.getElementById('main')?.focus();
   }, [route]);
   useEffect(() => {
@@ -169,7 +178,7 @@ export function App() {
     };
   }, [about]);
 
-  function navigate(next: string, force = false) {
+  function navigate(next: string, force = false, preserveCreation = false) {
     if (next === routeRef.current) return;
     if (dirtyRef.current && !force) {
       navigationFocusRef.current =
@@ -178,16 +187,19 @@ export function App() {
       return;
     }
     window.history.pushState(null, '', `#${next}`);
-    acceptRoute(next);
+    acceptRoute(next, preserveCreation);
   }
-  const projectId = /^\/projects\/([a-f0-9-]+)$/.exec(route)?.[1];
-  const promoId = /^\/promos\/([a-f0-9-]+)$/.exec(route)?.[1];
-  const creatorId = /^\/create\/([a-f0-9-]+)$/.exec(route)?.[1];
-  if (route === '/') {
+  const projectId = /^\/projects\/([a-f0-9-]+)$/.exec(path)?.[1];
+  const promoId = /^\/promos\/([a-f0-9-]+)$/.exec(path)?.[1];
+  const creatorId = /^\/create\/([a-f0-9-]+)$/.exec(path)?.[1];
+  if (path === '/') {
     return (
       <LandingPage
         onEnterStudio={() => navigate('/create')}
-        onOpenSocial={() => navigate('/social')}
+        onOpenSocial={() => navigate('/create?view=analytics')}
+        onUseReferences={(ids) =>
+          navigate(`/create?${ids.map((id) => `reference=${encodeURIComponent(id)}`).join('&')}`)
+        }
       />
     );
   }
@@ -219,78 +231,40 @@ export function App() {
             <span>Creator studio</span>
           </div>
         </div>
+        <button
+          className="workspace-new"
+          onClick={() =>
+            navigate(
+              path === '/create' && !creatorId ? `/create?draft=${crypto.randomUUID()}` : '/create',
+            )
+          }
+        >
+          <Plus size={20} /> New creation
+        </button>
         <nav className="side-nav" aria-label="Workspace">
-          <span className="nav-label">WORKSPACE</span>
           <button
-            className={route === '/films' ? 'nav-item current' : 'nav-item'}
+            className={path !== '/references' ? 'nav-item current' : 'nav-item'}
             onClick={() => navigate('/films')}
-            aria-current={route === '/films' ? 'page' : undefined}
+            aria-current={path !== '/references' ? 'page' : undefined}
           >
-            <FilmSlate size={20} />
-            Your films
+            <FilmSlate size={20} /> Your creations
           </button>
           <button
-            className={route === '/create' || creatorId ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/create')}
-            aria-current={route === '/create' || creatorId ? 'page' : undefined}
+            className={path === '/references' ? 'nav-item current' : 'nav-item'}
+            onClick={() => navigate('/references')}
+            aria-current={path === '/references' ? 'page' : undefined}
           >
-            <Plus size={20} />
-            New film
+            <Lightbulb size={20} /> Reference room
           </button>
-          <button
-            className={
-              route.startsWith('/promos') && route !== '/promos/new'
-                ? 'nav-item current'
-                : 'nav-item'
-            }
-            onClick={() => navigate('/promos')}
-            aria-current={route === '/promos' ? 'page' : undefined}
-          >
-            <FilmSlate size={20} />
-            Photo promos
-          </button>
-          <button
-            className={route === '/promos/new' ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/promos/new')}
-            aria-current={route === '/promos/new' ? 'page' : undefined}
-          >
-            <Plus size={20} />
-            Photo editor
-          </button>
-          <button
-            className={route === '/social' ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/social')}
-            aria-current={route === '/social' ? 'page' : undefined}
-          >
-            <Lightbulb size={20} />
-            Social research
-          </button>
-          <button
-            className={route.startsWith('/projects') ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/projects')}
-            aria-current={route === '/projects' ? 'page' : undefined}
-          >
-            <FolderSimple size={20} />
-            Script projects<span className="nav-count">{projects.length}</span>
-          </button>
-          <button
-            className={route === '/new' ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/new')}
-            aria-current={route === '/new' ? 'page' : undefined}
-          >
-            <Plus size={20} />
-            Script planner
+          <button className="nav-item" onClick={() => setAbout(true)} aria-haspopup="dialog">
+            <Question size={20} /> Workspace guide
           </button>
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-tip">
             <Lightbulb size={22} weight="light" />
-            <p>Your own photos. A little idea. A promo ready for your next post.</p>
+            <p>One place for your idea, research, photos, and finished film.</p>
           </div>
-          <button className="nav-item about-button" onClick={() => setAbout(true)}>
-            <Question size={20} />
-            About this workspace
-          </button>
           <span className="sidebar-version">A little idea. A real beginning.</span>
         </div>
       </aside>
@@ -300,23 +274,25 @@ export function App() {
             <span>Workspace</span>
             <span>/</span>
             <strong>
-              {route === '/films'
-                ? 'Your films'
-                : route === '/create' || creatorId
-                  ? 'Your film studio'
-                  : route === '/promos/new'
-                    ? 'New photo promo'
-                    : promoId
-                      ? 'Review and render'
-                      : route === '/promos'
-                        ? 'Your promos'
-                        : route === '/social'
-                          ? 'Social research'
-                          : route === '/new'
-                            ? 'New script project'
-                            : projectId
-                              ? 'Script studio'
-                              : 'Script projects'}
+              {path === '/references'
+                ? 'Reference room'
+                : path === '/films'
+                  ? 'Your creations'
+                  : path === '/create' || creatorId
+                    ? 'Your film studio'
+                    : path === '/promos/new'
+                      ? 'New photo promo'
+                      : promoId
+                        ? 'Review and render'
+                        : path === '/promos'
+                          ? 'Your promos'
+                          : path === '/social'
+                            ? 'Creation analytics'
+                            : path === '/new'
+                              ? 'New script project'
+                              : projectId
+                                ? 'Script studio'
+                                : 'Script projects'}
             </strong>
           </div>
           <div className="topbar-note">
@@ -326,7 +302,7 @@ export function App() {
         <main
           id="main"
           className={
-            route.startsWith('/promos') || route.startsWith('/create')
+            path.startsWith('/promos') || path.startsWith('/create')
               ? 'main-content promo-main'
               : 'main-content'
           }
@@ -343,75 +319,81 @@ export function App() {
               </button>
             </div>
           )}
-          {(route === '/promos/new' || route === '/create') && research && (
-            <aside className="research-context-notice" aria-label="Attached creative research">
-              <div>
-                <strong>Research context: {research.topic}</strong>
-                <p>
-                  Creative context from {research.sourceUrls.length} attributed sources is selected.
-                  Add your own facts and media below. Research does not approve claims or start a
-                  render.
-                </p>
-              </div>
+          {['/films', '/promos', '/projects'].includes(path) && (
+            <nav className="creation-library-tabs" aria-label="Saved creation formats">
               <button
-                className="text-button"
-                onClick={() => setResearch(undefined)}
-                title="Clear the pending selection. Research already saved to a promo is kept with that promo."
+                className={path === '/films' ? 'current' : ''}
+                onClick={() => navigate('/films')}
+                aria-current={path === '/films' ? 'page' : undefined}
               >
-                Clear pending research
+                Generated films
               </button>
-            </aside>
+              <button
+                className={path === '/promos' ? 'current' : ''}
+                onClick={() => navigate('/promos')}
+                aria-current={path === '/promos' ? 'page' : undefined}
+              >
+                Photo reels
+              </button>
+              <button
+                className={path === '/projects' ? 'current' : ''}
+                onClick={() => navigate('/projects')}
+                aria-current={path === '/projects' ? 'page' : undefined}
+              >
+                Script archive
+              </button>
+            </nav>
           )}
-          {route === '/social' ? (
-            <SocialWorkspace
-              onDirty={changeDirty}
-              onUseResearch={(handoff) => {
-                if (dirtyRef.current)
-                  throw new Error(
-                    'Save or discard your open research edits before sending them to the studio.',
-                  );
-                setResearch(validateResearchContext(handoff));
-                navigate('/create');
-              }}
+          {path === '/references' ? (
+            <ReferenceRoom
+              onUseReferences={(ids) =>
+                navigate(
+                  `/create?${ids.map((id) => `reference=${encodeURIComponent(id)}`).join('&')}`,
+                )
+              }
             />
-          ) : route === '/films' ? (
+          ) : path === '/films' ? (
             <CreatorLibrary
               onCreate={() => navigate('/create')}
               onOpen={(id) => navigate(`/create/${id}`)}
             />
-          ) : route === '/create' || creatorId ? (
-            <CreatorWorkspace
-              key={creatorId ?? 'new-creator'}
+          ) : path === '/create' || creatorId || path === '/social' ? (
+            <CreationWorkspace
+              key={creationKey}
               id={creatorId}
+              kind="video"
+              initialView={analyticsEntry ? 'analytics' : 'create'}
+              initialReferenceIds={referenceIds}
               onBack={() => navigate('/films')}
               onDirty={changeDirty}
               initialResearch={creatorId ? undefined : research}
               onOpenPromo={(id) => navigate(`/promos/${id}`)}
-              onCreated={(id) => {
+              onCreated={(id, kind) => {
                 setResearch(undefined);
-                changeDirty(false);
-                navigate(`/create/${id}`, true);
+                navigate(kind === 'video' ? `/create/${id}` : `/promos/${id}`, true, true);
               }}
             />
-          ) : route === '/promos' ? (
+          ) : path === '/promos' ? (
             <PromoLibrary
               onCreate={() => navigate('/promos/new')}
               onOpen={(id) => navigate(`/promos/${id}`)}
             />
-          ) : route === '/promos/new' || promoId ? (
-            <PromoWorkspace
-              key={promoId ?? 'new-promo'}
+          ) : path === '/promos/new' || promoId ? (
+            <CreationWorkspace
+              kind="photo"
+              initialView={analyticsEntry ? 'analytics' : 'create'}
+              key={creationKey}
               id={promoId}
               onBack={() => navigate('/promos')}
               onDirty={changeDirty}
-              research={promoId ? undefined : research}
-              onCreated={(id) => {
+              initialResearch={promoId ? undefined : research}
+              onOpenPromo={(id) => navigate(`/promos/${id}`)}
+              onCreated={(id, kind) => {
                 setResearch(undefined);
-                changeDirty(false);
-                navigate(`/promos/${id}`, true);
+                navigate(kind === 'video' ? `/create/${id}` : `/promos/${id}`, true, true);
               }}
             />
-          ) : route === '/projects' ? (
+          ) : path === '/projects' ? (
             <ProjectLibrary
               projects={projects}
               loading={loading}
@@ -420,7 +402,7 @@ export function App() {
               onCreate={() => navigate('/new')}
               onOpen={(id) => navigate(`/projects/${id}`)}
             />
-          ) : route === '/new' ? (
+          ) : path === '/new' ? (
             <NewProject
               onBack={() => navigate('/projects')}
               onDirty={changeDirty}
@@ -450,9 +432,9 @@ export function App() {
                 title="This page isn’t in the plan."
                 copy="Head back to your workspace to pick up your next idea."
               />
-              <button className="button button-primary" onClick={() => navigate('/promos')}>
+              <button className="button button-primary" onClick={() => navigate('/films')}>
                 <ArrowLeft size={18} />
-                Back to promos
+                Back to your creations
               </button>
             </div>
           )}
