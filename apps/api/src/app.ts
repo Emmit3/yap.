@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import express, { type ErrorRequestHandler, type Request } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
@@ -13,11 +13,16 @@ import { ApiError, StorageError } from './errors.js';
 import { ProjectRepository } from './repository.js';
 import { generateGuidedDraft } from './generation.js';
 import { exportFilename, exportMarkdown } from './export.js';
+import { createSocialRouter } from './social-router.js';
+import type { SocialProviderConfig } from './social-providers.js';
 
 export interface AppOptions {
   dataFile?: string;
   corsOrigin?: string;
   onError?: (error: unknown) => void;
+  socialDataFile?: string;
+  socialProviderConfig?: SocialProviderConfig;
+  socialFetch?: typeof globalThis.fetch;
 }
 
 const briefKeys: Array<keyof ProjectBrief> = [
@@ -50,8 +55,9 @@ function validate<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 export async function createApp(options: AppOptions = {}) {
+  const projectDataFile = options.dataFile ?? resolve(process.cwd(), 'data/projects.json');
   const repository = await ProjectRepository.open(
-    options.dataFile ?? resolve(process.cwd(), 'data/projects.json'),
+    projectDataFile,
   );
   const allowedOrigin = options.corsOrigin ?? 'http://127.0.0.1:5173';
   const app = express();
@@ -103,7 +109,9 @@ export async function createApp(options: AppOptions = {}) {
     const id = projectId(request);
     const changes = validate(updateProjectSchema, request.body);
     const project = await repository.update(id, (previous) => {
-      const briefChanged = briefKeys.some(
+      const researchChanged = changes.research !== undefined &&
+        JSON.stringify(changes.research) !== JSON.stringify(previous.research);
+      const briefChanged = researchChanged || briefKeys.some(
         (key) => changes[key] !== undefined && changes[key] !== previous[key],
       );
       if (briefChanged && changes.draft) {
@@ -191,6 +199,11 @@ export async function createApp(options: AppOptions = {}) {
     await repository.delete(projectId(request));
     response.status(204).end();
   });
+  app.use('/api/social', await createSocialRouter({
+    dataFile: options.socialDataFile ?? resolve(dirname(projectDataFile), 'social-investigations.json'),
+    config: options.socialProviderConfig,
+    fetch: options.socialFetch,
+  }));
   app.use((_request, _response, next) =>
     next(new ApiError(404, 'NOT_FOUND', 'This API route could not be found.')),
   );

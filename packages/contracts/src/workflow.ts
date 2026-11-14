@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { durationSchema, platformSchema, toneSchema } from './index.js';
+import { socialHandoffSchema } from './social.js';
 
 const uuid = z.uuid();
 const timestamp = z.iso.datetime();
@@ -133,6 +134,7 @@ export const workflowSchema = z
     contentRevision: version,
     title: z.string().trim().min(1).max(120),
     input: z.string().trim().min(1).max(8000),
+    research: socialHandoffSchema.optional(),
     brief: workflowBriefSchema,
     assets: z.array(workflowImageAssetSchema).max(20),
     messages: z.array(workflowMessageSchema).max(200),
@@ -175,6 +177,7 @@ export const workflowVerificationSchema = z
 export const createWorkflowSchema = z
   .object({
     input: z.string().trim().min(1).max(8000),
+    research: socialHandoffSchema.optional(),
     title: z.string().trim().min(1).max(120).optional(),
     brief: workflowBriefSchema.optional(),
   })
@@ -203,11 +206,12 @@ export const refineWorkflowSchema = z
     message: z.string().trim().min(1).max(8000).optional(),
     answers: answersSchema.optional(),
     brief: briefChangesSchema.optional(),
+    research: socialHandoffSchema.optional(),
   })
   .strict()
   .refine(
     (value) =>
-      value.message !== undefined || value.answers !== undefined || value.brief !== undefined,
+      value.message !== undefined || value.answers !== undefined || value.brief !== undefined || value.research !== undefined,
     'Provide a message, answers, or brief changes.',
   );
 

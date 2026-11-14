@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { videoDraftSchema, type ProjectBrief, type VideoDraft } from '@yap/contracts';
+import { researchHook, researchVisualDirection } from './research-direction.js';
 
 function words(text: string, limit: number): string {
   const raw = text.replace(/\s+/g, ' ').trim();
@@ -23,12 +24,12 @@ export function generateGuidedDraft(brief: ProjectBrief): VideoDraft {
   const topic = words(brief.title, 10).replace(/[.!?]+$/, '');
   const idea = brief.idea.replace(/\s+/g, ' ').trim();
   const count = brief.duration === 15 ? 3 : brief.duration === 30 ? 4 : 6;
-  const hook =
+  const hook = researchHook(topic, brief.research) ?? (
     brief.tone === 'bold'
       ? `${topic}. Start here.`
       : brief.tone === 'educational'
         ? `A quick guide to ${topic.charAt(0).toLowerCase()}${topic.slice(1)}.`
-        : `Let's talk about ${topic.charAt(0).toLowerCase()}${topic.slice(1)}.`;
+        : `Let's talk about ${topic.charAt(0).toLowerCase()}${topic.slice(1)}.`);
   const closing =
     brief.goal === 'promote'
       ? 'Take a closer look and decide if this is right for you.'
@@ -51,7 +52,7 @@ export function generateGuidedDraft(brief: ProjectBrief): VideoDraft {
     seconds: baseSeconds + (index < remainder ? 1 : 0),
     visual:
       index === 0
-        ? `Open on camera with a clear view of the subject: ${topic}.`
+        ? `Open on camera with a clear view of the subject: ${topic}.${researchVisualDirection(brief.research)}`
         : index === count - 1
           ? 'Return to camera and leave a moment for the closing message.'
           : `Film a close view that illustrates: ${words(voiceover, 18)}`,
