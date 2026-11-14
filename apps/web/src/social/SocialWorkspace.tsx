@@ -451,16 +451,34 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   }
   async function deleteInvestigation() {
     if (!active || busy) return;
+    const deletedId = active.id;
+    const requestEpoch = epoch.current;
     setBusy('delete');
     setError('');
     try {
-      await socialApi.remove(active.id);
-      setInvestigations((previous) => previous.filter((item) => item.id !== active.id));
+      await socialApi.remove(deletedId);
+      setInvestigations((previous) => previous.filter((item) => item.id !== deletedId));
+      if (requestEpoch !== epoch.current) return;
+      epoch.current += 1;
       setActive(null);
+      setEditingNote('');
+      setNoteText('');
+      setNoteKind('adopt');
+      setNoteEvidenceIds([]);
+      setPendingChange(null);
+      setSelectedNode('');
+      setSelectedPostId('');
+      setSelectedNotes([]);
+      setSelectedInsights([]);
+      setQuestion('');
+      setAnswer(null);
+      setHandoff(null);
+      setUsed(false);
       setConfirmDelete(false);
+      onDirty?.(false);
       setStatus('Investigation and its local notes deleted.');
     } catch (caught) {
-      setError(researchError(caught));
+      if (requestEpoch === epoch.current) setError(researchError(caught));
     } finally {
       setBusy('');
     }

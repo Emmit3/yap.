@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
@@ -9,6 +10,7 @@ import { projectResponseSchema } from '@yap/contracts';
 import { workflowResponseSchema } from '@yap/contracts/workflow';
 import { socialHandoffSchema, socialInvestigationResponseSchema } from '@yap/contracts/social';
 import { createApp } from '../src/app.js';
+import { createWorkflowProvider, type VideoWorkflowProvider } from '../src/workflow-provider.js';
 
 test('saved research decisions guide projects and promo workflows without becoming creator facts or approvals', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'yap-social-integration-'));
@@ -215,4 +217,136 @@ test('saved research decisions guide projects and promo workflows without becomi
     await (await fetch(`${base}/social/investigations/${investigation.id}`)).json(),
   ).investigation;
   assert.match(persistedResearch.notes[0]!.text, /^Start with a visual demonstration/);
+});
+
+test('research-only refinement preserves creator facts without invoking the model', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'yap-social-model-boundary-'));
+  let app: Awaited<ReturnType<typeof createApp>> | undefined;
+  let server: Server | undefined;
+  let base = '';
+  let refineCalls = 0;
+  let conflictingSuggestions = false;
+  const provider: VideoWorkflowProvider = {
+    ...createWorkflowProvider({ provider: 'guided' }),
+    name: 'openai',
+    async refine(_workflow, input) {
+      refineCalls++;
+      if (input.message)
+        return { brief: { tone: 'bold' }, message: 'The tone proposal is ready for review.' };
+      return conflictingSuggestions
+        ? {
+            brief: {
+              productName: 'Competitor product',
+              productDescription: 'A claim from external research.',
+              keyBenefits: ['An unsupported benefit from another business.'],
+            },
+            message: 'Conflicting model suggestions must not change creator facts.',
+          }
+        : { brief: {}, message: 'The supplied brief is ready for a proposal.' };
+    },
+  };
+  async function start() {
+    app = await createApp({
+      dataFile: join(directory, 'projects.json'),
+      socialProviderConfig: {},
+      workflowProvider: provider,
+    });
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    base = `http://127.0.0.1:${address.port}/api/workflows`;
+  }
+  async function stop() {
+    await app?.locals.shutdown?.();
+    const active = server;
+    if (active?.listening)
+      await new Promise<void>((resolve, reject) =>
+        active.close((error) => (error ? reject(error) : resolve())),
+      );
+  }
+  t.after(async () => {
+    await stop();
+    await rm(directory, { recursive: true, force: true });
+  });
+  await start();
+  const send = (path: string, body: unknown) =>
+    fetch(`${base}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const createdResponse = await send('', {
+    title: 'Moss matcha promo',
+    input: 'Make a promo for our made-to-order matcha latte.',
+    brief: {
+      productName: 'Moss Matcha',
+      productDescription: 'Matcha latte from our shop.',
+      keyBenefits: ['Made to order'],
+      audience: 'Local matcha drinkers',
+      callToAction: 'Visit our shop.',
+    },
+  });
+  assert.equal(createdResponse.status, 201);
+  const created = workflowResponseSchema.parse(await createdResponse.json()).workflow;
+  const preparedResponse = await send(`/${created.id}/prepare`, {
+    expectedVersion: created.version,
+  });
+  assert.equal(preparedResponse.status, 200);
+  const prepared = workflowResponseSchema.parse(await preparedResponse.json()).workflow;
+  const approvedResponse = await send(`/${created.id}/approve-all`, {
+    expectedVersion: prepared.version,
+  });
+  assert.equal(approvedResponse.status, 200);
+  const approved = workflowResponseSchema.parse(await approvedResponse.json()).workflow;
+  const handoff = socialHandoffSchema.parse({
+    investigationId: randomUUID(),
+    topic: 'Matcha promo references',
+    audience: 'People who enjoy matcha',
+    creativeDirection: 'Adopt: Open with an original viewer question.',
+    selectedNoteIds: [],
+    selectedInsightIds: [],
+    evidence: [],
+    sourceUrls: [],
+    cautions: ['External research guides framing, not product facts.'],
+  });
+  conflictingSuggestions = true;
+  const callsBeforeResearch = refineCalls;
+  const refinedResponse = await send(`/${created.id}/refine`, {
+    expectedVersion: approved.version,
+    research: handoff,
+  });
+  assert.equal(refinedResponse.status, 200, await refinedResponse.clone().text());
+  const refined = workflowResponseSchema.parse(await refinedResponse.json()).workflow;
+  assert.equal(refineCalls, callsBeforeResearch);
+  assert.deepEqual(refined.brief, approved.brief);
+  assert.equal(refined.input, approved.input);
+  assert.deepEqual(refined.research, handoff);
+  assert.equal(refined.version, approved.version + 1);
+  assert.equal(refined.contentRevision, approved.contentRevision + 1);
+  assert.equal(refined.script, null);
+  assert.equal(refined.scenes, null);
+  assert.deepEqual(refined.approvals, { brief: null, script: null, scenes: null });
+  const staleResponse = await send(`/${created.id}/refine`, {
+    expectedVersion: approved.version,
+    research: handoff,
+  });
+  assert.equal(staleResponse.status, 409);
+  assert.equal((await staleResponse.json()).error.code, 'WORKFLOW_VERSION_CONFLICT');
+  assert.equal(refineCalls, callsBeforeResearch);
+  await stop();
+  await start();
+  const persisted = workflowResponseSchema.parse(
+    await (await fetch(`${base}/${created.id}`)).json(),
+  ).workflow;
+  assert.deepEqual(persisted, refined);
+  const explicitResponse = await send(`/${created.id}/refine`, {
+    expectedVersion: persisted.version,
+    message: 'Make the tone bolder.',
+  });
+  assert.equal(explicitResponse.status, 200);
+  const explicit = workflowResponseSchema.parse(await explicitResponse.json()).workflow;
+  assert.equal(refineCalls, callsBeforeResearch + 1);
+  assert.equal(explicit.brief.tone, 'bold');
+  assert.equal(explicit.brief.productName, approved.brief.productName);
 });
