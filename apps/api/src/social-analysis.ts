@@ -33,6 +33,12 @@ const MAX_CANDIDATES = 48;
 const MAX_POSTING = 24;
 const MAX_NODES = 250;
 const MAX_EDGES = 600;
+// Only topic-free requests may use sample-wide ranking or connectivity as a fallback.
+const QUERY_INTENT_TERMS = new Set(
+  'post posts content example examples sample saved collected evidence investigation research show tell describe explain list find top best better highest strongest popular popularity rank ranks ranked ranking perform performs performed performing performance work works worked working hook hooks script scripts opening openings pattern patterns lesson lessons actor actors account accounts author authors people person connect connects connected connecting connection connections network networks community communities amplification amplify amplified amplifies repost reposts reposted share shares shared spread spreads spreading relevant'.split(
+    ' ',
+  ),
+);
 
 function key(value: string): string {
   return createHash('sha256').update(value).digest('hex').slice(0, 16);
@@ -73,7 +79,22 @@ function tokens(value: string): string[] {
           .toLowerCase()
           .replace(/https?:\/\/\S+/g, ' ')
           .match(/[\p{L}\p{N}]{3,}/gu) ?? []
-      ).filter((item) => !STOP.has(item)),
+      )
+        .filter((item) => !STOP.has(item))
+        .flatMap((item) => {
+          // Keep source text intact; bound analysis terms to the keyword schema's UTF-16 limit.
+          const chunks: string[] = [];
+          let chunk = '';
+          for (const character of item) {
+            if (chunk.length + character.length > 100) {
+              chunks.push(chunk);
+              chunk = '';
+            }
+            chunk += character;
+          }
+          if (chunk) chunks.push(chunk);
+          return chunks;
+        }),
     ),
   ].slice(0, MAX_TOKENS);
 }
@@ -847,10 +868,17 @@ export function querySocialAnalysis(
   question: string,
 ): SocialQueryResponse {
   const queryTerms = new Set(tokens(question));
-  const networkQuestion = /connect|amplif|repost|share|spread|communit|network|actor|account/i.test(
-    question,
-  );
-  const creativeQuestion = /hook|script|opening|perform|best|work|pattern|lesson/i.test(question);
+  const networkQuestion =
+    /\b(connect\w*|amplif\w*|repost\w*|shar\w*|spread\w*|communit\w*|network\w*|actors?|accounts?)\b/i.test(
+      question,
+    );
+  const creativeQuestion =
+    /\b(hooks?|scripts?|openings?|perform\w*|best|works?|patterns?|lessons?|rank\w*|popular|top)\b/i.test(
+      question,
+    );
+  const subjectTerms = [...queryTerms].filter((term) => !QUERY_INTENT_TERMS.has(term));
+  const genericSampleQuestion =
+    queryTerms.size > 0 && subjectTerms.length === 0 && (networkQuestion || creativeQuestion);
   const ranks = new Map(analysis.rankedPosts.map((item) => [item.postId, item.score]));
   const actorNames = new Map(
     analysis.actors.map((actor) => [actor.id, `${actor.name} ${actor.handle}`]),
@@ -860,7 +888,7 @@ export function querySocialAnalysis(
       const postTerms = new Set(
         tokens(`${post.text} ${post.actorId ? (actorNames.get(post.actorId) ?? '') : ''}`),
       );
-      const matches = [...queryTerms].filter((term) => postTerms.has(term)).length;
+      const matches = subjectTerms.filter((term) => postTerms.has(term)).length;
       const links = analysis.relationships.filter(
         (relation) => relation.sourcePostId === post.id || relation.targetPostId === post.id,
       ).length;
@@ -873,7 +901,7 @@ export function querySocialAnalysis(
         matches,
       };
     })
-    .filter((item) => item.score > 0)
+    .filter((item) => item.matches > 0 || (genericSampleQuestion && item.score > 0))
     .sort((a, b) => b.score - a.score || a.post.id.localeCompare(b.post.id));
   const selected = scored.slice(0, 4).map((item) => item.post);
   const sourceIds = new Set(selected.map((post) => post.id));
@@ -894,7 +922,7 @@ export function querySocialAnalysis(
     .filter((insight) => insight.evidenceIds.some((postId) => sourceIds.has(postId)))
     .slice(0, 2);
   const answer = selected.length
-    ? `Retrieved ${selected.length} evidence item(s) matching your question${selected.some((post) => contextIds.has(post.id)) ? ', including one-hop public reference context' : ''}.\n\n${selected.map((post, index) => `[${index + 1}] ${post.actorId ? actorNames.get(post.actorId) || 'Public source' : 'Public source'}: ${clip(post.text, 650)}`).join('\n\n')}${relatedInsights.length ? `\n\nRelevant analysis:\n${relatedInsights.map((insight) => `${insight.title}: ${insight.description}`).join('\n\n')}` : ''}\n\nThis guided answer retrieves saved evidence. It does not establish intent, causal spread, or facts beyond the returned sources.`
+    ? `Retrieved ${selected.length} evidence item(s) ${genericSampleQuestion ? 'from the saved sample using available ranking or observed connections' : 'matching specific terms in your question'}${selected.some((post) => contextIds.has(post.id)) ? ', including one-hop public reference context' : ''}.\n\n${selected.map((post, index) => `[${index + 1}] ${post.actorId ? actorNames.get(post.actorId) || 'Public source' : 'Public source'}: ${clip(post.text, 650)}`).join('\n\n')}${relatedInsights.length ? `\n\nRelevant analysis:\n${relatedInsights.map((insight) => `${insight.title}: ${insight.description}`).join('\n\n')}` : ''}\n\nThis guided answer retrieves saved evidence. It does not establish intent, causal spread, or facts beyond the returned sources.`
     : 'The saved public evidence does not answer this question. Try a specific term, public author, opening, or observed reference in this investigation, or collect more evidence. No unsupported answer has been generated.';
   return socialQueryResponseSchema.parse({
     answer,

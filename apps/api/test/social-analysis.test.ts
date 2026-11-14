@@ -140,6 +140,59 @@ test('missing metrics and timestamps stay unknown and do not become fake popular
   );
 });
 
+test('ranking and network bonuses do not make unrelated subject questions appear answerable', () => {
+  const dataset = data([
+    post('coffee', 'Coffee brewing improves with a consistent grind.'),
+    post('reply', 'Coffee brewing is easier with a kitchen scale.'),
+  ]);
+  dataset.relationships = [
+    {
+      id: 'reply-link',
+      sourcePostId: 'reply',
+      targetPostId: 'coffee',
+      targetActorId: null,
+      kind: 'reply',
+      observedAt: now,
+    },
+  ];
+  const analysis = analyzeSocialDataset(input, dataset);
+  for (const question of [
+    'Which superconductors work best?',
+    'Which quantum network accounts connect?',
+  ]) {
+    const result = querySocialAnalysis(analysis, question);
+    assert.deepEqual(result.evidence, [], question);
+    assert.equal(result.confidence, 'low');
+    assert.match(result.answer, /does not answer/);
+    assert.doesNotMatch(result.answer, /matching/);
+  }
+  const relevant = querySocialAnalysis(analysis, 'Which coffee brewing posts work best?');
+  assert.ok(relevant.evidence.length > 0);
+  assert.ok(relevant.evidence.some((item) => item.postId === 'coffee'));
+  for (const question of ['Which posts work best?', 'Which accounts connect?']) {
+    const result = querySocialAnalysis(analysis, question);
+    assert.ok(result.evidence.length > 0, question);
+    assert.match(result.answer, /from the saved sample/);
+    assert.doesNotMatch(result.answer, /matching.*question/);
+  }
+});
+
+test('long Unicode and unbroken terms stay bounded for analysis without changing source evidence', () => {
+  for (const sourceText of ['抹茶'.repeat(70), 'a'.repeat(300), '𐐀'.repeat(70)]) {
+    const analysis = analyzeSocialDataset(input, data([post('long-term', sourceText)]));
+    assert.equal(analysis.posts[0]?.text, sourceText);
+    assert.ok(
+      analysis.communities.every((item) => item.keywords.every((word) => word.length <= 100)),
+    );
+    assert.ok(analysis.topics.every((item) => item.keywords.every((word) => word.length <= 100)));
+    const result = querySocialAnalysis(analysis, sourceText);
+    assert.deepEqual(
+      result.evidence.map((item) => item.postId),
+      ['long-term'],
+    );
+  }
+});
+
 test('same wording and timing alone do not trigger coordination; observed references are also required', () => {
   const dataset = data([
     post('a', 'Coffee brewing using a coarser grind gives a lighter cup.'),
