@@ -130,6 +130,37 @@ export function readFilmShortlist(raw, films) {
   }
 }
 
+function selectedFilmIds(films, selection) {
+  const values =
+    typeof selection === 'string'
+      ? [selection]
+      : Array.isArray(selection)
+        ? selection
+        : selection instanceof Set
+          ? [...selection]
+          : [];
+  const selected = new Set(values.filter((id) => typeof id === 'string'));
+  return films.filter((film) => selected.has(film.id)).map((film) => film.id);
+}
+
+/** The parent resolves these catalog IDs itself; no source text or URLs cross the bridge. */
+export function filmReferenceRequest(films, selection) {
+  const ids = selectedFilmIds(films, selection);
+  if (!ids.length) return null;
+  return typeof selection === 'string'
+    ? { type: 'yap:film-reference', filmId: ids[0] }
+    : { type: 'yap:film-shortlist', filmIds: ids };
+}
+
+/** A standalone page always links to the local creation route, never a supplied destination. */
+export function filmCreationHref(films, selection) {
+  const ids = selectedFilmIds(films, selection);
+  if (!ids.length) return null;
+  const query = new URLSearchParams();
+  for (const id of ids) query.append('reference', id);
+  return `/#/create?${query.toString()}`;
+}
+
 /** Exports retain the source and original watch destination alongside stable film IDs. */
 export function filmShortlistExport(films, selectedIds, exportedAt = new Date().toISOString()) {
   return {
