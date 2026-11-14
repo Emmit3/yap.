@@ -2,6 +2,8 @@
 
 **Good ideas, made REEL.**
 
+**Setup:** [`.env.example`](.env.example) | [Requirements](requirements.txt) | [API setup guide](docs/api-setup.md)
+
 Yap is a research and short-video workspace for creators. Start with an idea, product, place, public GitHub project, or your own photos. Explore public examples, choose a creative direction, and develop an original film you can review and download. Entertainment and media creation guide the product; the small-business photo promo remains a working use case.
 
 **Guided** asks useful questions while research runs; **Director** exposes the same saved script, sources, shot plan, and clip review. The landing phone opens this connected studio. See the [creator studio plan](docs/creator-studio-plan.md) for the product journey and [creator backend guide](docs/creator-backend.md) for sessions, approved generation limits, and clip audits.
@@ -97,19 +99,19 @@ These checks establish structure, reference integrity, and consistency with curr
 
 The relationships below describe technical relevance and current integration status. They do not imply sponsorship, endorsement, or use of an unimplemented service.
 
-| Ecosystem                                          | How Yap relates                                                                                         | Current status                                                                                                                                      |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [LangChain](https://www.langchain.com/)            | A multi-step creative research task uses planning, specialist delegation, tools, and shared files       | **Implemented:** real Deep Agents harness, with a separately labeled no-key replay                                                                  |
-| [Amazon](https://www.amazon.com/)                  | Practical AI turns raw creator material and researched context into editable, approved media            | **Workflow fit:** current adapters use guided generation and OpenAI; no AWS service is required or integrated. Bedrock is a possible future adapter |
-| [Peri](https://peri.so/)                           | A creator, local business, or club can bring an actual content-production need into the working studio  | **User-discovery fit:** real consultation and usability feedback remain inputs to gather; no Peri API or customer validation is claimed             |
-| [Arlequin AI](https://arlq.ai/)                    | Public message content and actor connectivity jointly inform explorable analysis and creative decisions | **Own pipeline implemented:** no proprietary Arlequin/HuDex API integration is claimed                                                              |
-| [ChatOverflow](https://chatoverflow.dev/agents.md) | A development agent can optionally exchange general engineering insights through its connector          | **Optional developer tooling:** not installed or connected here; it is separate from Yap's product research agents                                  |
+| Ecosystem                                          | How Yap relates                                                                                         | Current status                                                                                                                                                                           |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [LangChain](https://www.langchain.com/)            | A multi-step creative research task uses planning, specialist delegation, tools, and shared files       | **Implemented:** real Deep Agents harness, with a separately labeled no-key replay                                                                                                       |
+| [Amazon](https://www.amazon.com/)                  | Practical AI turns raw creator material and researched context into editable, approved media            | **Implemented optional export:** AWS S3 stores finished MP4s and supplies temporary download links. No AWS service is required for local work; Bedrock remains a possible future adapter |
+| [Peri](https://peri.so/)                           | A creator, local business, or club can bring an actual content-production need into the working studio  | **User-discovery fit:** real consultation and usability feedback remain inputs to gather; no Peri API or customer validation is claimed                                                  |
+| [Arlequin AI](https://arlq.ai/)                    | Public message content and actor connectivity jointly inform explorable analysis and creative decisions | **Own pipeline implemented:** no proprietary Arlequin/HuDex API integration is claimed                                                                                                   |
+| [ChatOverflow](https://chatoverflow.dev/agents.md) | A development agent can optionally exchange general engineering insights through its connector          | **Optional developer tooling:** not installed or connected here; it is separate from Yap's product research agents                                                                       |
 
 Product direction stays centered on an original entertainment/media outcome: a researched creative choice should influence a hook, story structure, visual explanation, or audience angle that the creator can inspect. New integrations should serve that journey.
 
 ## APIs and keys
 
-Copy [apps/api/.env.example](apps/api/.env.example) to `apps/api/.env` for optional server configuration. **Guided photo preparation, real photo rendering, and synthetic research replay need no external API key.** A chat plugin connection does not configure credentials for the running application. See [API setup, pricing context and budget controls](docs/api-setup.md) for the selected low-cost stack. Live credentials and paid generation have not been exercised by the automated adapter tests.
+Copy the root [`.env.example`](.env.example) to `apps/api/.env` for optional server configuration. The same format is available in [apps/api/.env.example](apps/api/.env.example). **Guided photo preparation, real photo rendering, and synthetic research replay need no external API key.** A chat plugin connection does not configure credentials for the running application. See [API setup, pricing context and budget controls](docs/api-setup.md) for the selected low-cost stack. Live credentials and paid generation have not been exercised by the automated adapter tests.
 
 | Capability                         | Server configuration                                                                        | Requirement or limitation                                                                                                |
 | ---------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -123,7 +125,7 @@ Copy [apps/api/.env.example](apps/api/.env.example) to `apps/api/.env` for optio
 | Shared app spending limit          | `CREATOR_BUDGET_LIMIT_USD=30.00`                                                            | Durable reservations across selected video, OpenAI and Firecrawl paths; not an account-wide provider invoice limit       |
 | Instagram account connection       | No current setting                                                                          | Direct Instagram OAuth/API connection is future work; current paths use indexed public links or validated public imports |
 
-There is no separate LangChain API key for the harness. No Amazon, Peri, or Arlequin API is needed for the current implementation. AWS/Bedrock would require a new adapter and AWS configuration. ChatOverflow has its own optional coding-agent setup and sharing choices; installing it is a separate action. [Official provider references and access limits](docs/social-provider-research.md).
+There is no separate LangChain API key for the harness. No Amazon, Peri, or Arlequin API is needed for the current implementation. Optional [AWS S3 export](docs/aws-s3.md) requires a bucket and AWS credentials. Bedrock would require a separate model adapter. ChatOverflow has its own optional coding-agent setup and sharing choices; installing it is a separate action. [Official provider references and access limits](docs/social-provider-research.md).
 
 Keys stay on the API server, never in `VITE_` variables. `GET /api/social/providers` reports configured source capabilities; `GET /api/social/research-runs/capabilities` reports harness availability. Configuration presence does not prove successful account authentication or live access.
 
@@ -141,6 +143,16 @@ The API runs at **http://127.0.0.1:3001** and the React app at **http://127.0.0.
 Photo editor output is a real **1080 × 1920 H264 MP4 at 24 fps**, composed from supplied photos, approved timing, and text overlays. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This is a local, single-workspace service without user accounts.
 
 The creator studio uses `FIRECRAWL_API_KEY` for bounded professional, X, TikTok, and Instagram public discovery. The optional configured Deep Agents harness reviews retrieved evidence. Generated clips require the selected video provider key (`FAL_KEY` by default) and `OPENAI_API_KEY` for sampled-frame review. Paid clip generation starts only after explicit approval of the current script, shot plan and cost quote; research and drafting have separate bounded ledger reservations. Missing credentials remain visible; they never become fabricated search results or generated clips. External film references remain links and creative context, separate from the creator's facts and uploaded media.
+
+The configuration format is published in the root [`.env.example`](.env.example). For a fresh checkout, copy it to `apps/api/.env` and copy `apps/web/.env.example` to `apps/web/.env`. The API loads its own environment file; the frontend uses only public `VITE_` settings. Fill actual keys only in the ignored `.env` files. Dependencies are managed by npm through `package.json` and `package-lock.json`; [requirements.txt](requirements.txt) records the runtime setup and requires no Python packages.
+
+See the [API provider setup](docs/api-providers.md) for OpenAI, Deep Agents, Firecrawl, fal.ai, Runway, and AWS configuration. The optional [AWS S3 example](docs/aws-s3.md) uploads a rendered MP4 to a private bucket and returns a temporary download link:
+
+```sh
+npm run aws:upload -- ./data/videos/RENDER_ID.mp4
+```
+
+This upload path resolves from `apps/api`, where the default render directory lives. Set the AWS variables in `apps/api/.env` and configure credentials before running the command.
 
 ## Workspace boundaries
 

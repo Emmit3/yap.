@@ -19,6 +19,7 @@
     "dev:showcase": "node scripts/serve.mjs",
     "build:showcase": "node scripts/build-showcase.mjs",
     "check:showcase": "node --check public/app.js && node --check public/motion.js && node --test tests/*.test.js",
+    "aws:upload": "npm run aws:upload --workspace=@yap/api --",
     "build": "node scripts/build.mjs",
     "build:api": "npm run build --workspace=@yap/contracts && npm run build --workspace=@yap/api",
     "typecheck:api": "npm run typecheck --workspace=@yap/contracts && npm run typecheck --workspace=@yap/api",
