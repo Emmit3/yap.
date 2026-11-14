@@ -9,11 +9,34 @@ import {
   wallCell,
 } from './motion.js';
 import { uniqueReels, reelSelection } from './catalog.js';
+import {
+  reelId,
+  readReelPreferences,
+  writeReelPreferences,
+  toggleReelPreference,
+  readSharedReelId,
+  reelShareUrl,
+  restoreSharedReel,
+} from './reel-actions.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
 const embedded =
   new URLSearchParams(location.search).get('embedded') === '1' && window.parent !== window;
+let outerUrl;
+if (embedded) {
+  try {
+    outerUrl = window.parent.location.href;
+  } catch {
+    /* A standalone link remains available. */
+  }
+}
+let preferenceStorage;
+try {
+  preferenceStorage = window.localStorage;
+} catch {
+  /* Personal choices remain available for this visit. */
+}
 function requestWorkspace(type) {
   if (!embedded) return false;
   window.parent.postMessage({ type }, location.origin);
@@ -132,7 +155,7 @@ const media = await fetch('./wall-media.json')
   .then((response) => (response.ok ? response.json() : null))
   .catch(() => null);
 const catalog = uniqueReels(media?.clips, import.meta.url);
-const reels = catalog.length
+const availableReels = catalog.length
   ? catalog
   : uniqueReels(
       fallbackReels.map((reel) => ({
@@ -142,6 +165,9 @@ const reels = catalog.length
       })),
       import.meta.url,
     );
+const sharedReel = restoreSharedReel(availableReels, readSharedReelId(location.href, outerUrl));
+const reels = sharedReel.reels;
+let preferences = readReelPreferences(preferenceStorage, reels);
 
 let reduced = motionPreference.matches;
 let width = innerWidth;
@@ -150,7 +176,7 @@ let travel = 1;
 let sceneTop = 0;
 let layout = wallLayout(width, height, reels.length);
 let count = layout.count;
-let selected = Math.floor(count / 2);
+let selected = sharedReel.index >= 0 ? sharedReel.index : Math.floor(count / 2);
 let selectedSmooth = selected;
 let progress = reduced ? 1 : 0;
 let targetProgress = progress;
@@ -163,6 +189,8 @@ let hasVideoFrame = false;
 let phonePlayToken = 0;
 let changeTimer;
 let toastTimer;
+let shareDialog = null;
+let displayedReel = null;
 let settled = false;
 let customIdea = '';
 let tiles = [];
@@ -393,6 +421,7 @@ function canPlayWall() {
     !document.hidden &&
     !film.open &&
     !studio.open &&
+    !shareDialog?.open &&
     !opening.open
   );
 }
@@ -448,6 +477,7 @@ function updatePlayback() {
     !document.hidden &&
     !film.open &&
     !studio.open &&
+    !shareDialog?.open &&
     !opening.open;
   document.body.classList.toggle(
     'is-paused',
@@ -482,6 +512,8 @@ function updateReel(animate = true) {
   const selection = reelSelection(reels, selected, count);
   const data = selection.reel;
   const apply = () => {
+    displayedReel = data;
+    updatePersonalActions(data);
     poster.src = data.poster;
     video.poster = data.poster;
     poster.alt = data.title;
@@ -636,19 +668,30 @@ $('#toggle-wall-motion').addEventListener('click', toggleMotion);
 $('#silent-sample').addEventListener('click', () => showToast('This sample clip is silent.'));
 $$('[data-toggle]').forEach((button) =>
   button.addEventListener('click', () => {
-    const active = button.getAttribute('aria-pressed') !== 'true';
-    button.setAttribute('aria-pressed', String(active));
+    const id = reelId(displayedReel);
+    if (!id) return;
+    const kind = button.dataset.toggle;
+    preferences = toggleReelPreference(preferences, kind, id, reels);
+    const persisted = writeReelPreferences(preferenceStorage, preferences, reels);
+    updatePersonalActions(displayedReel);
+    const active = button.getAttribute('aria-pressed') === 'true';
     showToast(
-      button.dataset.toggle === 'save'
-        ? active
-          ? 'Sample saved for this visit.'
-          : 'Sample removed from saved.'
-        : active
-          ? 'A little love for this idea.'
-          : 'Like removed.',
+      `${kind === 'save' ? (active ? 'Reference saved.' : 'Reference removed from saved.') : active ? 'Reference liked.' : 'Like removed.'}${persisted ? ' Kept on this device.' : ' This visit only; browser storage is unavailable.'}`,
     );
   }),
 );
+function updatePersonalActions(reel) {
+  const id = reelId(reel);
+  $$('[data-toggle]').forEach((button) => {
+    const saved = button.dataset.toggle === 'save';
+    const active = preferences[saved ? 'saved' : 'liked'].includes(id);
+    button.setAttribute('aria-pressed', String(active));
+    button.setAttribute(
+      'aria-label',
+      `${saved ? (active ? 'Unsave' : 'Save') : active ? 'Unlike' : 'Like'} ${reel.title}`,
+    );
+  });
+}
 function showToast(text) {
   const toast = $('#toast');
   toast.textContent = text;
@@ -657,15 +700,64 @@ function showToast(text) {
   toastTimer = setTimeout(() => toast.classList.remove('is-visible'), 3000);
 }
 $('#share-reel').addEventListener('click', async () => {
-  const url = new URL(location.href);
-  url.hash = 'reels';
+  const reel = displayedReel;
+  const url = reelShareUrl(location.href, reelId(reel), outerUrl);
+  if (!url) {
+    showToast('A share link is not available for this reference.');
+    return;
+  }
   try {
-    await navigator.clipboard.writeText(url.href);
-    showToast('Showcase link copied.');
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(url);
+    showToast('Link to this reference copied.');
   } catch {
-    showToast('Share this showcase using the page URL.');
+    showShareLink(url, reel.title);
   }
 });
+function showShareLink(url, title) {
+  shareDialog?.close();
+  const dialog = document.createElement('dialog');
+  dialog.className = 'studio-dialog';
+  dialog.setAttribute('aria-labelledby', 'share-link-title');
+  const form = document.createElement('form');
+  form.method = 'dialog';
+  const heading = document.createElement('h2');
+  heading.id = 'share-link-title';
+  heading.textContent = 'Share this reference.';
+  const caption = document.createElement('p');
+  caption.textContent = title;
+  const label = document.createElement('label');
+  label.htmlFor = 'share-link-url';
+  label.textContent = 'Copy this link to reopen the selected reference';
+  const field = document.createElement('textarea');
+  field.id = 'share-link-url';
+  field.readOnly = true;
+  field.value = url;
+  field.rows = 3;
+  field.addEventListener('focus', () => field.select());
+  const close = document.createElement('button');
+  close.className = 'primary-button';
+  close.type = 'submit';
+  close.textContent = 'Done';
+  const note = document.createElement('p');
+  note.className = 'dialog-note';
+  note.textContent =
+    'Clipboard access is unavailable. The selected link is ready to copy manually.';
+  form.append(heading, caption, label, field, note, close);
+  dialog.append(form);
+  dialog.addEventListener('close', () => {
+    dialog.remove();
+    if (shareDialog === dialog) shareDialog = null;
+    updatePlayback();
+    $('#share-reel').focus({ preventScroll: true });
+  });
+  document.body.append(dialog);
+  shareDialog = dialog;
+  dialog.showModal();
+  field.focus();
+  field.select();
+  updatePlayback();
+}
 
 $$('[data-create-entry]').forEach((button) => {
   button.hidden = !embedded;
@@ -892,6 +984,7 @@ measure();
 updateReel(false);
 setStep(0);
 requestFrame();
-if (location.hash === '#product' || location.hash === '#reels') requestAnimationFrame(goToProduct);
+if (sharedReel.index >= 0 || location.hash === '#product' || location.hash === '#reels')
+  requestAnimationFrame(goToProduct);
 if (new URLSearchParams(location.search).get('intro') === '1' && !reduced)
   requestAnimationFrame(playOpening);
