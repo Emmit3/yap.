@@ -6,6 +6,9 @@ import {
   socialPostSchema,
   socialRelationshipSchema,
   socialResearchInputSchema,
+  socialResearchEventInputSchema,
+  socialResearchRunInputSchema,
+  socialResearchArtifactPathSchema,
 } from '../dist/social.js';
 
 test('social inputs are bounded and repeated platforms are rejected', () => {
@@ -85,4 +88,33 @@ test('observed relationships require a target and handoff selections reject unkn
     insightIds: ['insight:opening'],
   });
   assert.equal(socialHandoffInputSchema.safeParse({ workflowId: 'other' }).success, false);
+});
+
+test('research activity accepts curated public metadata and rejects private tool payloads or native paths', () => {
+  const event = {
+    agent: 'source_researcher',
+    task: 'collect',
+    phase: 'started',
+    message: 'Searching public sources.',
+    provider: 'x',
+    search: 'coffee experiments',
+  };
+  assert.equal(socialResearchEventInputSchema.safeParse(event).success, true);
+  for (const extra of [
+    { reasoning: 'private model reasoning' },
+    { authorization: 'Bearer secret' },
+    { toolArguments: { apiKey: 'secret' } },
+    { artifactPath: '/etc/passwd' },
+  ])
+    assert.equal(socialResearchEventInputSchema.safeParse({ ...event, ...extra }).success, false);
+  assert.equal(socialResearchArtifactPathSchema.safeParse('/research/sources.json').success, true);
+  assert.equal(socialResearchArtifactPathSchema.safeParse('../.env').success, false);
+  assert.equal(
+    socialResearchRunInputSchema.safeParse({
+      topic: 'Coffee',
+      harness: 'deepagents',
+      apiKey: 'browser-secret',
+    }).success,
+    false,
+  );
 });

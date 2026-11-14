@@ -219,15 +219,22 @@ export async function createApp(options: AppOptions = {}) {
     await repository.delete(projectId(request));
     response.status(204).end();
   });
-  app.use(
-    '/api/social',
-    await createSocialRouter({
+  let social: Awaited<ReturnType<typeof createSocialRouter>>;
+  try {
+    social = await createSocialRouter({
       dataFile:
         options.socialDataFile ?? resolve(dirname(projectDataFile), 'social-investigations.json'),
       config: options.socialProviderConfig,
       fetch: options.socialFetch,
-    }),
-  );
+    });
+  } catch (error) {
+    await workflow.close();
+    throw error;
+  }
+  app.use('/api/social', social);
+  app.locals.shutdown = async () => {
+    await Promise.all([workflow.close(), social.closeSocialRuns()]);
+  };
   app.use((_request, _response, next) =>
     next(new ApiError(404, 'NOT_FOUND', 'This API route could not be found.')),
   );

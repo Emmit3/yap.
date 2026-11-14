@@ -308,6 +308,95 @@ export const socialInvestigationsResponseSchema = z
   .object({ investigations: z.array(socialInvestigationSchema).max(1000) })
   .strict();
 
+export const socialResearchHarnessSchema = z.enum(['pipeline', 'deepagents']);
+export const socialResearchRunInputSchema = socialResearchInputSchema
+  .extend({
+    harness: socialResearchHarnessSchema.default('pipeline'),
+  })
+  .strict();
+export const socialResearchArtifactPathSchema = z.enum([
+  '/research/scope.json',
+  '/research/sources.json',
+  '/research/network.json',
+  '/research/insights.json',
+  '/research/brief.md',
+]);
+export const socialResearchEventInputSchema = z
+  .object({
+    agent: z.enum(['coordinator', 'source_researcher', 'network_analyst', 'creative_strategist']),
+    task: z.enum(['scope', 'collect', 'normalize', 'analyze', 'brief', 'persist']),
+    phase: z.enum(['started', 'progress', 'completed', 'failed', 'skipped']),
+    message: text.max(500),
+    provider: z.enum(['firecrawl', 'x', 'xai']).optional(),
+    search: text.max(300).optional(),
+    resultCount: count.max(300).optional(),
+    artifactPath: socialResearchArtifactPathSchema.optional(),
+    evidenceIds: z.array(id).max(20).optional(),
+  })
+  .strict();
+export const socialResearchEventSchema = socialResearchEventInputSchema
+  .extend({
+    sequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    at: timestamp,
+  })
+  .strict();
+export const socialResearchArtifactSchema = z
+  .object({
+    path: socialResearchArtifactPathSchema,
+    bytes: count.max(64 * 1024),
+    updatedAt: timestamp,
+  })
+  .strict();
+export const socialResearchArtifactResponseSchema = z
+  .object({
+    artifact: socialResearchArtifactSchema
+      .extend({ content: z.string().max(64 * 1024), truncated: z.boolean() })
+      .strict(),
+  })
+  .strict();
+export const socialResearchRunSchema = z
+  .object({
+    id: z.uuid(),
+    input: socialResearchRunInputSchema,
+    status: z.enum(['queued', 'running', 'completed', 'failed', 'canceled']),
+    canCancel: z.boolean(),
+    execution: z.enum(['pipeline', 'deepagents', 'demo_replay']),
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    investigationId: z.uuid().nullable(),
+    error: z
+      .object({ code: text.max(120), message: text.max(1000) })
+      .strict()
+      .nullable(),
+    events: z.array(socialResearchEventSchema).max(200),
+    eventsTruncated: z.boolean(),
+    lastSequence: count.max(Number.MAX_SAFE_INTEGER),
+    artifacts: z.array(socialResearchArtifactSchema).max(5),
+  })
+  .strict();
+export const socialResearchRunResponseSchema = z.object({ run: socialResearchRunSchema }).strict();
+export const socialResearchCapabilitiesSchema = z
+  .object({
+    defaultHarness: socialResearchHarnessSchema,
+    demoReplay: z.literal(true),
+    pollIntervalMs: z.number().int().min(250).max(5000),
+    harnesses: z
+      .array(
+        z
+          .object({
+            id: socialResearchHarnessSchema,
+            name: text.max(100),
+            configured: z.boolean(),
+            description: text.max(1000),
+            limitations: z.array(text.max(1000)).max(10),
+          })
+          .strict(),
+      )
+      .max(2),
+  })
+  .strict();
+export const socialResearchCapabilitiesResponseSchema = socialResearchCapabilitiesSchema;
+
 export type SocialPlatform = z.infer<typeof socialPlatformSchema>;
 export type SocialResearchInput = z.infer<typeof socialResearchInputSchema>;
 export type SocialActor = z.infer<typeof socialActorSchema>;
@@ -330,3 +419,11 @@ export type SocialEvidence = z.infer<typeof socialEvidenceSchema>;
 export type SocialHandoffInput = z.infer<typeof socialHandoffInputSchema>;
 export type SocialHandoff = z.infer<typeof socialHandoffSchema>;
 export type SocialProviderStatus = z.infer<typeof socialProviderStatusSchema>;
+export type SocialResearchHarness = z.infer<typeof socialResearchHarnessSchema>;
+export type SocialResearchRunInput = z.infer<typeof socialResearchRunInputSchema>;
+export type SocialResearchArtifactPath = z.infer<typeof socialResearchArtifactPathSchema>;
+export type SocialResearchEventInput = z.infer<typeof socialResearchEventInputSchema>;
+export type SocialResearchEvent = z.infer<typeof socialResearchEventSchema>;
+export type SocialResearchArtifact = z.infer<typeof socialResearchArtifactSchema>;
+export type SocialResearchRun = z.infer<typeof socialResearchRunSchema>;
+export type SocialResearchCapabilities = z.infer<typeof socialResearchCapabilitiesSchema>;
