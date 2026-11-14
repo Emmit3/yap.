@@ -1,6 +1,6 @@
 # Poster reference workspace
 
-`PosterWorkspace` provides a poster reference browser and prompt composer for the React application. Browse the available poster crops, study their observed composition, typography, palette, imagery and texture, then select one to three references and describe the intended poster.
+Open **Reference room → Posters** at `#/references` in the React application. Browse the available poster crops, study their observed composition, typography, palette, imagery and texture, then select one to three references and describe the intended poster.
 
 **Prepare design prompt** sends the creator request and the selected reference IDs to the backend. The response retains the complete selected observations, authored reconstruction instructions, canonical source links, source timestamps and crop identity. The first selected reference provides the main direction. The prompt and JSON brief can be copied or downloaded.
 
@@ -44,13 +44,15 @@ The shared request and response contracts are exported from `@yap/contracts/post
 
 ## App integration
 
-The feature exports `PosterWorkspace` from `apps/web/src/posters/PosterWorkspace.tsx`. The unified App owner can mount it at `#/posters` and pass the App's stable dirty-state callback:
+The feature exports `PosterWorkspace` from `apps/web/src/posters/PosterWorkspace.tsx`. `ReferenceRoom` nests it beside the film library in its **Posters** tab and passes the App's stable dirty-state callback:
 
 ```tsx
 <PosterWorkspace onDirty={changeDirty} />
 ```
 
-This component owns its styles and API client. The poster feature intentionally leaves `App.tsx` and navigation wiring to the unified App owner, so integrating it does not restore an older application shell. The API router is already mounted independently at `/api/posters` in `createApp`.
+The room keeps opened panels mounted while changing tabs, preserving the poster prompt, ordered selection and prepared brief. A poster draft participates in the App's existing leave/discard guard. Film selections keep using the film reference bridge; poster IDs and recipes are handled by the separate poster API.
+
+This component owns its styles and API client. Reference room remains a single primary navigation item. The API router is mounted at `/api/posters` in `createApp`.
 
 Focused checks:
 
