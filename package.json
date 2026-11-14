@@ -1,12 +1,33 @@
 {
-  "name": "yap-cinematic",
+  "name": "yap",
   "version": "0.1.0",
   "private": true,
+  "description": "Good ideas, made REEL. A collaborative short video planning workspace.",
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
-    "dev": "node scripts/serve.mjs",
-    "start": "node scripts/serve.mjs",
+    "dev": "node scripts/dev.mjs",
+    "dev:web": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/web",
+    "dev:api": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/api",
+    "dev:showcase": "node scripts/serve.mjs",
+    "build:showcase": "node scripts/build-showcase.mjs",
+    "check:showcase": "node --check public/app.js && node --check public/motion.js && node --test tests/*.test.js",
     "build": "node scripts/build.mjs",
-    "check": "node --check public/app.js && node --check public/motion.js && node --test"
+    "build:api": "npm run build --workspace=@yap/contracts && npm run build --workspace=@yap/api",
+    "typecheck:api": "npm run typecheck --workspace=@yap/contracts && npm run typecheck --workspace=@yap/api",
+    "test:api": "npm run build --workspace=@yap/contracts && npm run test --workspace=@yap/api && npm run test --workspace=@yap/contracts",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "npm run build --workspace=@yap/contracts && npm run test --workspaces --if-present"
+  },
+  "devDependencies": {
+    "prettier": "3.10.1"
   }
 }

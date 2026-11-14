@@ -2,41 +2,51 @@
 
 Good ideas, made REEL.
 
-A cinematic frontend concept for an ideas-to-video product. Five rows of product films pan in alternating directions, then gather into a filmstrip as a phone reveals the selected reel. The interface uses black, silver, and white; all color comes from the footage.
+Yap helps a small business turn its photos and an idea into a promo. The backend now supports **photos → refinement → script and scenes → creator approval → downloadable MP4 and caption**. A matcha shop can upload drink and shop photos, describe what it wants to highlight, and prepare a vertical promo.
+
+Start with the [promo backend integration guide](docs/promo-backend.md). The new endpoints are additive under `/api/workflows`; the existing `/api/projects` API is preserved. The frontend is being developed in a separate session and needs to connect to this new promo flow.
+
+The guided provider runs without a key and composes real uploaded photos with editable template copy. Select the optional OpenAI provider for natural language interpretation and image understanding. Both produce reviewable proposals; neither automatically approves factual claims.
 
 ## Run locally
 
-Requires Node.js 20 or newer. No dependencies or install step are needed.
+Use Node.js **22.12 or newer** and npm. From the repository root:
 
 ```sh
+npm install
 npm run dev
 ```
 
-Open http://localhost:4173. Set `PORT` to change the port.
+The API runs at **http://127.0.0.1:3001**. When `apps/web` is present, the development command also starts it at **http://127.0.0.1:5173**. For backend development alone, run `npm run dev:api`. Stop with Ctrl+C.
+
+No API key or database service is required for guided preparation and photo rendering. Set `WORKFLOW_PROVIDER=openai` and a server-only `OPENAI_API_KEY` in `apps/api/.env` to enable the model adapter. Runtime data and `.env` files are ignored by Git.
+
+Video output is a real **1080×1920 H264 MP4 at 24 fps**, using the supplied photos, branded text overlays, and the approved scene timing. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This remains a local single-workspace service without user accounts.
+
+## Separate frontend and backend work
+
+| Location                                   | Responsibility                                                         | Run independently from the root            |
+| ------------------------------------------ | ---------------------------------------------------------------------- | ------------------------------------------ |
+| [`apps/web`](apps/web)                     | React interface, brief and script editing, project navigation, exports | `npm run dev:web`                          |
+| [`apps/api`](apps/api)                     | HTTP API, persistence, generation service, validation                  | `npm run dev:api`                          |
+| [`packages/contracts`](packages/contracts) | Shared schemas and TypeScript request/response types                   | `npm run build --workspace=@yap/contracts` |
+
+The frontend talks only to HTTP endpoints. It does not import backend source. The backend does not import frontend source. Each application has its own package, build configuration, environment example, and README.
+
+See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), and the [API contract](docs/api.md) for team workflows and integration details.
+
+The cinematic landing reference is preserved under `public/`. Run `npm run dev:showcase` for its standalone preview on port 4173, or `npm run build:showcase` for a static build. Its motion checks run with `npm run check:showcase`; media provenance and design notes are in [the landing guide](docs/cinematic-landing.md).
+
+## Checks and builds
 
 ```sh
-npm run check
+npm run typecheck
+npm test
 npm run build
 ```
 
-The static production site is written to `dist/`. It can be served by any static host.
+Backend-only checks: `npm run typecheck:api`, `npm run test:api`, and `npm run build:api`. They do not require frontend source.
 
-## Experience
+The production frontend is emitted to `apps/web/dist`; the API to `apps/api/dist`; shared runtime schemas to `packages/contracts/dist`. Deploy the frontend and API separately. Configure the frontend API URL at build time and the backend's allowed frontend origin for the deployed environment. The development Vite proxy is not a production proxy.
 
-- Scroll to transform the same media elements from a five-row curved wall into the bottom filmstrip. Rows loop in alternating directions and freeze their pan position when the gathering transition starts.
-- Product clips play muted and inline. The player scheduler limits active wall videos to eight on desktop and five on mobile (two with data saving enabled), pauses them offscreen or behind dialogs, and uses posters if autoplay is unavailable. The opening has a Pause motion control.
-- The wall loads with a center-out camera arrival, unfolding image planes, and staggered headline reveals. Replay the wall from the footer. Scrolling interrupts the load cleanly.
-- Select a frame, drag horizontally, or use the previous/next buttons and arrow keys to change the phone preview.
-- Open the studio to put an idea into the illustrative phone preview and choose a mood.
-- Watch the selected product film in the phone or the full player. Playback, sample likes, and sample saves are interactive. The sample footage is silent.
-- Explore the three product concept steps using the tabs or keyboard.
-- Reduced motion shows the usable phone and filmstrip immediately. Ambient motion and video pause offscreen or in a hidden tab.
-- An optional 2.8 second editorial opening cut can be tried from the footer or by opening `/?intro=1`. It is off by default, has a skip control, and is bypassed for reduced motion.
-
-This is a hackathon frontend. Studio previews use sample imagery and footage; video generation, accounts, and social publishing are not connected.
-
-## References and media
-
-Composition and motion take inspiration from Motion's [Burst](https://motionin.design/gallery/burst), [Frieze](https://motionin.design/gallery/frieze), and [Crema](https://motionin.design/gallery/crema). The page is an original implementation rather than their source code.
-
-Media provenance is recorded in `public/media/credits.json` and exposed on the site's Media credits page. `public/wall-media.json` selects the product loops, their labels, and source credits. Published brand campaign references are credited to their creators and are distinct from stock footage; the site does not claim these films were generated by yap. The `contact-sheet.jpg` is an asset review aid and is not loaded by the site.
+The API's JSON stores are intended for one server process with a persistent writable disk. Workflow updates use optimistic versions and keep the latest 50 snapshots. Render jobs run in a bounded queue, retain immutable source references, and recover interrupted jobs on restart. See [architecture](docs/architecture.md) and the API README before running outside local development.
