@@ -435,20 +435,26 @@ test('configured real-harness seam receives immutable attributed evidence with b
   let agentCalls = 0;
   let fetchCalls = 0;
   const events: string[] = [];
+  const guardedFetch: typeof globalThis.fetch = async (_url, init) => {
+    fetchCalls++;
+    return results([examples[searchBranch(init)]]);
+  };
   const analyze = createCreatorResearch(
     { firecrawlApiKey: 'key', deepAgentsModel: 'gpt-test', deepAgentsApiKey: 'model-secret' },
     {
       now: () => fixed,
-      fetch: async (_url, init) => {
-        fetchCalls++;
-        return results([examples[searchBranch(init)]]);
-      },
+      fetch: guardedFetch,
       deepAgentsRunner: async (context, dependencies) => {
         agentCalls++;
         assert.equal(context.input.harness, 'deepagents');
         assert.equal(context.input.mode, 'live');
         assert.equal(dependencies?.config?.maxModelCalls, 24);
         assert.equal(dependencies?.config?.timeoutMs, 45000);
+        assert.equal(
+          dependencies?.fetch,
+          guardedFetch,
+          'the harness must share the guarded provider fetch',
+        );
         const dataset = await context.collect(context.input, context.signal);
         assert.equal(dataset.posts.length, 4);
         assert.ok(

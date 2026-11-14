@@ -16,7 +16,7 @@ _This composition uses licensed studies already on the website. It is a workflow
 2. **Explore content and connections together.** Compare topics and estimated communities in a graph or list. Inspect observed interactions separately from derived content relationships, and save notes to adopt, avoid, or test.
 3. **Choose what informs the script.** Send selected notes and insights as attributed research context. The creator supplies their own facts and photos separately.
 4. **Prepare and edit.** Guided templates or a configured OpenAI adapter propose a script and timed shots. Structural checks identify missing, inconsistent, or stale material.
-5. **Approve and produce.** Explicitly approve the current material and generation limits, then create a photo-based promo or audited generated clips and a downloadable vertical MP4 and caption for manual posting.
+5. **Approve and produce.** Explicitly approve the current material and cost quote, then create a photo-based promo or audited generated clips and a downloadable vertical MP4 and caption for manual posting.
 
 The cinematic landing, **Social research** workspace (`#/social`), creator studio (`#/create`), and photo promo studio are connected in the actual React application. Research never approves a script or starts a render. Guided and Director share one saved session; return to it from **Your films** (`#/films`).
 
@@ -26,7 +26,7 @@ The **[product film reference room](http://127.0.0.1:5173/showcase/film-referenc
 
 **Guided** starts with Add media or Add text, then asks intent-specific questions. Supplied product photos, a location, natural language, and a supported public GitHub link can start the conversation. Professional cinematography and indexed X, TikTok, and Instagram research can run while answers are saved. The creator reviews sources and chooses which examples should inform the work.
 
-**Director** exposes the same brief, script, source assignments, camera and lighting instructions, clip timing, and production limit. Generated clips use Runway Gen-4.5, full-clip decoding, and three-frame visual review before final assembly. Repeated approval of an unchanged plan does not renew its paid attempt budget. Provider access is optional and explicit; missing keys do not become claimed live research or generated footage.
+**Director** exposes the same brief, script, source assignments, camera and lighting instructions, clip timing, and production limit. Generated clips default to silent 720p Seedance 1.5 Pro through fal.ai; Runway Gen-4.5 is an explicit alternative. Full-clip decoding and three-frame visual review precede final assembly. Production requires an exact cost quote and explicit approval. Paid retries are manual, and reapproving an unchanged plan does not renew its two-attempt limit. The durable app budget defaults to USD 30. Provider access is optional; missing keys do not become claimed live research or generated footage.
 
 The existing photo editor remains available without generation credentials. Both production paths are silent; captions are supplied separately and publishing remains manual. See the [creator backend guide](docs/creator-backend.md) for supported behavior and audit limits.
 
@@ -109,17 +109,19 @@ Product direction stays centered on an original entertainment/media outcome: a r
 
 ## APIs and keys
 
-Copy [apps/api/.env.example](apps/api/.env.example) to `apps/api/.env` for optional server configuration. **Guided photo preparation, real photo rendering, and synthetic research replay need no external API key.** A chat plugin connection does not configure credentials for the running application.
+Copy [apps/api/.env.example](apps/api/.env.example) to `apps/api/.env` for optional server configuration. **Guided photo preparation, real photo rendering, and synthetic research replay need no external API key.** A chat plugin connection does not configure credentials for the running application. See [API setup, pricing context and budget controls](docs/api-setup.md) for the selected low-cost stack. Live credentials and paid generation have not been exercised by the automated adapter tests.
 
-| Capability                         | Server configuration                                                             | Requirement or limitation                                                                                                |
-| ---------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Live Deep Agents                   | `DEEPAGENTS_MODEL` plus `DEEPAGENTS_OPENAI_API_KEY` or fallback `OPENAI_API_KEY` | Choose a model accessible to your OpenAI API account; also configure a compatible source below                           |
-| Public web discovery               | `FIRECRAWL_API_KEY`                                                              | Firecrawl search; indexed X/Instagram links are discovery, not complete platform data                                    |
-| Observed X post interactions       | `X_BEARER_TOKEN`                                                                 | X developer access to recent search; a consumer login is insufficient                                                    |
-| Optional Grok/X citations          | `XAI_API_KEY`, `XAI_MODEL`                                                       | xAI API account and supported search model; citations are research leads, not observed network edges                     |
-| Optional text/photo interpretation | `WORKFLOW_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`                     | OpenAI Responses adapter proposes editable material                                                                      |
-| Generated cinematic clips          | `RUNWAYML_API_SECRET` plus `OPENAI_API_KEY`                                      | Runway Gen-4.5 and required sampled-frame review; explicit approval of the current plan and attempt limit comes first    |
-| Instagram account connection       | No current setting                                                               | Direct Instagram OAuth/API connection is future work; current paths use indexed public links or validated public imports |
+| Capability                         | Server configuration                                                                        | Requirement or limitation                                                                                                |
+| ---------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Live Deep Agents                   | `DEEPAGENTS_MODEL=gpt-6-luna` plus `DEEPAGENTS_OPENAI_API_KEY` or fallback `OPENAI_API_KEY` | The budget profile uses this bounded model; also configure a compatible source below                                     |
+| Public web discovery               | `FIRECRAWL_API_KEY`                                                                         | Firecrawl search; indexed X/Instagram links are discovery, not complete platform data                                    |
+| Observed X post interactions       | `X_BEARER_TOKEN`                                                                            | X developer access to recent search; a consumer login is insufficient                                                    |
+| Optional Grok/X citations          | `XAI_API_KEY`, `XAI_MODEL`                                                                  | xAI API account and supported search model; citations are research leads, not observed network edges                     |
+| Optional text/photo interpretation | `WORKFLOW_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna`                     | OpenAI Responses adapter proposes editable material                                                                      |
+| Generated cinematic clips          | `CREATOR_VIDEO_PROVIDER=fal`, `FAL_KEY`, `OPENAI_API_KEY`                                   | Silent Seedance 1.5 Pro and required frame review; exact quote and explicit cost approval come first                     |
+| Optional Runway video alternative  | `CREATOR_VIDEO_PROVIDER=runway`, `RUNWAYML_API_SECRET`, `OPENAI_API_KEY`                    | Gen-4.5 selected explicitly; no automatic paid provider fallback                                                         |
+| Shared app spending limit          | `CREATOR_BUDGET_LIMIT_USD=30.00`                                                            | Durable reservations across selected video, OpenAI and Firecrawl paths; not an account-wide provider invoice limit       |
+| Instagram account connection       | No current setting                                                                          | Direct Instagram OAuth/API connection is future work; current paths use indexed public links or validated public imports |
 
 There is no separate LangChain API key for the harness. No Amazon, Peri, or Arlequin API is needed for the current implementation. AWS/Bedrock would require a new adapter and AWS configuration. ChatOverflow has its own optional coding-agent setup and sharing choices; installing it is a separate action. [Official provider references and access limits](docs/social-provider-research.md).
 
@@ -138,7 +140,7 @@ The API runs at **http://127.0.0.1:3001** and the React app at **http://127.0.0.
 
 Photo editor output is a real **1080 × 1920 H264 MP4 at 24 fps**, composed from supplied photos, approved timing, and text overlays. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This is a local, single-workspace service without user accounts.
 
-The creator studio uses `FIRECRAWL_API_KEY` for bounded professional, X, TikTok, and Instagram public discovery. The optional configured Deep Agents harness reviews retrieved evidence. Generated clips require `RUNWAYML_API_SECRET` and `OPENAI_API_KEY` for Runway Gen-4.5 and sampled-frame review. Model requests start only after explicit approval of the current script, shot plan, and paid attempt limit. Missing credentials remain visible; they never become fabricated search results or generated clips. External film references remain links and creative context, separate from the creator's facts and uploaded media.
+The creator studio uses `FIRECRAWL_API_KEY` for bounded professional, X, TikTok, and Instagram public discovery. The optional configured Deep Agents harness reviews retrieved evidence. Generated clips require the selected video provider key (`FAL_KEY` by default) and `OPENAI_API_KEY` for sampled-frame review. Paid clip generation starts only after explicit approval of the current script, shot plan and cost quote; research and drafting have separate bounded ledger reservations. Missing credentials remain visible; they never become fabricated search results or generated clips. External film references remain links and creative context, separate from the creator's facts and uploaded media.
 
 ## Workspace boundaries
 
