@@ -996,6 +996,14 @@
 .creator-inspector label + label {
   margin-top: 20px;
 }
+.creator-script-moment {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #e4e4e4;
+}
+.creator-script-moment .creator-text-button {
+  margin-top: 12px;
+}
 .creator-inspector :is(input, textarea, select) {
   margin-top: 8px;
   font-size: 12px;

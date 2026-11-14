@@ -38,6 +38,7 @@ import { rovingIndex } from './keyboard';
 import {
   approvalCurrent,
   clipPreviewIsCurrent,
+  combineScriptMoments,
   isActiveJob,
   nextQuestion,
   outputIsCurrent,
@@ -1468,9 +1469,18 @@ function ScriptInspector({
         <p>The script appears after you prepare the proposal.</p>
       </div>
     );
+  const segments = c.script.segments;
+  const totalSeconds = segments.reduce((total, segment) => total + segment.seconds, 0);
+  const targetSeconds = c.state?.workflow.brief.duration;
   return (
     <div className="creator-script-inspector">
       <h3>The words behind it.</h3>
+      <p className="creator-fineprint" role="status">
+        {totalSeconds} seconds in this script
+        {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.
+        {c.capabilities &&
+          ` Each moment needs at least ${c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
+      </p>
       <fieldset disabled={disabled}>
         <label>
           Opening hook
@@ -1484,50 +1494,86 @@ function ScriptInspector({
             }
           />
         </label>
-        {c.script.segments.map((segment, index) => (
-          <label key={segment.id}>
-            Moment {index + 1} / {segment.seconds}s
-            <textarea
-              value={segment.text}
-              maxLength={2000}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id ? { ...item, text: event.target.value } : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-            <input
-              ref={index === 0 ? timingInputRef : undefined}
-              aria-label={`Seconds for script moment ${index + 1}`}
-              type="number"
-              min={1}
-              max={60}
-              step={1}
-              value={segment.seconds}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id
-                            ? { ...item, seconds: Number(event.target.value) }
-                            : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-          </label>
-        ))}
+        {segments.map((segment, index) => {
+          const combination = combineScriptMoments(segments, index);
+          const hasNext = index < segments.length - 1;
+          return (
+            <div className="creator-script-moment" key={segment.id}>
+              <label>
+                Moment {index + 1}
+                <textarea
+                  value={segment.text}
+                  maxLength={2000}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id ? { ...item, text: event.target.value } : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Duration (seconds)
+                <input
+                  ref={index === 0 ? timingInputRef : undefined}
+                  aria-label={`Seconds for script moment ${index + 1}`}
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={segment.seconds}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id
+                                ? { ...item, seconds: Number(event.target.value) }
+                                : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              {hasNext && (
+                <>
+                  <button
+                    type="button"
+                    className="creator-text-button"
+                    disabled={!combination.segments}
+                    aria-label={`Combine moment ${index + 1} with moment ${index + 2}`}
+                    aria-describedby={
+                      combination.reason ? `creator-combine-reason-${segment.id}` : undefined
+                    }
+                    onClick={() =>
+                      c.setScript((previous) => {
+                        if (!previous) return previous;
+                        const next = combineScriptMoments(previous.segments, index);
+                        return next.segments ? { ...previous, segments: next.segments } : previous;
+                      })
+                    }
+                  >
+                    Combine with next moment
+                  </button>
+                  {combination.reason && (
+                    <p className="creator-fineprint" id={`creator-combine-reason-${segment.id}`}>
+                      {combination.reason}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </fieldset>
       <button
         className="creator-primary-button"
@@ -1537,7 +1583,8 @@ function ScriptInspector({
         Save script <Check size={16} />
       </button>
       <p className="creator-fineprint">
-        After a script edit, prepare again to rebuild the shot plan.
+        Combining keeps both texts and adds their durations. Adjust timing to keep your chosen film
+        length, save, then prepare again to rebuild the shot plan.
       </p>
     </div>
   );
