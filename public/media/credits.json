@@ -1,0 +1,133 @@
+{
+  "collection": "yap cinematic frontend demo stills",
+  "note": "Illustrative demo imagery, not product-generated output. Source images downloaded from Unsplash's public image CDN. Photographer names have not been retrieved and are not inferred.",
+  "images": [
+    {
+      "file": "reel-city.jpg",
+      "alt": "New York skyline across the water in cool evening light",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1514565131-fce0801e5785?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-coast.jpg",
+      "alt": "Colorful coastal buildings above the sea in Cinque Terre",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1516483638261-f4dbaf036963?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-ocean.jpg",
+      "alt": "A low close-up of rolling blue ocean waves",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-forest.jpg",
+      "alt": "A still lake reflecting evergreen forest and mountains",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1473448912268-2022ce9509d8?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-mountains.jpg",
+      "alt": "Misty green mountain cliffs under a breaking sunset",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-cosmos.jpg",
+      "alt": "A sailboat beneath stars reflected in still water",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-skyline.jpg",
+      "alt": "New York rooftops and towers in low evening sun",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-desert.jpg",
+      "alt": "A road winding into red desert mountains",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1100&h=720&q=82&fm=jpg",
+      "photographer": null,
+      "width": 1100,
+      "height": 720
+    },
+    {
+      "file": "reel-fashion.jpg",
+      "alt": "A fashion model in a yellow outfit on a basketball court",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=800&h=1422&q=82&fm=jpg",
+      "photographer": null,
+      "width": 800,
+      "height": 1422
+    },
+    {
+      "file": "reel-portrait.jpg",
+      "alt": "An editorial portrait illuminated in blue and violet",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=800&h=1422&q=82&fm=jpg",
+      "photographer": null,
+      "width": 800,
+      "height": 1422
+    },
+    {
+      "file": "reel-night.jpg",
+      "alt": "A city street illuminated with blue and magenta neon",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1519608487953-e999c86e7455?auto=format&fit=crop&w=800&h=1422&q=82&fm=jpg",
+      "photographer": null,
+      "width": 800,
+      "height": 1422
+    },
+    {
+      "file": "reel-green.jpg",
+      "alt": "Sunlight breaking above distant mountain ridges",
+      "source": "Unsplash",
+      "sourceUrl": "https://images.unsplash.com/photo-1500534623283-312aade485b7?auto=format&fit=crop&w=800&h=1422&q=82&fm=jpg",
+      "photographer": null,
+      "width": 800,
+      "height": 1422
+    }
+  ],
+  "videos": [
+    {
+      "file": "reel-demo.mp4",
+      "poster": "reel-demo-poster.jpg",
+      "title": "Night tour through the streets of a big city",
+      "source": "Mixkit",
+      "contributorProfile": "https://mixkit.co/@edgarfernandez/",
+      "sourcePage": "https://mixkit.co/free-stock-video/night-tour-through-the-streets-of-a-big-city-40747/",
+      "sourceUrl": "https://assets.mixkit.co/videos/40747/40747-720.mp4",
+      "posterSourceUrl": "https://assets.mixkit.co/videos/40747/40747-thumb-720-0.jpg",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact clip page states commercial or personal use under the Mixkit Stock Video Free License. License page lists commercial projects, online marketing, social posts and modification. Illustrative demo footage; not created by yap.",
+      "durationSeconds": 10.177,
+      "frameRate": 24,
+      "width": 720,
+      "height": 1280
+    }
+  ]
+}
