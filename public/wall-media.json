@@ -1,16 +1,16 @@
 {
   "clips": [
     {
-      "id": "wall-earbuds",
-      "title": "Designed to disappear",
-      "category": "Product reference",
-      "video": "/media/wall-earbuds.mp4",
-      "poster": "/media/wall-earbuds.jpg",
-      "sourceUrl": "https://www.apple.com/airpods-pro/",
-      "credit": "Apple / product reference",
+      "id": "wall-audio",
+      "title": "Find your frequency",
+      "category": "Audio",
+      "video": "/media/wall-audio.mp4",
+      "poster": "/media/wall-audio.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/close-up-view-of-man-dancing-with-headphones-51764/",
+      "credit": "Mixkit / @mixkit",
       "duration": 6,
-      "caption": "Product reference from Apple",
-      "screen": "Designed to disappear"
+      "caption": "Headphone study",
+      "screen": "Find your frequency"
     },
     {
       "id": "wall-timepiece",
@@ -85,16 +85,16 @@
       "screen": "Make your mark"
     },
     {
-      "id": "wall-jacquemus",
-      "title": "Le Bambino takes Paris",
-      "category": "Fashion",
-      "video": "/media/wall-jacquemus.mp4",
-      "poster": "/media/wall-jacquemus.jpg",
-      "sourceUrl": "https://www.instagram.com/reel/CqqCfr-uovy/",
-      "credit": "Jacquemus / Ian Padgham / Origiful",
+      "id": "wall-camera",
+      "title": "A closer look",
+      "category": "Camera",
+      "video": "/media/wall-camera.mp4",
+      "poster": "/media/wall-camera.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/lens-focus-in-motion-2377/",
+      "credit": "Mixkit / @rubenvelasco",
       "duration": 6,
-      "caption": "Original branded campaign reference",
-      "screen": "Takes Paris"
+      "caption": "Camera study",
+      "screen": "A closer look"
     }
   ]
 }
