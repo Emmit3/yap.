@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./creator": {
+      "types": "./src/creator.ts",
+      "import": "./dist/creator.js"
+    },
     "./social": {
       "types": "./src/social.ts",
       "import": "./dist/social.js"

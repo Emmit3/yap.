@@ -686,6 +686,45 @@ h2 {
   text-shadow: 0 2px 15px #0003;
   overflow-wrap: anywhere;
 }
+.phone-create {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 100%;
+  margin-top: 16px;
+  padding: 8px 12px;
+  border: 1px solid #ffffff80;
+  border-radius: 8px;
+  color: #181818;
+  background: #fff;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  text-align: left;
+  transition:
+    transform 300ms var(--ease),
+    opacity 300ms var(--ease);
+}
+.phone-create[hidden] {
+  display: none;
+}
+.phone-create:hover {
+  transform: translateY(-2px);
+}
+.phone-create:active {
+  transform: translateY(1px);
+}
+.phone-create:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 4px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .phone-create:hover,
+  .phone-create:active {
+    transform: none;
+  }
+}
 .reel-side-actions {
   position: absolute;
   right: 10px;

@@ -19,6 +19,8 @@ import { ProjectEditor } from './ProjectEditor';
 import { LandingPage } from './landing/LandingPage';
 import { PromoWorkspace } from './promo/PromoWorkspace';
 import { PromoLibrary } from './promo/PromoLibrary';
+import { CreatorWorkspace } from './creator/CreatorWorkspace';
+import { CreatorLibrary } from './CreatorLibrary';
 import SocialWorkspace from './social/SocialWorkspace';
 import {
   readPendingResearch,
@@ -101,19 +103,23 @@ export function App() {
     document.title =
       route === '/'
         ? 'yap. — good ideas, made REEL'
-        : route === '/promos/new'
-          ? 'New photo promo — Yap'
-          : route.startsWith('/promos/')
-            ? 'Your photo promo — Yap'
-            : route === '/promos'
-              ? 'Your promos — Yap'
-              : route === '/social'
-                ? 'Social research — Yap'
-                : route === '/new'
-                  ? 'New project — Yap'
-                  : route.startsWith('/projects/')
-                    ? 'Your studio — Yap'
-                    : 'Your projects — Yap';
+        : route === '/films'
+          ? 'Your films — Yap'
+          : route === '/create' || route.startsWith('/create/')
+            ? 'Create your film — Yap'
+            : route === '/promos/new'
+              ? 'New photo promo — Yap'
+              : route.startsWith('/promos/')
+                ? 'Your photo promo — Yap'
+                : route === '/promos'
+                  ? 'Your promos — Yap'
+                  : route === '/social'
+                    ? 'Social research — Yap'
+                    : route === '/new'
+                      ? 'New project — Yap'
+                      : route.startsWith('/projects/')
+                        ? 'Your studio — Yap'
+                        : 'Your projects — Yap';
   }, [route]);
   useEffect(() => {
     if (route !== '/') document.getElementById('main')?.focus();
@@ -176,10 +182,11 @@ export function App() {
   }
   const projectId = /^\/projects\/([a-f0-9-]+)$/.exec(route)?.[1];
   const promoId = /^\/promos\/([a-f0-9-]+)$/.exec(route)?.[1];
+  const creatorId = /^\/create\/([a-f0-9-]+)$/.exec(route)?.[1];
   if (route === '/') {
     return (
       <LandingPage
-        onEnterStudio={() => navigate('/promos/new')}
+        onEnterStudio={() => navigate('/create')}
         onOpenSocial={() => navigate('/social')}
       />
     );
@@ -215,6 +222,22 @@ export function App() {
         <nav className="side-nav" aria-label="Workspace">
           <span className="nav-label">WORKSPACE</span>
           <button
+            className={route === '/films' ? 'nav-item current' : 'nav-item'}
+            onClick={() => navigate('/films')}
+            aria-current={route === '/films' ? 'page' : undefined}
+          >
+            <FilmSlate size={20} />
+            Your films
+          </button>
+          <button
+            className={route === '/create' || creatorId ? 'nav-item current' : 'nav-item'}
+            onClick={() => navigate('/create')}
+            aria-current={route === '/create' || creatorId ? 'page' : undefined}
+          >
+            <Plus size={20} />
+            New film
+          </button>
+          <button
             className={
               route.startsWith('/promos') && route !== '/promos/new'
                 ? 'nav-item current'
@@ -224,7 +247,7 @@ export function App() {
             aria-current={route === '/promos' ? 'page' : undefined}
           >
             <FilmSlate size={20} />
-            Your promos
+            Photo promos
           </button>
           <button
             className={route === '/promos/new' ? 'nav-item current' : 'nav-item'}
@@ -232,7 +255,7 @@ export function App() {
             aria-current={route === '/promos/new' ? 'page' : undefined}
           >
             <Plus size={20} />
-            New promo
+            Photo editor
           </button>
           <button
             className={route === '/social' ? 'nav-item current' : 'nav-item'}
@@ -277,28 +300,36 @@ export function App() {
             <span>Workspace</span>
             <span>/</span>
             <strong>
-              {route === '/promos/new'
-                ? 'New photo promo'
-                : promoId
-                  ? 'Review and render'
-                  : route === '/promos'
-                    ? 'Your promos'
-                    : route === '/social'
-                      ? 'Social research'
-                      : route === '/new'
-                        ? 'New script project'
-                        : projectId
-                          ? 'Script studio'
-                          : 'Script projects'}
+              {route === '/films'
+                ? 'Your films'
+                : route === '/create' || creatorId
+                  ? 'Your film studio'
+                  : route === '/promos/new'
+                    ? 'New photo promo'
+                    : promoId
+                      ? 'Review and render'
+                      : route === '/promos'
+                        ? 'Your promos'
+                        : route === '/social'
+                          ? 'Social research'
+                          : route === '/new'
+                            ? 'New script project'
+                            : projectId
+                              ? 'Script studio'
+                              : 'Script projects'}
             </strong>
           </div>
           <div className="topbar-note">
-            <span className="coral-dot" /> Photos → story → reel
+            <span className="coral-dot" /> An idea → a film
           </div>
         </header>
         <main
           id="main"
-          className={route.startsWith('/promos') ? 'main-content promo-main' : 'main-content'}
+          className={
+            route.startsWith('/promos') || route.startsWith('/create')
+              ? 'main-content promo-main'
+              : 'main-content'
+          }
           tabIndex={-1}
         >
           {pendingRoute && (
@@ -312,14 +343,14 @@ export function App() {
               </button>
             </div>
           )}
-          {route === '/promos/new' && research && (
+          {(route === '/promos/new' || route === '/create') && research && (
             <aside className="research-context-notice" aria-label="Attached creative research">
               <div>
                 <strong>Research context: {research.topic}</strong>
                 <p>
                   Creative context from {research.sourceUrls.length} attributed sources is selected.
-                  Add your own business facts and photos below. Research does not approve claims or
-                  start a render.
+                  Add your own facts and media below. Research does not approve claims or start a
+                  render.
                 </p>
               </div>
               <button
@@ -337,10 +368,29 @@ export function App() {
               onUseResearch={(handoff) => {
                 if (dirtyRef.current)
                   throw new Error(
-                    'Save or discard your open note before sending research to a promo.',
+                    'Save or discard your open research edits before sending them to the studio.',
                   );
                 setResearch(validateResearchContext(handoff));
-                navigate('/promos/new');
+                navigate('/create');
+              }}
+            />
+          ) : route === '/films' ? (
+            <CreatorLibrary
+              onCreate={() => navigate('/create')}
+              onOpen={(id) => navigate(`/create/${id}`)}
+            />
+          ) : route === '/create' || creatorId ? (
+            <CreatorWorkspace
+              key={creatorId ?? 'new-creator'}
+              id={creatorId}
+              onBack={() => navigate('/films')}
+              onDirty={changeDirty}
+              initialResearch={creatorId ? undefined : research}
+              onOpenPromo={(id) => navigate(`/promos/${id}`)}
+              onCreated={(id) => {
+                setResearch(undefined);
+                changeDirty(false);
+                navigate(`/create/${id}`, true);
               }}
             />
           ) : route === '/promos' ? (
@@ -434,8 +484,8 @@ export function App() {
             </span>
             <h2 id="about-title">An idea deserves a first take.</h2>
             <p>
-              Bring your business idea and photos, review an editable proposal, then approve it to
-              render a portrait MP4 and caption.
+              Bring an idea, a product, a place, a public project link, or your own photos. Develop
+              the direction in Guided view and review the script and shots in Director view.
             </p>
             <p>
               Guided proposals use structured templates and your supplied facts. The optional model
@@ -443,9 +493,9 @@ export function App() {
               any video is rendered.
             </p>
             <p>
-              Videos use your uploaded photos and are silent. Nothing is posted to social accounts
-              automatically. Your connected Yap server saves the work; this local version has no
-              sign in or team accounts.
+              The photo promo renderer makes silent videos from your uploaded photos. Generated
+              clips use the configured video provider after you review the current plan and its
+              generation limits. Nothing is posted to social accounts automatically.
             </p>
             <button className="button button-secondary" onClick={() => setAbout(false)}>
               Back to creating <ArrowRight size={18} />

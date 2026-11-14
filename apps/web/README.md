@@ -16,7 +16,9 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:3001`. For a separately 
 
 ## Routes and behavior
 
-- `/`: the cinematic five-row video wall, phone reveal, and filmstrip. Its primary action opens the connected photo promo studio.
+- `/`: the cinematic five-row video wall, phone reveal, and filmstrip. Its phone and primary action open the connected creator studio.
+- `#/create`, `#/create/:id`: Guided and Director views of one saved creation. Add media or text, answer intent questions while research runs, select cited external references, edit the script and shot plan, explicitly approve the generation limit, and inspect actual clip audits and output.
+- `#/films`: saved creator sessions, including their shared workflow and production history.
 - `#/promos`: searchable saved promos.
 - `#/promos/new`: the creator's idea, own business facts, and photos.
 - `#/promos/:id`: editable copy, timing, scenes, photo choices, refinement questions, explicit approval, render status, MP4 and caption.
@@ -25,11 +27,13 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:3001`. For a separately 
 
 The photo promo path uploads raw image files sequentially using the latest returned workflow version. Preparation creates a proposal and never approves it. Saving content invalidates affected approvals. The creator must review the saved facts, copy, timings, and photos, then explicitly choose **Approve and render video**.
 
-Queued/running renders are polled until a terminal status. Stopping status checks or leaving the editor does not cancel the server job; reopening the saved promo resumes it. Completed output is shown as the current promo only when its workflow version matches. Videos are silent portrait MP4s made from supplied photos, with a caption for manual posting. The interface does not claim to generate new footage or post to accounts.
+Queued/running renders are polled until a terminal status. Stopping status checks or leaving the editor does not cancel the server job; reopening the saved promo resumes it. Completed output is shown as the current promo only when its workflow version matches. Photo editor videos are silent portrait MP4s made from supplied photos. The separate creator studio generates new clips only through the configured server provider after explicit review. Both paths keep publishing manual.
 
 ## Reviewed research handoff
 
-`SocialWorkspace.onUseResearch` provides a reviewed `SocialHandoff`. The shell validates its shared schema and 48 KiB serialized limit, retains it in session storage where available, and opens a new promo. The creator still supplies the business request, facts, and photos. The client sends research as a separate `research` field; it is never silently copied into product claims. Saved research retains source URLs, excerpts, dates, and cautions. No handoff calls approval or rendering.
+`SocialWorkspace.onUseResearch` provides a reviewed `SocialHandoff`. The shell validates its shared schema and 48 KiB serialized limit, retains it in session storage where available, and opens the creator studio. The creator still supplies their own request, facts, and media. The client sends research as a separate `research` field; it is never silently copied into product claims. Saved research retains source URLs, excerpts, dates, and cautions. No handoff calls approval or rendering.
+
+The studio also loads the separate verified campaign catalog from `/showcase/film-references.json` when available. Selected IDs, original case/watch URLs, and creative techniques are saved as `externalReferences`. Campaign videos are not downloaded, rehosted, or represented as creator-owned output. Guided and Director share session state; changing views does not duplicate the project or discard local edits.
 
 Unsaved creator changes and social notes use the shared navigation guard. A version conflict preserves a downloadable local backup and requires explicit comparison/recovery. Unknown network outcomes are not automatically replayed.
 
@@ -37,6 +41,7 @@ Unsaved creator changes and social notes use the shared navigation guard. A vers
 
 - `src/App.tsx`, `src/shell.css`, `src/research-context.ts`: shared routes, navigation guards, and research handoff.
 - `src/landing/*`: isolated cinematic landing wrapper and checked iframe message bridge.
+- `src/creator/*`, `src/CreatorLibrary.tsx`: shared creation session, guided interview, director review, reference board, generated-clip activity and saved film library.
 - `src/promo/*`: photo promo API client, creator editor, library, and scoped monochrome styles.
 - `src/social/*`: exclusively maintained by the social module owner; mounted through its public props.
 - `src/ProjectLibrary.tsx`, `src/NewProject.tsx`, `src/ProjectEditor.tsx`, `src/api.ts`: compatible legacy script planner.
