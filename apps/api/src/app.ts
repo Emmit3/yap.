@@ -13,6 +13,8 @@ import { ApiError, StorageError } from './errors.js';
 import { ProjectRepository } from './repository.js';
 import { generateGuidedDraft } from './generation.js';
 import { exportFilename, exportMarkdown } from './export.js';
+import { createSocialRouter } from './social-router.js';
+import type { SocialProviderConfig } from './social-providers.js';
 import { createWorkflowRouter } from './workflow-router.js';
 import type { VideoWorkflowProvider, WorkflowProviderConfig } from './workflow-provider.js';
 import type { PromoRenderer } from './video-render-queue.js';
@@ -27,6 +29,9 @@ export interface AppOptions {
   workflowProvider?: VideoWorkflowProvider;
   promoRenderer?: PromoRenderer;
   onError?: (error: unknown) => void;
+  socialDataFile?: string;
+  socialProviderConfig?: SocialProviderConfig;
+  socialFetch?: typeof globalThis.fetch;
 }
 
 const briefKeys: Array<keyof ProjectBrief> = [
@@ -123,9 +128,12 @@ export async function createApp(options: AppOptions = {}) {
     const id = projectId(request);
     const changes = validate(updateProjectSchema, request.body);
     const project = await repository.update(id, (previous) => {
-      const briefChanged = briefKeys.some(
-        (key) => changes[key] !== undefined && changes[key] !== previous[key],
-      );
+      const researchChanged =
+        changes.research !== undefined &&
+        JSON.stringify(changes.research) !== JSON.stringify(previous.research);
+      const briefChanged =
+        researchChanged ||
+        briefKeys.some((key) => changes[key] !== undefined && changes[key] !== previous[key]);
       if (briefChanged && changes.draft) {
         throw new ApiError(
           409,
@@ -211,6 +219,15 @@ export async function createApp(options: AppOptions = {}) {
     await repository.delete(projectId(request));
     response.status(204).end();
   });
+  app.use(
+    '/api/social',
+    await createSocialRouter({
+      dataFile:
+        options.socialDataFile ?? resolve(dirname(projectDataFile), 'social-investigations.json'),
+      config: options.socialProviderConfig,
+      fetch: options.socialFetch,
+    }),
+  );
   app.use((_request, _response, next) =>
     next(new ApiError(404, 'NOT_FOUND', 'This API route could not be found.')),
   );

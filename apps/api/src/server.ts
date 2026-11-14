@@ -11,6 +11,9 @@ if (!Number.isInteger(port) || port < 1 || port > 65535)
 const app = await createApp({
   dataFile: resolve(process.env.API_DATA_FILE ?? 'data/projects.json'),
   corsOrigin: process.env.CORS_ORIGIN ?? 'http://127.0.0.1:5173',
+  ...(process.env.SOCIAL_DATA_FILE
+    ? { socialDataFile: resolve(process.env.SOCIAL_DATA_FILE) }
+    : {}),
   workflowDataFile: process.env.WORKFLOW_DATA_FILE,
   assetsDirectory: process.env.WORKFLOW_ASSETS_DIRECTORY,
   rendersDirectory: process.env.WORKFLOW_RENDERS_DIRECTORY,

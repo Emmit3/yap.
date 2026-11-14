@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { socialHandoffSchema } from './social.js';
 
 export const platformSchema = z.enum(['instagram', 'tiktok', 'youtube']);
 export const toneSchema = z.enum(['conversational', 'educational', 'bold']);
@@ -23,6 +24,7 @@ export const createProjectSchema = projectBriefSchema.extend({
   duration: durationSchema.default(30),
   tone: toneSchema.default('conversational'),
   goal: goalSchema.default('educate'),
+  research: socialHandoffSchema.optional(),
 });
 
 export const shotSchema = z
@@ -54,6 +56,7 @@ export const projectSchema = projectBriefSchema.extend({
   id: z.string().uuid(),
   status: statusSchema,
   draft: videoDraftSchema.nullable(),
+  research: socialHandoffSchema.optional(),
   createdAt: z.iso.datetime(),
   updatedAt: z.iso.datetime(),
 });
@@ -63,6 +66,7 @@ export const updateProjectSchema = projectBriefSchema
   .extend({
     status: statusSchema.optional(),
     draft: draftContentSchema.optional(),
+    research: socialHandoffSchema.optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, 'Provide at least one field to update.');

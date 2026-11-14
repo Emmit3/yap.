@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./social": {
+      "types": "./src/social.ts",
+      "import": "./dist/social.js"
+    },
     "./render": {
       "types": "./src/render.ts",
       "import": "./dist/render.js"
