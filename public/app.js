@@ -1,4 +1,14 @@
-import { clamp, lerp, phase, sceneState, tilePose, loadPose, wallLayout } from './motion.js';
+import {
+  clamp,
+  lerp,
+  phase,
+  sceneState,
+  tilePose,
+  loadPose,
+  wallLayout,
+  wallCell,
+} from './motion.js';
+import { uniqueReels, reelSelection } from './catalog.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -20,6 +30,9 @@ const video = $('#reel-video');
 const poster = $('#phone-poster');
 const film = $('#film-dialog');
 const filmVideo = $('#film-video');
+// The selected entry owns its media; HTML sample sources must not leak into still previews.
+video.querySelectorAll('source').forEach((source) => source.remove());
+filmVideo.querySelectorAll('source').forEach((source) => source.remove());
 const studio = $('#studio-dialog');
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
 const headlineLines = $$('.intro-line > span');
@@ -118,28 +131,24 @@ const fallbackReels = [
 const media = await fetch('./wall-media.json')
   .then((response) => (response.ok ? response.json() : null))
   .catch(() => null);
-const localMediaUrl = (value) =>
-  typeof value === 'string' && value.startsWith('/media/')
-    ? new URL(`.${value}`, import.meta.url).href
-    : value;
-const reels = media?.clips?.length
-  ? media.clips.map((reel) => ({
-      ...reel,
-      poster: localMediaUrl(reel.poster),
-      video: localMediaUrl(reel.video),
-    }))
-  : fallbackReels.map((reel) => ({
-      ...reel,
-      poster: `./media/reel-${reel.file}.jpg`,
-      video: reel.video ? './media/reel-demo.mp4' : null,
-    }));
+const catalog = uniqueReels(media?.clips, import.meta.url);
+const reels = catalog.length
+  ? catalog
+  : uniqueReels(
+      fallbackReels.map((reel) => ({
+        ...reel,
+        poster: `./media/reel-${reel.file}.jpg`,
+        video: reel.video ? './media/reel-demo.mp4' : null,
+      })),
+      import.meta.url,
+    );
 
 let reduced = motionPreference.matches;
 let width = innerWidth;
 let height = innerHeight;
 let travel = 1;
 let sceneTop = 0;
-let layout = wallLayout(width, height);
+let layout = wallLayout(width, height, reels.length);
 let count = layout.count;
 let selected = Math.floor(count / 2);
 let selectedSmooth = selected;
@@ -176,7 +185,7 @@ function buildWall() {
   selectedSmooth = selected;
   wall.replaceChildren();
   tiles = Array.from({ length: count }, (_, index) => {
-    const reel = reels[index % reels.length];
+    const reel = reels[index];
     const button = document.createElement('button');
     button.className = 'reel-plane';
     button.setAttribute('aria-label', `Preview ${reel.title}`);
@@ -209,7 +218,7 @@ function buildWall() {
         tile: button,
         src: reel.video,
         index,
-        row: Math.floor(index / layout.columns),
+        row: wallCell(index, layout).row,
         active: false,
         failed: false,
         visible: false,
@@ -246,19 +255,19 @@ function buildWall() {
 }
 
 function measure() {
-  const oldColumns = layout.columns;
+  const oldCount = layout.count;
   width = innerWidth;
   height = stage.clientHeight;
-  layout = wallLayout(width, height);
+  layout = wallLayout(width, height, reels.length);
   sceneTop = experience.offsetTop;
   travel = Math.max(1, experience.offsetHeight - height);
   wall.style.perspective = `${layout.perspective}px`;
-  if (oldColumns !== layout.columns) {
+  if (oldCount !== layout.count) {
     buildWall();
     updateReel(false);
   }
   tiles.forEach((tile, index) => {
-    const pose = tilePose(index, selected, progress, width, height);
+    const pose = tilePose(index, selected, progress, width, height, 0, reels.length);
     tile.style.width = `${pose.width}px`;
     tile.style.height = `${pose.height}px`;
   });
@@ -298,8 +307,15 @@ function draw(time) {
   const entrance = phase(elapsed, 0, 1.6);
   const drift = reduced ? 0 : ambient;
   tiles.forEach((tile, index) => {
-    const pose = tilePose(index, selectedSmooth, progress, width, height, drift);
-    const load = loadPose(elapsed, index, width, height, Math.max(progress, targetProgress));
+    const pose = tilePose(index, selectedSmooth, progress, width, height, drift, reels.length);
+    const load = loadPose(
+      elapsed,
+      index,
+      width,
+      height,
+      Math.max(progress, targetProgress),
+      reels.length,
+    );
     tile.style.transform = `translate(-50%,-50%) translate3d(${(pose.x + load.x).toFixed(2)}px,${(pose.y + load.y).toFixed(2)}px,${(pose.z + load.z).toFixed(2)}px) rotateX(${load.pitch.toFixed(2)}deg) rotateY(${(pose.yaw + load.yaw).toFixed(2)}deg) rotateZ(${load.roll.toFixed(2)}deg) scale(${(pose.scale * load.scale).toFixed(4)})`;
     tile.style.opacity = String(pose.opacity * load.opacity);
     tile.style.zIndex = String(100 - Math.round(Math.abs(index - selectedSmooth)));
@@ -422,7 +438,7 @@ function syncWallPlayback(time = performance.now(), force = false) {
 }
 
 function updatePlayback() {
-  const data = reels[selected % reels.length];
+  const data = reelSelection(reels, selected, count).reel;
   const token = ++phonePlayToken;
   const shouldPlay =
     data.video &&
@@ -463,7 +479,8 @@ function updatePlayback() {
 }
 
 function updateReel(animate = true) {
-  const data = reels[selected % reels.length];
+  const selection = reelSelection(reels, selected, count);
+  const data = selection.reel;
   const apply = () => {
     poster.src = data.poster;
     video.poster = data.poster;
@@ -475,17 +492,23 @@ function updateReel(animate = true) {
     $('#reel-credit').textContent = data.credit || 'Illustrative sample footage';
     $('.reel-tiny').textContent = customIdea
       ? 'YOUR IDEA · CONCEPT PREVIEW'
-      : 'CREATIVE FILM REFERENCE';
+      : data.video
+        ? 'CREATIVE FILM REFERENCE'
+        : 'PHOTO STUDY';
+    video.setAttribute(
+      'aria-label',
+      `${data.video ? 'Film reference' : 'Photo study'}: ${data.title}`,
+    );
     $('#active-title').textContent = data.title;
     $('#active-category').textContent = data.category;
     $('#reel-counter').textContent =
-      `${String((selected % reels.length) + 1).padStart(2, '0')} / ${reels.length}`;
+      `${String(selection.index + 1).padStart(2, '0')} / ${selection.count}`;
     tiles.forEach((tile, i) => {
       tile.classList.toggle('is-selected', i === selected);
       tile.setAttribute('aria-pressed', String(i === selected));
     });
-    $('#previous-reel').disabled = selected === 0;
-    $('#next-reel').disabled = selected === count - 1;
+    $('#previous-reel').disabled = !selection.hasPrevious;
+    $('#next-reel').disabled = !selection.hasNext;
     if (data.video && video.getAttribute('src') !== data.video) {
       video.pause();
       video.src = data.video;
@@ -493,6 +516,11 @@ function updateReel(animate = true) {
     }
     if (data.video) {
       video.currentTime = 0;
+      hasVideoFrame = false;
+    } else {
+      video.pause();
+      video.removeAttribute('src');
+      video.load();
       hasVideoFrame = false;
     }
     lastVideoSync = -Infinity;
@@ -679,7 +707,12 @@ $('#idea-form').addEventListener('submit', (event) => {
     return;
   }
   $('#idea-input').setCustomValidity('');
-  selected = Number(new FormData(event.currentTarget).get('mood'));
+  selected = reelSelection(
+    reels,
+    Number(new FormData(event.currentTarget).get('mood')),
+    count,
+  ).index;
+  selectedSmooth = selected;
   customIdea = input.length > 64 ? `${input.slice(0, 61).trim()}…` : input;
   updateReel(false);
   studio.close();
@@ -688,13 +721,18 @@ $('#idea-form').addEventListener('submit', (event) => {
 });
 $('#idea-input').addEventListener('input', () => $('#idea-input').setCustomValidity(''));
 $('#watch-film').addEventListener('click', () => {
-  const data = reels[selected % reels.length];
-  filmVideo.src = data.video || './media/reel-demo.mp4';
+  const data = reelSelection(reels, selected, count).reel;
+  filmVideo.pause();
+  if (data.video) filmVideo.src = data.video;
+  else filmVideo.removeAttribute('src');
   filmVideo.poster = data.poster;
-  $('.film-dialog>span').textContent = `${data.title} · FILM REFERENCE`;
+  filmVideo.controls = Boolean(data.video);
+  filmVideo.load();
+  $('.film-dialog>span').textContent =
+    `${data.title} · ${data.video ? 'FILM REFERENCE' : 'IMAGE REFERENCE'}`;
   film.showModal();
   updatePlayback();
-  filmVideo.play().catch(() => {});
+  if (data.video) filmVideo.play().catch(() => {});
 });
 $$('[data-close-film]').forEach((button) => button.addEventListener('click', () => film.close()));
 film.addEventListener('close', () => {
