@@ -1,4 +1,5 @@
 const text = (value) => (typeof value === 'string' ? value.trim() : '');
+export const FILM_REFERENCE_LIMIT = 12;
 
 /** External destinations must be absolute HTTPS URLs without embedded credentials. */
 export function safeFilmUrl(value) {
@@ -146,7 +147,7 @@ function selectedFilmIds(films, selection) {
 /** The parent resolves these catalog IDs itself; no source text or URLs cross the bridge. */
 export function filmReferenceRequest(films, selection) {
   const ids = selectedFilmIds(films, selection);
-  if (!ids.length) return null;
+  if (!ids.length || ids.length > FILM_REFERENCE_LIMIT) return null;
   return typeof selection === 'string'
     ? { type: 'yap:film-reference', filmId: ids[0] }
     : { type: 'yap:film-shortlist', filmIds: ids };
@@ -155,7 +156,7 @@ export function filmReferenceRequest(films, selection) {
 /** A standalone page always links to the local creation route, never a supplied destination. */
 export function filmCreationHref(films, selection) {
   const ids = selectedFilmIds(films, selection);
-  if (!ids.length) return null;
+  if (!ids.length || ids.length > FILM_REFERENCE_LIMIT) return null;
   const query = new URLSearchParams();
   for (const id of ids) query.append('reference', id);
   return `/#/create?${query.toString()}`;

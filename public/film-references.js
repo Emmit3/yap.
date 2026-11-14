@@ -6,6 +6,7 @@ import {
   filmShortlistExport,
   filmReferenceRequest,
   filmCreationHref,
+  FILM_REFERENCE_LIMIT,
 } from './film-references-core.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -187,10 +188,13 @@ function populateOptions(select, field, label) {
 }
 function renderShortlist() {
   const films = catalog.films.filter((film) => shortlisted.has(film.id));
+  const exceedsLimit = films.length > FILM_REFERENCE_LIMIT;
   $('#fr-nav-count').textContent = String(films.length);
   $('#fr-shortlist-summary').textContent = films.length
-    ? `${films.length} ${films.length === 1 ? 'film' : 'films'} saved. Use the selection in your creative direction, or keep a copy of its source links.`
-    : 'Save films as you browse, then use their links and notes in your creative direction.';
+    ? exceedsLimit
+      ? `${films.length} films saved. ${shortlistLimitMessage(films.length)} Your full saved list can still be copied or downloaded.`
+      : `${films.length} ${films.length === 1 ? 'film' : 'films'} saved. Use up to ${FILM_REFERENCE_LIMIT} films in one creative direction, or keep a copy of their source links.`
+    : `Save up to ${FILM_REFERENCE_LIMIT} films, then use their links and notes in your creative direction.`;
   shortlistItems.replaceChildren(
     ...films.map((film) => {
       const item = node('li');
@@ -211,7 +215,14 @@ function renderShortlist() {
     }),
   );
   for (const id of ['#fr-use-shortlist', '#fr-copy', '#fr-download', '#fr-clear-shortlist'])
-    $(id).disabled = !films.length || (id === '#fr-copy' && copying);
+    $(id).disabled =
+      !films.length ||
+      (id === '#fr-use-shortlist' && exceedsLimit) ||
+      (id === '#fr-copy' && copying);
+}
+function shortlistLimitMessage(count) {
+  const removeCount = count - FILM_REFERENCE_LIMIT;
+  return `Use up to ${FILM_REFERENCE_LIMIT} films at a time. Remove ${removeCount} ${removeCount === 1 ? 'film' : 'films'} to use this shortlist.`;
 }
 function persistShortlist() {
   try {
@@ -225,7 +236,15 @@ function toggleShortlist(id) {
   const film = catalog.films.find((entry) => entry.id === id);
   if (!film) return;
   if (shortlisted.has(id)) shortlisted.delete(id);
-  else shortlisted.add(id);
+  else {
+    if (shortlisted.size >= FILM_REFERENCE_LIMIT) {
+      announce(
+        `Your shortlist already has ${shortlisted.size} films. Remove a film before adding another. The maximum is ${FILM_REFERENCE_LIMIT}.`,
+      );
+      return;
+    }
+    shortlisted.add(id);
+  }
   const persisted = persistShortlist();
   list.querySelectorAll('.fr-save').forEach((button) => {
     if (button.dataset.filmId === id) updateSaveButton(button, film);
@@ -364,6 +383,10 @@ $('#fr-clear-shortlist').addEventListener('click', () => {
 });
 $('#fr-use-shortlist').addEventListener('click', () => {
   const ids = [...shortlisted];
+  if (ids.length > FILM_REFERENCE_LIMIT) {
+    announce(shortlistLimitMessage(ids.length));
+    return;
+  }
   const href = filmCreationHref(catalog.films, ids);
   if (!href) return;
   if (!useSelection(ids)) window.location.assign(href);

@@ -130,13 +130,19 @@ class Element {
         this.defaultPrevented = true;
       },
     };
+    if (this.disabled) return event;
     for (let target = this; target; target = target.parentElement)
       for (const listener of target.listeners.get('click') ?? []) await listener(event);
     return event;
   }
 }
 
-async function room({ embedded = true, stored = null, failLoad = false } = {}) {
+async function room({
+  embedded = true,
+  stored = null,
+  failLoad = false,
+  films = [film('one'), film('two')],
+} = {}) {
   const html = await readFile(new URL('../public/film-references.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('../public/film-references.js', import.meta.url), 'utf8');
   const document = {
@@ -161,11 +167,15 @@ async function room({ embedded = true, stored = null, failLoad = false } = {}) {
     document.elements.set(element.id, element);
   }
   const messages = [];
+  const navigations = [];
+  const copies = [];
+  const downloads = [];
   const storage = new Map(stored === null ? [] : [['yap.film-reference-shortlist.v1', stored]]);
   const location = {
     origin: 'https://yap.example',
     href: 'https://yap.example/showcase/film-references.html',
     search: '',
+    assign: (href) => navigations.push(href),
   };
   const window = { location, addEventListener() {}, parent: null };
   window.parent = embedded
@@ -174,17 +184,24 @@ async function room({ embedded = true, stored = null, failLoad = false } = {}) {
         postMessage: (message, origin) => messages.push({ message, origin }),
       }
     : window;
-  const catalog = { generatedAt: '2026-11-14T10:00:00.000Z', films: [film('one'), film('two')] };
+  const catalog = { generatedAt: '2026-11-14T10:00:00.000Z', films };
+  class DownloadURL extends URL {
+    static createObjectURL(blob) {
+      downloads.push(blob);
+      return `blob:film-shortlist-${downloads.length}`;
+    }
+    static revokeObjectURL() {}
+  }
   const context = vm.createContext({
     ...core,
     document,
     window,
     location,
-    URL,
+    URL: DownloadURL,
     URLSearchParams,
     Blob,
     AbortController,
-    navigator: { clipboard: { writeText: async () => undefined } },
+    navigator: { clipboard: { writeText: async (content) => copies.push(content) } },
     localStorage: {
       getItem: (key) => storage.get(key) ?? null,
       setItem: (key, value) => storage.set(key, value),
@@ -200,7 +217,17 @@ async function room({ embedded = true, stored = null, failLoad = false } = {}) {
   );
   new vm.Script(script, { filename: 'public/film-references.js' }).runInContext(context);
   await new Promise((resolve) => setImmediate(resolve));
-  return { document, messages, storage, catalog, $: (id) => document.elements.get(id), context };
+  return {
+    document,
+    messages,
+    navigations,
+    copies,
+    downloads,
+    storage,
+    catalog,
+    $: (id) => document.elements.get(id),
+    context,
+  };
 }
 
 test('film titles and use actions are real links, and embedded use sends only a catalog ID', async () => {
@@ -291,3 +318,101 @@ test('load failure exposes a retry and keeps creation actions disabled', async (
   assert.equal(ui.$('fr-use-shortlist').disabled, true);
   assert.match(ui.$('fr-state-copy').textContent, /could not be loaded/);
 });
+
+test('bridge requests and native links never silently truncate an oversized selection', () => {
+  const films = Array.from({ length: 13 }, (_, index) => film(`film-${index}`));
+  const ids = films.map((entry) => entry.id);
+  assert.equal(core.FILM_REFERENCE_LIMIT, 12);
+  assert.equal(core.filmReferenceRequest(films, ids), null);
+  assert.equal(core.filmCreationHref(films, ids), null);
+  assert.deepEqual(core.filmReferenceRequest(films, [...ids.slice(0, 12), ids[0]]), {
+    type: 'yap:film-shortlist',
+    filmIds: ids.slice(0, 12),
+  });
+});
+
+for (const embedded of [true, false]) {
+  test(`${embedded ? 'embedded' : 'standalone'} stored 13-film shortlist remains exportable and can be reduced before use`, async () => {
+    const films = Array.from({ length: 13 }, (_, index) => film(`film-${index}`));
+    const ids = films.map((entry) => entry.id);
+    const ui = await room({ embedded, films, stored: JSON.stringify(ids) });
+    const storedIds = () => JSON.parse(ui.storage.get('yap.film-reference-shortlist.v1'));
+    const use = ui.$('fr-use-shortlist');
+    assert.equal(ui.$('fr-nav-count').textContent, '13');
+    assert.equal(ui.$('fr-shortlist-items').children.length, 13);
+    assert.deepEqual(storedIds(), ids, 'Loading an older shortlist must preserve its entries.');
+    assert.equal(use.disabled, true);
+    assert.match(ui.$('fr-shortlist-summary').textContent, /up to 12.*Remove 1 film/);
+    assert.equal(ui.$('fr-copy').disabled, false);
+    assert.equal(ui.$('fr-download').disabled, false);
+    await use.click();
+    assert.deepEqual(ui.messages, []);
+    assert.deepEqual(ui.navigations, []);
+    assert.doesNotMatch(ui.$('fr-action-status').textContent, /Opening/);
+
+    // The event handler also enforces the limit if disabled state is bypassed.
+    use.disabled = false;
+    await use.click();
+    assert.deepEqual(ui.messages, []);
+    assert.deepEqual(ui.navigations, []);
+    assert.match(ui.$('fr-action-status').textContent, /up to 12.*Remove 1 film/);
+    assert.doesNotMatch(ui.$('fr-action-status').textContent, /Opening/);
+
+    await ui.$('fr-copy').click();
+    await ui.$('fr-download').click();
+    assert.deepEqual(
+      JSON.parse(ui.copies[0]).films.map((entry) => entry.id),
+      ids,
+    );
+    assert.deepEqual(
+      JSON.parse(await ui.downloads[0].text()).films.map((entry) => entry.id),
+      ids,
+    );
+    assert.deepEqual(storedIds(), ids, 'Exporting must not reduce the saved shortlist.');
+
+    await ui.$('fr-shortlist-items').children[0].querySelector('[data-remove-id]').click();
+    assert.equal(use.disabled, false);
+    assert.equal(ui.$('fr-nav-count').textContent, '12');
+    assert.deepEqual(storedIds(), ids.slice(1));
+    await use.click();
+    if (embedded) {
+      assert.deepEqual(JSON.parse(JSON.stringify(ui.messages.at(-1))), {
+        message: { type: 'yap:film-shortlist', filmIds: ids.slice(1) },
+        origin: 'https://yap.example',
+      });
+      assert.deepEqual(ui.navigations, []);
+    } else {
+      assert.deepEqual(ui.messages, []);
+      assert.equal(ui.navigations.length, 1);
+      const destination = new URL(ui.navigations[0], ui.context.location.origin);
+      assert.deepEqual(
+        new URLSearchParams(destination.hash.split('?')[1]).getAll('reference'),
+        ids.slice(1),
+      );
+    }
+  });
+
+  test(`${embedded ? 'embedded' : 'standalone'} adding a 13th film is refused without losing the first 12`, async () => {
+    const films = Array.from({ length: 13 }, (_, index) => film(`film-${index}`));
+    const ui = await room({ embedded, films });
+    const rows = ui.$('fr-films').children;
+    for (const row of rows.slice(0, 12)) await row.querySelector('.fr-save').click();
+    await rows[12].querySelector('.fr-save').click();
+    assert.equal(ui.$('fr-nav-count').textContent, '12');
+    assert.equal(rows[12].querySelector('.fr-save').getAttribute('aria-pressed'), 'false');
+    assert.match(ui.$('fr-action-status').textContent, /Remove a film.*maximum is 12/);
+    assert.deepEqual(
+      JSON.parse(ui.storage.get('yap.film-reference-shortlist.v1')),
+      films.slice(0, 12).map((entry) => entry.id),
+    );
+    assert.deepEqual(ui.messages, []);
+    assert.deepEqual(ui.navigations, []);
+
+    await rows[0].querySelector('.fr-save').click();
+    await rows[12].querySelector('.fr-save').click();
+    assert.equal(ui.$('fr-nav-count').textContent, '12');
+    assert.equal(rows[12].querySelector('.fr-save').getAttribute('aria-pressed'), 'true');
+    await ui.$('fr-use-shortlist').click();
+    assert.equal(embedded ? ui.messages.length : ui.navigations.length, 1);
+  });
+}
