@@ -23,6 +23,13 @@ export interface WorkflowRefinement {
 
 export type WorkflowRefinementInput = Pick<RefineWorkflowInput, 'message' | 'answers' | 'brief'>;
 
+/** Optional production timing guidance; ordinary photo workflows keep their existing timing. */
+export interface WorkflowScriptTiming {
+  minSeconds: number;
+  maxSeconds: number;
+  maxSegments: number;
+}
+
 export interface VideoWorkflowProvider {
   readonly name: 'guided' | 'openai';
   refine(
@@ -30,7 +37,11 @@ export interface VideoWorkflowProvider {
     input: WorkflowRefinementInput,
     signal?: AbortSignal,
   ): Promise<WorkflowRefinement>;
-  script(workflow: Workflow, signal?: AbortSignal): Promise<WorkflowScript>;
+  script(
+    workflow: Workflow,
+    signal?: AbortSignal,
+    timing?: WorkflowScriptTiming,
+  ): Promise<WorkflowScript>;
   scenes(workflow: Workflow, signal?: AbortSignal): Promise<WorkflowScenes>;
   query(workflow: Workflow, question: string, signal?: AbortSignal): Promise<WorkflowQueryResponse>;
 }
@@ -529,11 +540,14 @@ export function createWorkflowProvider(
       );
       return { brief: workflowBriefSchema.parse(fields), message: result.message };
     },
-    async script(workflow, signal) {
+    async script(workflow, signal, timing) {
+      const timingInstruction = timing
+        ? `Use ${Math.ceil(workflow.brief.duration! / timing.maxSeconds)}..${Math.min(timing.maxSegments, Math.floor(workflow.brief.duration! / timing.minSeconds))} segments; each segment must be an integer ${timing.minSeconds}..${timing.maxSeconds} seconds so the selected video provider can generate every scene.`
+        : 'Use1..12 segments; integer seconds1..60.';
       const result = await run(
         workflow,
         'script',
-        `Write a concise spoken product video script from the approved brief. Use1..12 segments; integer seconds1..60 must total exactly ${workflow.brief.duration} seconds. Hook<=1000 chars, each spoken segment1..2000, caption<=3000. Include hook as spoken opening segment. Do not invent product facts or describe images as proof.`,
+        `Write a concise spoken product video script from the approved brief. ${timingInstruction} Segment seconds must total exactly ${workflow.brief.duration} seconds. Hook<=1000 chars, each spoken segment1..2000, caption<=3000. Include hook as spoken opening segment. Do not invent product facts or describe images as proof.`,
         scriptOutput,
         signal,
       );
