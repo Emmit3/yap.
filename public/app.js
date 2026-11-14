@@ -2,6 +2,12 @@ import { clamp, lerp, phase, sceneState, tilePose, loadPose, wallLayout } from '
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
+const embedded = new URLSearchParams(location.search).get('embedded') === '1' && window.parent !== window;
+function requestWorkspace(type) {
+  if (!embedded) return false;
+  window.parent.postMessage({ type }, location.origin);
+  return true;
+}
 const experience = $('.experience');
 const stage = $('.experience-stage');
 const wall = $('#wall');
@@ -36,7 +42,8 @@ const fallbackReels = [
 ];
 
 const media = await fetch('./wall-media.json').then(response=>response.ok?response.json():null).catch(()=>null);
-const reels = media?.clips?.length ? media.clips : fallbackReels.map(reel=>({ ...reel,
+const localMediaUrl = value => typeof value === 'string' && value.startsWith('/media/') ? new URL(`.${value}`,import.meta.url).href : value;
+const reels = media?.clips?.length ? media.clips.map(reel=>({ ...reel, poster:localMediaUrl(reel.poster), video:localMediaUrl(reel.video) })) : fallbackReels.map(reel=>({ ...reel,
   poster:`./media/reel-${reel.file}.jpg`, video:reel.video?'./media/reel-demo.mp4':null }));
 
 let reduced = motionPreference.matches;
@@ -364,7 +371,8 @@ $('#share-reel').addEventListener('click',async()=>{
   try { await navigator.clipboard.writeText(url.href);showToast('Showcase link copied.'); } catch { showToast('Share this showcase using the page URL.'); }
 });
 
-$$('[data-studio]').forEach(button=>button.addEventListener('click',()=>{studio.showModal();updatePlayback();setTimeout(()=>$('#idea-input').focus(),0);}));
+$$('[data-studio]').forEach(button=>button.addEventListener('click',()=>{if(requestWorkspace('yap:enter-studio'))return;studio.showModal();updatePlayback();setTimeout(()=>$('#idea-input').focus(),0);}));
+$$('[data-social]').forEach(button=>{button.hidden=!embedded;button.addEventListener('click',()=>requestWorkspace('yap:open-social'));});
 studio.addEventListener('close',updatePlayback);
 $$('[data-close-dialog]').forEach(button=>button.addEventListener('click',()=>studio.close()));
 studio.addEventListener('click',event=>{if(event.target===studio){const rect=studio.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)studio.close();}});

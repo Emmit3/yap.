@@ -11,3 +11,4 @@ coverage/
 artifacts/
 test-results/
 .openai-local/
+/apps/web/public/showcase/
