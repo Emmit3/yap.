@@ -4,7 +4,7 @@ Good ideas, made REEL.
 
 Yap helps a small business turn its photos and an idea into a promo. The backend now supports **photos → refinement → script and scenes → creator approval → downloadable MP4 and caption**. A matcha shop can upload drink and shop photos, describe what it wants to highlight, and prepare a vertical promo.
 
-Start with the [promo backend integration guide](docs/promo-backend.md). The new endpoints are additive under `/api/workflows`; the existing `/api/projects` API is preserved. The frontend is being developed in a separate session and needs to connect to this new promo flow.
+The frontend connects the cinematic landing page, social research, and the photo promo studio to this flow. See the [frontend guide](apps/web/README.md) for routes and the [promo backend integration guide](docs/promo-backend.md) for the API. The new endpoints are additive under `/api/workflows`; the existing `/api/projects` API is preserved.
 
 The guided provider runs without a key and composes real uploaded photos with editable template copy. Select the optional OpenAI provider for natural language interpretation and image understanding. Both produce reviewable proposals; neither automatically approves factual claims.
 
@@ -35,6 +35,8 @@ The frontend talks only to HTTP endpoints. It does not import backend source. Th
 
 See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), and the [API contract](docs/api.md) for team workflows and integration details.
 
+The cinematic landing source is preserved under `public/` and synced into the React production build. Its studio and research navigation opens the connected workspace. Run `npm run dev:showcase` for the standalone reference on port 4173, or `npm run build:showcase` for a static build. Its motion checks run with `npm run check:showcase`; media provenance and design notes are in [the landing guide](docs/cinematic-landing.md).
+
 ## Checks and builds
 
 ```sh
@@ -44,6 +46,8 @@ npm run build
 ```
 
 Backend-only checks: `npm run typecheck:api`, `npm run test:api`, and `npm run build:api`. They do not require frontend source.
+
+`npm run test:promo-ui` checks the frontend/API handoff and navigation bridge without a browser. `npm run smoke:promo-ui` uses a temporary guided API and the real encoder to write `artifacts/frontend-promo-smoke.mp4`; it does not touch developer projects. Generated artifacts are ignored by Git.
 
 The production frontend is emitted to `apps/web/dist`; the API to `apps/api/dist`; shared runtime schemas to `packages/contracts/dist`. Deploy the frontend and API separately. Configure the frontend API URL at build time and the backend's allowed frontend origin for the deployed environment. The development Vite proxy is not a production proxy.
 

@@ -9,3 +9,6 @@ coverage/
 *.tsbuildinfo
 .DS_Store
 artifacts/
+test-results/
+.openai-local/
+/apps/web/public/showcase/

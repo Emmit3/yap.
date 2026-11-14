@@ -1,0 +1,100 @@
+{
+  "clips": [
+    {
+      "id": "wall-audio",
+      "title": "Find your frequency",
+      "category": "Audio",
+      "video": "/media/wall-audio.mp4",
+      "poster": "/media/wall-audio.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/close-up-view-of-man-dancing-with-headphones-51764/",
+      "credit": "Mixkit / @mixkit",
+      "duration": 6,
+      "caption": "Headphone study",
+      "screen": "Find your frequency"
+    },
+    {
+      "id": "wall-timepiece",
+      "title": "A matter of time",
+      "category": "Timepiece",
+      "video": "/media/wall-timepiece.mp4",
+      "poster": "/media/wall-timepiece.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/hands-on-an-automatic-watch-3672/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Timepiece study",
+      "screen": "A matter of time"
+    },
+    {
+      "id": "wall-sneaker",
+      "title": "Made to move",
+      "category": "Footwear",
+      "video": "/media/wall-sneaker.mp4",
+      "poster": "/media/wall-sneaker.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/feet-of-a-young-man-with-red-tennis-shoes-3525/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Footwear study",
+      "screen": "Made to move"
+    },
+    {
+      "id": "wall-automotive",
+      "title": "All in the details",
+      "category": "Automotive",
+      "video": "/media/wall-automotive.mp4",
+      "poster": "/media/wall-automotive.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/close-up-of-red-sports-car-63/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Automotive study",
+      "screen": "The details"
+    },
+    {
+      "id": "wall-beverage",
+      "title": "The first sip",
+      "category": "Beverage",
+      "video": "/media/wall-beverage.mp4",
+      "poster": "/media/wall-beverage.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/filling-a-glass-with-soda-from-a-bottle-5096/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Beverage study",
+      "screen": "The first sip"
+    },
+    {
+      "id": "wall-beauty",
+      "title": "A softer touch",
+      "category": "Beauty",
+      "video": "/media/wall-beauty.mp4",
+      "poster": "/media/wall-beauty.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/makeup-and-powder-brush-381/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Beauty study",
+      "screen": "A softer touch"
+    },
+    {
+      "id": "wall-lipstick",
+      "title": "Make your mark",
+      "category": "Cosmetics",
+      "video": "/media/wall-lipstick.mp4",
+      "poster": "/media/wall-lipstick.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/a-person-opens-a-pink-lipstick-382/",
+      "credit": "Mixkit / stock footage",
+      "duration": 6,
+      "caption": "Cosmetics study",
+      "screen": "Make your mark"
+    },
+    {
+      "id": "wall-camera",
+      "title": "A closer look",
+      "category": "Camera",
+      "video": "/media/wall-camera.mp4",
+      "poster": "/media/wall-camera.jpg",
+      "sourceUrl": "https://mixkit.co/free-stock-video/lens-focus-in-motion-2377/",
+      "credit": "Mixkit / @rubenvelasco",
+      "duration": 6,
+      "caption": "Camera study",
+      "screen": "A closer look"
+    }
+  ]
+}

@@ -15,14 +15,19 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/web",
     "dev:api": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/api",
+    "dev:showcase": "node scripts/serve.mjs",
+    "build:showcase": "node scripts/build-showcase.mjs",
+    "check:showcase": "node --check public/app.js && node --check public/motion.js && node --test tests/*.test.js",
     "build": "node scripts/build.mjs",
     "build:api": "npm run build --workspace=@yap/contracts && npm run build --workspace=@yap/api",
     "typecheck:api": "npm run typecheck --workspace=@yap/contracts && npm run typecheck --workspace=@yap/api",
     "test:api": "npm run build --workspace=@yap/contracts && npm run test --workspace=@yap/api && npm run test --workspace=@yap/contracts",
+    "test:promo-ui": "npm run build --workspace=@yap/contracts && node --import tsx --test apps/web/test/*.test.ts",
+    "smoke:promo-ui": "npm run build --workspace=@yap/contracts && node --import tsx scripts/test-promo-ui.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "test": "npm run build --workspace=@yap/contracts && npm run test --workspaces --if-present"
+    "test": "npm run build --workspace=@yap/contracts && npm run test --workspaces --if-present && node --import tsx --test apps/web/test/*.test.ts && npm run check:showcase"
   },
   "devDependencies": {
     "prettier": "3.10.1"
