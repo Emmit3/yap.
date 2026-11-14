@@ -37,10 +37,12 @@
           a.textContent = item.title || item.subject || item.filename || item.file || 'Source';
           a.rel = 'noreferrer';
           p.append(a);
-          if (isLink(item.contributorProfile)) {
+          const creatorProfile = item.creatorProfile || item.contributorProfile;
+          if (isLink(creatorProfile)) {
             const contributor = document.createElement('a');
-            contributor.href = item.contributorProfile;
-            contributor.textContent = item.contributor ? `@${item.contributor}` : 'Contributor';
+            contributor.href = creatorProfile;
+            contributor.textContent =
+              item.creator || (item.contributor ? `@${item.contributor}` : 'Contributor');
             contributor.rel = 'noreferrer';
             p.append(' / ', contributor);
           }
