@@ -178,12 +178,25 @@ test('the studio client carries explicit intent and external references through 
     state.session.plan.clips.some((clip) => clip.referenceIds?.includes(externalReference.id)),
   );
   assert.deepEqual(state.workflow.approvals, { brief: null, script: null, scenes: null });
+  const quoted = await creator.quote(id, {
+    expectedVersion: state.session.version,
+    expectedWorkflowVersion: state.workflow.version,
+  });
+  assert.equal(quoted.quote.currency, 'USD');
+  assert.equal(
+    quoted.quote.maxCostCents,
+    quoted.quote.clips.reduce((sum, clip) => sum + clip.costCents, 0),
+  );
+  assert.ok(quoted.budget.limitCents <= 3500);
+  assert.equal((await creator.budget()).budget.chargedCents, 0);
   const planId = state.session.plan.id;
   state = await creator.approve(id, {
     expectedVersion: state.session.version,
     expectedWorkflowVersion: state.workflow.version,
     planId,
     reviewed: true,
+    costReviewed: true,
+    quoteId: quoted.quote.id,
   });
   assert.equal(state.session.approval?.planId, planId);
   assert.ok(Object.values(state.workflow.approvals).every(Boolean));
@@ -191,12 +204,17 @@ test('the studio client carries explicit intent and external references through 
   const approvedId = state.session.approval.id;
   const approvedVersion = state.session.version;
   const approvedWorkflowVersion = state.workflow.version;
-  state = await creator.approve(id, {
-    expectedVersion: approvedVersion,
-    expectedWorkflowVersion: approvedWorkflowVersion,
-    planId,
-    reviewed: true,
-  });
+  await assert.rejects(
+    creator.approve(id, {
+      expectedVersion: approvedVersion,
+      expectedWorkflowVersion: approvedWorkflowVersion,
+      planId,
+      reviewed: true,
+      costReviewed: true,
+      quoteId: quoted.quote.id,
+    }),
+    (error) => error instanceof CreatorApiError && error.status === 409,
+  );
   assert.equal(
     state.session.approval?.id,
     approvedId,
@@ -209,6 +227,7 @@ test('the studio client carries explicit intent and external references through 
     creator.produce(id, {
       expectedVersion: state.session.version,
       approvalId: state.session.approval.id,
+      quoteId: quoted.quote.id,
       requestId: randomUUID(),
     }),
     (error) =>

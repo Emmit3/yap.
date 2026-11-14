@@ -2,8 +2,8 @@ import { creatorProduceSchema, type CreatorJob } from '@yap/contracts/creator';
 import { isActiveJob } from './model';
 
 type RequestStorage = Pick<Storage, 'getItem' | 'setItem'>;
-const keyFor = (sessionId: string, approvalId: string) =>
-  `yap.creator.production:${sessionId}:${approvalId}`;
+const keyFor = (sessionId: string, approvalId: string, quoteId: string) =>
+  `yap.creator.production:${sessionId}:${approvalId}:${quoteId}`;
 
 export function browserRequestStorage(): RequestStorage {
   try {
@@ -19,9 +19,10 @@ export function readProductionRequest(
   storage: RequestStorage,
   sessionId: string,
   approvalId: string,
+  quoteId: string,
 ): string | null {
   try {
-    const value = storage.getItem(keyFor(sessionId, approvalId));
+    const value = storage.getItem(keyFor(sessionId, approvalId, quoteId));
     if (value === null) return null;
     const record: unknown = JSON.parse(value);
     if (
@@ -29,17 +30,20 @@ export function readProductionRequest(
       record === null ||
       Array.isArray(record) ||
       !('version' in record) ||
-      record.version !== 1 ||
+      record.version !== 2 ||
       !('sessionId' in record) ||
       record.sessionId !== sessionId ||
       !('approvalId' in record) ||
       record.approvalId !== approvalId ||
+      !('quoteId' in record) ||
+      record.quoteId !== quoteId ||
       !('requestId' in record)
     )
       throw new Error('Invalid request receipt.');
     return creatorProduceSchema.parse({
       expectedVersion: 1,
       approvalId,
+      quoteId,
       requestId: record.requestId,
     }).requestId;
   } catch {
@@ -53,15 +57,16 @@ export function saveProductionRequest(
   storage: RequestStorage,
   sessionId: string,
   approvalId: string,
+  quoteId: string,
   requestId: string,
 ): void {
   try {
-    creatorProduceSchema.parse({ expectedVersion: 1, approvalId, requestId });
+    creatorProduceSchema.parse({ expectedVersion: 1, approvalId, quoteId, requestId });
     storage.setItem(
-      keyFor(sessionId, approvalId),
-      JSON.stringify({ version: 1, sessionId, approvalId, requestId }),
+      keyFor(sessionId, approvalId, quoteId),
+      JSON.stringify({ version: 2, sessionId, approvalId, quoteId, requestId }),
     );
-    if (readProductionRequest(storage, sessionId, approvalId) !== requestId)
+    if (readProductionRequest(storage, sessionId, approvalId, quoteId) !== requestId)
       throw new Error('Request was not retained.');
   } catch {
     throw new Error(
@@ -77,25 +82,21 @@ export type ProductionDecision =
 export function productionDecision(
   jobs: CreatorJob[],
   approvalId: string,
+  quoteId: string,
   rememberedRequestId: string | null,
-  retryJobId?: string,
 ): ProductionDecision {
   const production = jobs
     .filter((job) => job.kind === 'production')
     .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const active = production.find(isActiveJob);
   if (active) return { kind: 'reconnect', job: active };
-  const approved = production.filter((job) => job.approvalId === approvalId);
+  const approved = production.filter(
+    (job) => job.approvalId === approvalId && job.quoteId === quoteId,
+  );
   const complete = approved.find((job) => job.status === 'succeeded');
   if (complete) return { kind: 'reconnect', job: complete };
   const latest = approved[0];
-  const remembered = approved.find((job) => job.requestId === rememberedRequestId);
-  // An unknown submission keeps its original idempotency key, even if another old job failed.
-  if (rememberedRequestId && !remembered) return { kind: 'submit', requestId: rememberedRequestId };
-  if (latest) {
-    if (latest.id === retryJobId && ['failed', 'canceled'].includes(latest.status))
-      return { kind: 'submit', requestId: null };
-    return { kind: 'reconnect', job: latest };
-  }
+  // A failed or canceled quote is consumed too. A deliberate retry needs a new quote and review.
+  if (latest) return { kind: 'reconnect', job: latest };
   return { kind: 'submit', requestId: rememberedRequestId };
 }
