@@ -7,6 +7,8 @@ import type {
   CreatorJob,
   CreatorJobResponse,
   CreatorQuestion,
+  CreatorQuote,
+  CreatorBudgetSnapshot,
   CreatorSessionResponse,
 } from '@yap/contracts/creator';
 import { promoApi, PromoApiError } from '../promo/api';
@@ -17,6 +19,7 @@ import {
   generatedSeconds,
   isActiveJob,
   planCurrent,
+  outputIsCurrent,
   planDraft,
   sourceInput,
   startingPrompt,
@@ -28,6 +31,7 @@ import {
   readProductionRequest,
   saveProductionRequest,
 } from './production';
+import { quoteIsAffordable, quoteIsCurrent, readSavedQuote, saveQuote } from './quote';
 
 export type PendingPhoto = { id: string; file: File; preview: string; description: string };
 export type SourceForm = {
@@ -76,12 +80,16 @@ const wait = (signal: AbortSignal) =>
 export function useCreatorSession(options: {
   id?: string;
   initialResearch?: SocialHandoff;
+  initialExternalReferences?: CreatorExternalReference[];
   onCreated(id: string): void;
   onDirty(value: boolean): void;
 }) {
   const [state, setState] = useState<CreatorSessionResponse | null>(null);
   const [capabilities, setCapabilities] = useState<CreatorCapabilities | null>(null);
   const [capabilityError, setCapabilityError] = useState('');
+  const [quote, setQuote] = useState<CreatorQuote | null>(null);
+  const [budget, setBudget] = useState<CreatorBudgetSnapshot | null>(null);
+  const [budgetError, setBudgetError] = useState('');
   const [source, setSource] = useState<SourceForm>(emptySource);
   const [photos, setPhotos] = useState<PendingPhoto[]>([]);
   const [plan, setPlan] = useState<ReturnType<typeof planDraft>>(null);
@@ -89,7 +97,10 @@ export function useCreatorSession(options: {
   const [reply, setReply] = useState('');
   const [replyQuestion, setReplyQuestion] = useState<CreatorQuestion | null>(null);
   const [answerEdits, setAnswerEdits] = useState<Record<string, string>>({});
-  const [externalReferences, setExternalReferences] = useState<CreatorExternalReference[]>([]);
+  const [photoEdits, setPhotoEdits] = useState<Record<string, string>>({});
+  const [externalReferences, setExternalReferences] = useState<CreatorExternalReference[]>(() =>
+    structuredClone(options.initialExternalReferences ?? []),
+  );
   const [job, setJob] = useState<CreatorJob | null>(null);
   const [watching, setWatching] = useState(false);
   const [loading, setLoading] = useState(Boolean(options.id));
@@ -108,6 +119,8 @@ export function useCreatorSession(options: {
   const hydratedId = useRef<string | null>(null);
   const planBase = useRef<string | null>(null);
   const scriptBase = useRef<string | null>(null);
+  const quoteRef = useRef<CreatorQuote | null>(null);
+  const budgetSequence = useRef(0);
 
   const inputDirty = state
     ? serialize(source) !== serialize(sourceForm(state))
@@ -118,6 +131,9 @@ export function useCreatorSession(options: {
     ([id, value]) =>
       value !== state?.session.answers.find((answer) => answer.questionId === id)?.answer,
   );
+  const photoEditsDirty = Object.entries(photoEdits).some(
+    ([id, value]) => value !== state?.workflow.assets.find((asset) => asset.id === id)?.description,
+  );
   const dirty =
     inputDirty ||
     planDirty ||
@@ -125,6 +141,7 @@ export function useCreatorSession(options: {
     photos.length > 0 ||
     Boolean(reply.trim()) ||
     answersDirty ||
+    photoEditsDirty ||
     (!state && externalReferences.length > 0);
   const flags = useRef({ inputDirty, planDirty, scriptDirty });
   flags.current = { inputDirty, planDirty, scriptDirty };
@@ -145,6 +162,7 @@ export function useCreatorSession(options: {
       setReply('');
       setReplyQuestion(null);
       setAnswerEdits({});
+      setPhotoEdits({});
       setExternalReferences(next.session.externalReferences);
     }
     if (
@@ -169,9 +187,50 @@ export function useCreatorSession(options: {
   function acceptJob(next: CreatorJobResponse) {
     if (!mounted.current) return;
     setJob(next.job);
+    const quoted = quoteRef.current;
+    if (quoted && next.job.kind === 'production' && next.job.quoteId === quoted.id) {
+      const consumed = {
+        ...quoted,
+        consumedByJobId: next.job.id,
+        approvedApprovalId: next.job.approvalId,
+      };
+      acceptQuote(consumed);
+      try {
+        saveQuote(browserRequestStorage(), consumed);
+      } catch {
+        setNotice(
+          'The run was accepted by the server. Use saved job activity to reconnect if browser storage is unavailable.',
+        );
+      }
+    }
     const saved = current.current;
     if (saved?.session.id === next.session.id)
       accept({ session: next.session, workflow: saved.workflow });
+  }
+
+  function acceptQuote(next: CreatorQuote | null) {
+    quoteRef.current = next;
+    setQuote(next);
+  }
+
+  function acceptBudget(next: CreatorBudgetSnapshot) {
+    budgetSequence.current += 1;
+    setBudget(next);
+    setBudgetError('');
+  }
+
+  async function loadBudget(signal?: AbortSignal) {
+    const sequence = ++budgetSequence.current;
+    try {
+      const response = await creatorApi.budget(signal);
+      if (!signal?.aborted && mounted.current && sequence === budgetSequence.current) {
+        setBudget(response.budget);
+        setBudgetError('');
+      }
+    } catch (caught) {
+      if (!signal?.aborted && mounted.current && sequence === budgetSequence.current)
+        setBudgetError(`The shared app budget could not be refreshed. ${creatorMessage(caught)}`);
+    }
   }
 
   function watch(initial: CreatorJob) {
@@ -190,6 +249,7 @@ export function useCreatorSession(options: {
           acceptJob(response);
           if (!isActiveJob(snapshot)) {
             accept(await creatorApi.get(snapshot.sessionId, active.signal));
+            void loadBudget(active.signal);
             if (snapshot.status === 'failed')
               setError(
                 snapshot.error?.message ??
@@ -248,6 +308,18 @@ export function useCreatorSession(options: {
   }, [reloadKey]);
 
   useEffect(() => {
+    const active = new AbortController();
+    void loadBudget(active.signal);
+    const timer = setInterval(() => {
+      if (document.visibilityState !== 'hidden') void loadBudget(active.signal);
+    }, 15_000);
+    return () => {
+      active.abort();
+      clearInterval(timer);
+    };
+  }, [reloadKey]);
+
+  useEffect(() => {
     const id = options.id ?? current.current?.session.id;
     if (!id) return;
     const active = new AbortController();
@@ -257,6 +329,22 @@ export function useCreatorSession(options: {
       .then(([next, history]) => {
         if (active.signal.aborted) return;
         accept(next);
+        try {
+          const restored = readSavedQuote(browserRequestStorage(), next.session.id);
+          const submitted = restored && history.jobs.find((item) => item.quoteId === restored.id);
+          acceptQuote(
+            restored && submitted
+              ? {
+                  ...restored,
+                  consumedByJobId: submitted.id,
+                  approvedApprovalId: submitted.approvalId,
+                }
+              : restored,
+          );
+        } catch (caught) {
+          acceptQuote(null);
+          setNotice(creatorMessage(caught));
+        }
         setNeedsReload(false);
         const ordered = [...history.jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         const latest = ordered.find((candidate) => isActiveJob(candidate)) ?? ordered[0] ?? null;
@@ -288,7 +376,20 @@ export function useCreatorSession(options: {
     } catch (caught) {
       if (active.signal.aborted || !mounted.current) return;
       setError(creatorMessage(caught));
+      const quoteIssue =
+        caught instanceof CreatorApiError &&
+        [
+          'CREATOR_QUOTE_EXPIRED',
+          'CREATOR_QUOTE_CONSUMED',
+          'CREATOR_BUDGET_EXCEEDED',
+          'CREATOR_ATTEMPTS_EXHAUSTED',
+        ].includes(caught.code);
+      if (quoteIssue) {
+        acceptQuote(null);
+        void loadBudget();
+      }
       if (
+        !quoteIssue &&
         (caught instanceof CreatorApiError || caught instanceof PromoApiError) &&
         (caught.status === 409 || ['NETWORK_ERROR', 'REQUEST_TIMEOUT'].includes(caught.code))
       ) {
@@ -306,11 +407,14 @@ export function useCreatorSession(options: {
     }
   }
 
-  function guardDrafts(allowed: 'source' | 'reply' | 'plan' | 'script' | 'answers' | 'none') {
+  function guardDrafts(
+    allowed: 'source' | 'reply' | 'plan' | 'script' | 'answers' | 'photo' | 'none',
+  ) {
     if (
       (allowed !== 'source' && (flags.current.inputDirty || photoRef.current.length > 0)) ||
       (allowed !== 'reply' && reply.trim()) ||
       (allowed !== 'answers' && answersDirty) ||
+      (allowed !== 'photo' && photoEditsDirty) ||
       (allowed !== 'plan' && flags.current.planDirty) ||
       (allowed !== 'script' && flags.current.scriptDirty)
     ) {
@@ -552,17 +656,32 @@ export function useCreatorSession(options: {
     if (!saved) return;
     void run('Preparing your script and shots', async (signal) => {
       guardDrafts('none');
-      accept(
-        await creatorApi.prepare(
-          saved.session.id,
-          {
-            expectedVersion: saved.session.version,
-            expectedWorkflowVersion: saved.workflow.version,
-          },
-          signal,
-        ),
-        true,
-      );
+      try {
+        accept(
+          await creatorApi.prepare(
+            saved.session.id,
+            {
+              expectedVersion: saved.session.version,
+              expectedWorkflowVersion: saved.workflow.version,
+            },
+            signal,
+          ),
+          true,
+        );
+      } catch (caught) {
+        if (
+          !(caught instanceof CreatorApiError) ||
+          caught.code !== 'CREATOR_PREPARE_REVIEW_REQUIRED'
+        )
+          throw caught;
+        accept(await creatorApi.get(saved.session.id, signal));
+        setNeedsReload(false);
+        setError(caught.message);
+        setNotice(
+          'Your script and scenes were saved. Open Director to edit the saved timing, then prepare the plan again. No drafting request was automatically repeated.',
+        );
+        return;
+      }
       setNotice('Your script and shot plan are ready to review. No paid clips have been started.');
     });
   }
@@ -617,8 +736,64 @@ export function useCreatorSession(options: {
     });
   }
 
-  function approveAndProduce(reviewed: boolean, retryJobId?: string) {
+  function requestQuote() {
     const saved = current.current;
+    if (
+      !saved?.session.plan ||
+      dirty ||
+      needsReload ||
+      isActiveJob(job) ||
+      !planCurrent(saved.session, saved.workflow)
+    ) {
+      setError('Save the current script, sources and shots before requesting a quote.');
+      return;
+    }
+    void run('Requesting the current cost quote', async (signal) => {
+      guardDrafts('none');
+      const history = await creatorApi.jobs(saved.session.id, signal);
+      const existing =
+        history.jobs.find(isActiveJob) ??
+        history.jobs.find((item) => outputIsCurrent(item, saved.session, saved.workflow));
+      if (existing) {
+        await showSavedJob(existing, signal);
+        return;
+      }
+      acceptQuote(null);
+      const result = await creatorApi.quote(
+        saved.session.id,
+        {
+          expectedVersion: saved.session.version,
+          expectedWorkflowVersion: saved.workflow.version,
+        },
+        signal,
+      );
+      const latest = await creatorApi.get(saved.session.id, signal);
+      accept(latest);
+      if (!quoteIsCurrent(result.quote, latest.session, latest.workflow))
+        throw new Error(
+          'The creation changed while its quote was prepared. Request a fresh quote for the saved version.',
+        );
+      saveQuote(browserRequestStorage(), result.quote);
+      acceptQuote(result.quote);
+      acceptBudget(result.budget);
+      setNotice(
+        'The quote is saved for review. Requesting it has not started paid video generation.',
+      );
+    });
+  }
+
+  async function showSavedJob(candidate: CreatorJob, signal: AbortSignal) {
+    const result = await creatorApi.job(candidate.sessionId, candidate.id, signal);
+    acceptJob(result);
+    accept(await creatorApi.get(candidate.sessionId, signal));
+    if (isActiveJob(result.job)) watch(result.job);
+    void loadBudget(signal);
+    setNotice('Showing the existing generation run. No new quote or paid request was submitted.');
+  }
+
+  function approveAndProduce(reviewed: boolean) {
+    const saved = current.current;
+    const quoted = quoteRef.current;
     if (!saved?.session.plan) return;
     if (
       !reviewed ||
@@ -627,13 +802,8 @@ export function useCreatorSession(options: {
       isActiveJob(job) ||
       !planCurrent(saved.session, saved.workflow)
     ) {
-      setError('Save and review the current script and shot plan before approving generation.');
-      return;
-    }
-    if (!capabilities?.configured || !capabilities.visionConfigured) {
       setError(
-        capabilities?.reason ||
-          'Generation and visual audit providers must be configured before paid work starts.',
+        'Save the current work, request a fresh quote, and review its cost before approving generation.',
       );
       return;
     }
@@ -643,56 +813,135 @@ export function useCreatorSession(options: {
       );
       return;
     }
-    void run('Approving your reviewed plan', async (signal) => {
-      const approved = approvalCurrent(saved.session, saved.workflow)
-        ? saved
-        : await creatorApi.approve(
-            saved.session.id,
-            {
-              expectedVersion: saved.session.version,
-              expectedWorkflowVersion: saved.workflow.version,
-              planId: saved.session.plan!.id,
-              reviewed: true,
-            },
-            signal,
-          );
+    if (!quoted) return;
+    void run('Reviewing the exact quoted cost', async (signal) => {
+      guardDrafts('none');
+      const history = await creatorApi.jobs(saved.session.id, signal);
+      const existing =
+        history.jobs.find(isActiveJob) ??
+        history.jobs.find((item) => item.kind === 'production' && item.quoteId === quoted.id);
+      // A server receipt wins over stale local prices, expiry and storage after an unknown outcome.
+      if (existing) {
+        await showSavedJob(existing, signal);
+        return;
+      }
+      if (!capabilities?.configured || !capabilities.visionConfigured)
+        throw new Error(
+          capabilities?.reason ||
+            'Generation and visual audit providers must be configured before paid work starts.',
+        );
+      const freshBudget = await creatorApi.budget(signal);
+      acceptBudget(freshBudget.budget);
+      if (!quoteIsAffordable(quoted, freshBudget.budget))
+        throw new Error(
+          'Other app activity has used part of the available budget. Review the current balance and request a fresh quote.',
+        );
+      if (!quoteIsCurrent(quoted, current.current!.session, current.current!.workflow))
+        throw new Error(
+          'This quote expired or the creation changed. Request and review a new quote.',
+        );
+      const approved =
+        approvalCurrent(saved.session, saved.workflow) &&
+        saved.session.approval?.quoteId === quoted.id
+          ? saved
+          : await creatorApi.approve(
+              saved.session.id,
+              {
+                expectedVersion: saved.session.version,
+                expectedWorkflowVersion: saved.workflow.version,
+                planId: saved.session.plan!.id,
+                reviewed: true,
+                costReviewed: true,
+                quoteId: quoted.id,
+              },
+              signal,
+            );
       accept(approved, true);
       if (!approved.session.approval)
         throw new Error('The server did not return an approval. No generation was started.');
       const approvalId = approved.session.approval.id;
+      if (approved.session.approval.quoteId !== quoted.id)
+        throw new Error(
+          'The saved approval belongs to a different quote. No generation was submitted.',
+        );
+      const approvedQuote = { ...quoted, approvedApprovalId: approvalId };
+      saveQuote(browserRequestStorage(), approvedQuote);
+      acceptQuote(approvedQuote);
       setBusy('Checking saved generation activity');
-      const history = await creatorApi.jobs(approved.session.id, signal);
-      const known = productionDecision(history.jobs, approvalId, null, retryJobId);
+      const latestHistory = await creatorApi.jobs(approved.session.id, signal);
+      const known = productionDecision(latestHistory.jobs, approvalId, quoted.id, null);
       if (known.kind === 'reconnect') {
-        const result = await creatorApi.job(approved.session.id, known.job.id, signal);
-        acceptJob(result);
-        if (isActiveJob(result.job)) watch(result.job);
-        setNotice('Showing the saved generation run. A new paid request was not submitted.');
+        await showSavedJob(known.job, signal);
         return;
       }
       const storage = browserRequestStorage();
-      const remembered = readProductionRequest(storage, approved.session.id, approvalId);
-      const decision = productionDecision(history.jobs, approvalId, remembered, retryJobId);
+      const remembered = readProductionRequest(storage, approved.session.id, approvalId, quoted.id);
+      const decision = productionDecision(latestHistory.jobs, approvalId, quoted.id, remembered);
       if (decision.kind === 'reconnect') {
-        const result = await creatorApi.job(approved.session.id, decision.job.id, signal);
-        acceptJob(result);
-        if (isActiveJob(result.job)) watch(result.job);
+        await showSavedJob(decision.job, signal);
         return;
       }
       const requestId = decision.requestId ?? crypto.randomUUID();
-      saveProductionRequest(storage, approved.session.id, approvalId, requestId);
+      saveProductionRequest(storage, approved.session.id, approvalId, quoted.id, requestId);
+      if (!quoteIsCurrent(approvedQuote, approved.session, approved.workflow))
+        throw new Error(
+          'The approved quote expired before submission. No paid request was sent; request a new quote.',
+        );
       setBusy('Submitting the approved generation');
       const result = await creatorApi.produce(
         approved.session.id,
         {
           expectedVersion: approved.session.version,
           approvalId,
+          quoteId: quoted.id,
           requestId,
         },
         signal,
       );
       acceptJob(result);
       watch(result.job);
+      void loadBudget(signal);
+    });
+  }
+
+  function savePhotoDescription(assetId: string) {
+    const saved = current.current;
+    const description = photoEdits[assetId];
+    if (!saved || typeof description !== 'string') return;
+    void run('Saving the photo description', async (signal) => {
+      guardDrafts('photo');
+      const updated = await promoApi.describeAsset(
+        saved.workflow.id,
+        assetId,
+        saved.workflow.version,
+        description.trim(),
+        signal,
+      );
+      accept({ session: saved.session, workflow: updated.workflow });
+      setPhotoEdits((previous) =>
+        Object.fromEntries(Object.entries(previous).filter(([id]) => id !== assetId)),
+      );
+      accept(await creatorApi.get(saved.session.id, signal));
+      setNotice(
+        'Photo description saved. Prepare a new proposal and cost quote for the changed source.',
+      );
+    });
+  }
+
+  function removePhoto(assetId: string) {
+    const saved = current.current;
+    if (!saved || !saved.workflow.assets.some((asset) => asset.id === assetId)) return;
+    void run('Removing the photo', async (signal) => {
+      guardDrafts('none');
+      const updated = await promoApi.removeAsset(
+        saved.workflow.id,
+        assetId,
+        saved.workflow.version,
+        signal,
+      );
+      accept({ session: saved.session, workflow: updated.workflow });
+      accept(await creatorApi.get(saved.session.id, signal));
+      setNotice('Photo removed. Prepare the current film and a new quote before generation.');
     });
   }
 
@@ -742,11 +991,20 @@ export function useCreatorSession(options: {
     state,
     capabilities,
     capabilityError,
+    quote,
+    budget,
+    budgetError,
+    requestQuote,
     source,
     setSource,
     photos,
     setPhotos,
     addPhotos,
+    photoEdits,
+    setPhotoEdits,
+    photoEditsDirty,
+    savePhotoDescription,
+    removePhoto,
     plan,
     setPlan,
     script,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Check, FilmSlate, MagnifyingGlass, X } from '@phosphor-icons/react';
 import type { CreatorExternalReference } from '@yap/contracts/creator';
 import {
@@ -29,6 +29,7 @@ export function ReferenceBoard({
   const [limit, setLimit] = useState(8);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [choices, setChoices] = useState<Record<string, string[]>>({});
+  const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -95,6 +96,7 @@ export function ReferenceBoard({
         <label className="creator-search">
           <MagnifyingGlass size={18} />
           <input
+            ref={searchInput}
             aria-label="Search film references"
             placeholder="Brand, film or technique"
             value={search}
@@ -138,6 +140,25 @@ export function ReferenceBoard({
           <p className="creator-result-count" role="status">
             {filtered.length} {filtered.length === 1 ? 'film' : 'films'} in this view
           </p>
+          {!filtered.length && (
+            <div className="creator-catalog-loading">
+              <h3>No films match these filters.</h3>
+              <p>Try another brand or technique, or return to the full reference room.</p>
+              <button
+                type="button"
+                className="creator-secondary-button"
+                onClick={() => {
+                  setSearch('');
+                  setCategory('all');
+                  setLimit(8);
+                  setPreviewId(null);
+                  searchInput.current?.focus();
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
           <div className="creator-film-grid">
             {filtered.slice(0, limit).map((film) => {
               const embed = externalFilmEmbed(film.watchUrl);
