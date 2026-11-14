@@ -18,6 +18,7 @@ import type { SocialProviderConfig } from './social-providers.js';
 import { createWorkflowRouter } from './workflow-router.js';
 import type { VideoWorkflowProvider, WorkflowProviderConfig } from './workflow-provider.js';
 import type { PromoRenderer } from './video-render-queue.js';
+import { createCreatorRouter, type CreatorRouterOptions } from './creator-router.js';
 
 export interface AppOptions {
   dataFile?: string;
@@ -32,6 +33,11 @@ export interface AppOptions {
   socialDataFile?: string;
   socialProviderConfig?: SocialProviderConfig;
   socialFetch?: typeof globalThis.fetch;
+  creatorDataFile?: string;
+  creatorDirectory?: string;
+  creatorOptions?: Partial<
+    Pick<CreatorRouterOptions, 'videoConfig' | 'video' | 'auditor' | 'analyze' | 'fetch'>
+  >;
 }
 
 const briefKeys: Array<keyof ProjectBrief> = [
@@ -232,8 +238,24 @@ export async function createApp(options: AppOptions = {}) {
     throw error;
   }
   app.use('/api/social', social);
-  app.locals.shutdown = async () => {
+  let creator: Awaited<ReturnType<typeof createCreatorRouter>>;
+  try {
+    creator = await createCreatorRouter({
+      dataFile: options.creatorDataFile ?? join(dirname(projectDataFile), 'creator-sessions.json'),
+      directory: options.creatorDirectory ?? join(dirname(projectDataFile), 'creator-videos'),
+      workflows: workflow.repository,
+      assets: workflow.assets,
+      provider: workflow.provider,
+      onError: options.onError,
+      ...options.creatorOptions,
+    });
+  } catch (error) {
     await Promise.all([workflow.close(), social.closeSocialRuns()]);
+    throw error;
+  }
+  app.use('/api/creator', creator.router);
+  app.locals.shutdown = async () => {
+    await Promise.all([workflow.close(), social.closeSocialRuns(), creator.close()]);
   };
   app.use((_request, _response, next) =>
     next(new ApiError(404, 'NOT_FOUND', 'This API route could not be found.')),

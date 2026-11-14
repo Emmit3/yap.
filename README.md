@@ -2,7 +2,9 @@
 
 **Good ideas, made REEL.**
 
-Yap is a research and short-video workspace for creators. Start with a theme, explore public examples and their connections, choose a creative direction, then turn your own photos and facts into an original video you can review and download. Entertainment and media creation guide the product; the connected small-business promo studio is a working use case.
+Yap is a research and short-video workspace for creators. Start with an idea, product, place, public GitHub project, or your own photos. Explore public examples, choose a creative direction, and develop an original film you can review and download. Entertainment and media creation guide the product; the small-business photo promo remains a working use case.
+
+**Guided** asks useful questions while research runs; **Director** exposes the same saved script, sources, shot plan, and clip review. The landing phone opens this connected studio. See the [creator studio plan](docs/creator-studio-plan.md) for the product journey and [creator backend guide](docs/creator-backend.md) for sessions, approved generation limits, and clip audits.
 
 ![Yap website media and workflow overview: public evidence, selected direction, own facts and photos, review, approval, and MP4 output.](docs/assets/website-media-overview.jpg)
 
@@ -13,12 +15,20 @@ _This composition uses licensed studies already on the website. It is a workflow
 1. **Research a theme.** Choose an audience and public sources, or import a public evidence sample. Inspect posts, known metrics, sources, and coverage limits.
 2. **Explore content and connections together.** Compare topics and estimated communities in a graph or list. Inspect observed interactions separately from derived content relationships, and save notes to adopt, avoid, or test.
 3. **Choose what informs the script.** Send selected notes and insights as attributed research context. The creator supplies their own facts and photos separately.
-4. **Prepare and edit.** Guided templates or a configured OpenAI adapter propose a script and timed photo scenes. Structural checks identify missing, inconsistent, or stale material.
-5. **Approve and render.** Explicitly approve the current material, then render a downloadable vertical MP4 and caption for manual posting.
+4. **Prepare and edit.** Guided templates or a configured OpenAI adapter propose a script and timed shots. Structural checks identify missing, inconsistent, or stale material.
+5. **Approve and produce.** Explicitly approve the current material and generation limits, then create a photo-based promo or audited generated clips and a downloadable vertical MP4 and caption for manual posting.
 
-The cinematic landing, **Social research** workspace (`#/social`), and photo promo studio are connected in the actual React application. Research never approves a script or starts a render.
+The cinematic landing, **Social research** workspace (`#/social`), creator studio (`#/create`), and photo promo studio are connected in the actual React application. Research never approves a script or starts a render. Guided and Director share one saved session; return to it from **Your films** (`#/films`).
 
 The **[product film reference room](http://127.0.0.1:5173/showcase/film-references.html)** collects 103 distinct campaign and spec films across 87 brand labels. Search by product or technique, filter by category and creator, watch the original films, and export a shortlist with stable IDs and source URLs. These external presentation references remain separate from creator facts and media. [The complete catalogue and evidence](docs/research/product-films/README.md) document the sources, editorial notes, and excluded leads.
+
+## Two views, one saved film
+
+**Guided** starts with Add media or Add text, then asks intent-specific questions. Supplied product photos, a location, natural language, and a supported public GitHub link can start the conversation. Professional cinematography and indexed X, TikTok, and Instagram research can run while answers are saved. The creator reviews sources and chooses which examples should inform the work.
+
+**Director** exposes the same brief, script, source assignments, camera and lighting instructions, clip timing, and production limit. Generated clips use Runway Gen-4.5, full-clip decoding, and three-frame visual review before final assembly. Repeated approval of an unchanged plan does not renew its paid attempt budget. Provider access is optional and explicit; missing keys do not become claimed live research or generated footage.
+
+The existing photo editor remains available without generation credentials. Both production paths are silent; captions are supplied separately and publishing remains manual. See the [creator backend guide](docs/creator-backend.md) for supported behavior and audit limits.
 
 ## Agent architecture
 
@@ -108,6 +118,7 @@ Copy [apps/api/.env.example](apps/api/.env.example) to `apps/api/.env` for optio
 | Observed X post interactions       | `X_BEARER_TOKEN`                                                                 | X developer access to recent search; a consumer login is insufficient                                                    |
 | Optional Grok/X citations          | `XAI_API_KEY`, `XAI_MODEL`                                                       | xAI API account and supported search model; citations are research leads, not observed network edges                     |
 | Optional text/photo interpretation | `WORKFLOW_PROVIDER=openai`, `OPENAI_API_KEY`, `OPENAI_MODEL`                     | OpenAI Responses adapter proposes editable material                                                                      |
+| Generated cinematic clips          | `RUNWAYML_API_SECRET` plus `OPENAI_API_KEY`                                      | Runway Gen-4.5 and required sampled-frame review; explicit approval of the current plan and attempt limit comes first    |
 | Instagram account connection       | No current setting                                                               | Direct Instagram OAuth/API connection is future work; current paths use indexed public links or validated public imports |
 
 There is no separate LangChain API key for the harness. No Amazon, Peri, or Arlequin API is needed for the current implementation. AWS/Bedrock would require a new adapter and AWS configuration. ChatOverflow has its own optional coding-agent setup and sharing choices; installing it is a separate action. [Official provider references and access limits](docs/social-provider-research.md).
@@ -125,7 +136,9 @@ npm run dev
 
 The API runs at **http://127.0.0.1:3001** and the React app at **http://127.0.0.1:5173**. For backend development alone, run `npm run dev:api`. Stop with Ctrl+C. Runtime data and `.env` files are ignored by Git.
 
-Current output is a real **1080 × 1920 H264 MP4 at 24 fps**, composed from supplied photos, approved timing, and text overlays. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This is a local, single-workspace service without user accounts.
+Photo editor output is a real **1080 × 1920 H264 MP4 at 24 fps**, composed from supplied photos, approved timing, and text overlays. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This is a local, single-workspace service without user accounts.
+
+The creator studio uses `FIRECRAWL_API_KEY` for bounded professional, X, TikTok, and Instagram public discovery. The optional configured Deep Agents harness reviews retrieved evidence. Generated clips require `RUNWAYML_API_SECRET` and `OPENAI_API_KEY` for Runway Gen-4.5 and sampled-frame review. Model requests start only after explicit approval of the current script, shot plan, and paid attempt limit. Missing credentials remain visible; they never become fabricated search results or generated clips. External film references remain links and creative context, separate from the creator's facts and uploaded media.
 
 ## Workspace boundaries
 
@@ -135,7 +148,7 @@ Current output is a real **1080 × 1920 H264 MP4 at 24 fps**, composed from supp
 | [`apps/api`](apps/api)                     | HTTP API, public collection, agents, analysis, persistence, generation and rendering | `npm run dev:api`                          |
 | [`packages/contracts`](packages/contracts) | Shared runtime schemas and TypeScript request/response types                         | `npm run build --workspace=@yap/contracts` |
 
-Applications communicate over HTTP and do not import each other's source. Additive `/api/social` and `/api/workflows` routes preserve `/api/projects`. See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), [social analysis](docs/social-analysis.md), [promo backend integration](docs/promo-backend.md), and [the frontend guide](apps/web/README.md).
+Applications communicate over HTTP and do not import each other's source. Additive `/api/creator`, `/api/social` and `/api/workflows` routes preserve `/api/projects`. The creator router shares the workflow repository and validated image store. See [contributing](CONTRIBUTING.md), [architecture](docs/architecture.md), [social analysis](docs/social-analysis.md), [promo backend integration](docs/promo-backend.md), and [the frontend guide](apps/web/README.md).
 
 The cinematic landing source lives under `public/` and is synced into the React production build. Its studio/research navigation opens the connected workspace. Run `npm run dev:showcase` for the standalone reference on port 4173, or `npm run build:showcase` for a static build. Motion checks run with `npm run check:showcase`; [the landing guide](docs/cinematic-landing.md) explains design and media provenance.
 
