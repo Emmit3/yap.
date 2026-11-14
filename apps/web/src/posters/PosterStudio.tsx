@@ -47,11 +47,9 @@ export function PosterWorkspace({
   const field = useRef<HTMLTextAreaElement>(null);
   const editorHeading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(null);
-  const editorDialog = useRef<HTMLDialogElement>(null);
   const editorImage = useRef<HTMLImageElement>(null);
   const sourceBounds = useRef<DOMRect | null>(null);
   const pointerAction = useRef(false);
-  const suspendedClose = useRef(false);
   const restored = useRef(false);
 
   useEffect(() => {
@@ -117,15 +115,10 @@ export function PosterWorkspace({
   }, [editingId, active]);
   useLayoutEffect(() => {
     if (!active) {
-      if (editorDialog.current?.open) {
-        suspendedClose.current = true;
-        sourceBounds.current = null;
-        editorDialog.current.close();
-      }
+      sourceBounds.current = null;
       return;
     }
-    if (!editingId || !editorDialog.current) return;
-    if (!editorDialog.current.open) editorDialog.current.showModal();
+    if (!editingId) return;
     const image = editorImage.current;
     const source = sourceBounds.current;
     if (!image || !source || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -162,7 +155,6 @@ export function PosterWorkspace({
   const currentSaved = Boolean(draft.saved && draft.saved.changes === draft.changes.trim());
 
   function open(style: PosterStyle) {
-    suspendedClose.current = false;
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     sourceBounds.current = pointerAction.current
       ? (opener.current?.querySelector('img')?.getBoundingClientRect() ?? null)
@@ -240,7 +232,7 @@ export function PosterWorkspace({
         pointerAction.current = false;
       }}
     >
-      <div>
+      <div hidden={Boolean(editingStyle)}>
         <header className="poster-studio-heading">
           <div>
             <h1 id="poster-studio-title">Find your next poster.</h1>
@@ -329,15 +321,13 @@ export function PosterWorkspace({
         )}
       </div>
       {editingStyle && (
-        <dialog
-          ref={editorDialog}
+        <section
           className="poster-customization"
           aria-labelledby="poster-editor-title"
-          onClose={() => {
-            if (suspendedClose.current) {
-              suspendedClose.current = false;
-              return;
-            }
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
             back();
           }}
         >
@@ -435,7 +425,7 @@ export function PosterWorkspace({
               </p>
             </div>
           </div>
-        </dialog>
+        </section>
       )}
     </section>
   );
