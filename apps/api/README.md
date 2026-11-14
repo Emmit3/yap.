@@ -1,5 +1,9 @@
 # Yap API
 
+The new small business promo workflow is documented in [the frontend integration guide](../../docs/promo-backend.md). It adds photo inputs, natural language refinement, queryable state, explicit approval, durable render jobs, and real vertical MP4 output under `/api/workflows`. The original project API below remains compatible.
+
+For a matcha shop, the short path is create → upload photos → prepare → approve all → render → publish kit. Detailed brief/script/scene endpoints support further refinement. Run backend-only checks with root `npm run typecheck:api`, `npm run test:api`, and `npm run build:api`.
+
 Independent TypeScript/Express service. The web app only communicates with it over HTTP. Shared request/response types and runtime schemas live in `packages/contracts`; there are no imports from the frontend.
 
 From the repository root:

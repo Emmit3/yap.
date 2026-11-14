@@ -212,6 +212,9 @@ export const refineWorkflowSchema = z
   );
 
 export const generateWorkflowSchema = z.object({ expectedVersion: version }).strict();
+export const prepareWorkflowSchema = generateWorkflowSchema.extend({
+  regenerate: z.boolean().default(false),
+});
 
 export const updateWorkflowScriptSchema = z
   .object({
@@ -301,6 +304,7 @@ export type WorkflowQueryResponse = z.infer<typeof workflowQueryResponseSchema>;
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 export type RefineWorkflowInput = z.infer<typeof refineWorkflowSchema>;
 export type GenerateWorkflowInput = z.infer<typeof generateWorkflowSchema>;
+export type PrepareWorkflowInput = z.input<typeof prepareWorkflowSchema>;
 export type UpdateWorkflowScriptInput = z.infer<typeof updateWorkflowScriptSchema>;
 export type UpdateWorkflowScenesInput = z.infer<typeof updateWorkflowScenesSchema>;
 export type ApproveWorkflowStageInput = z.infer<typeof approveWorkflowStageSchema>;

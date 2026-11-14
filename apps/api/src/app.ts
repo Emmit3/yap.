@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import express, { type ErrorRequestHandler, type Request } from 'express';
 import cors from 'cors';
 import { z } from 'zod';
@@ -13,10 +13,19 @@ import { ApiError, StorageError } from './errors.js';
 import { ProjectRepository } from './repository.js';
 import { generateGuidedDraft } from './generation.js';
 import { exportFilename, exportMarkdown } from './export.js';
+import { createWorkflowRouter } from './workflow-router.js';
+import type { VideoWorkflowProvider, WorkflowProviderConfig } from './workflow-provider.js';
+import type { PromoRenderer } from './video-render-queue.js';
 
 export interface AppOptions {
   dataFile?: string;
   corsOrigin?: string;
+  workflowDataFile?: string;
+  assetsDirectory?: string;
+  rendersDirectory?: string;
+  workflowProviderConfig?: WorkflowProviderConfig;
+  workflowProvider?: VideoWorkflowProvider;
+  promoRenderer?: PromoRenderer;
   onError?: (error: unknown) => void;
 }
 
@@ -50,9 +59,17 @@ function validate<T>(schema: z.ZodType<T>, value: unknown): T {
 }
 
 export async function createApp(options: AppOptions = {}) {
-  const repository = await ProjectRepository.open(
-    options.dataFile ?? resolve(process.cwd(), 'data/projects.json'),
-  );
+  const projectDataFile = options.dataFile ?? resolve(process.cwd(), 'data/projects.json');
+  const repository = await ProjectRepository.open(projectDataFile);
+  const workflow = await createWorkflowRouter({
+    dataFile: options.workflowDataFile ?? join(dirname(projectDataFile), 'workflows.json'),
+    assetsDirectory: options.assetsDirectory ?? join(dirname(projectDataFile), 'photos'),
+    rendersDirectory: options.rendersDirectory ?? join(dirname(projectDataFile), 'videos'),
+    providerConfig: options.workflowProviderConfig,
+    provider: options.workflowProvider,
+    renderer: options.promoRenderer,
+    onError: options.onError,
+  });
   const allowedOrigin = options.corsOrigin ?? 'http://127.0.0.1:5173';
   const app = express();
   app.disable('x-powered-by');
@@ -70,9 +87,12 @@ export async function createApp(options: AppOptions = {}) {
         );
       },
       methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      exposedHeaders: ['Content-Disposition', 'X-Yap-Workflow-Version', 'X-Yap-Source-Stale'],
     }),
   );
   app.use(express.json({ limit: '128kb' }));
+  app.use('/api/workflows', workflow.router);
+  app.locals.shutdown = workflow.close;
 
   app.get('/api/health', (_request, response) => {
     response.json({ status: 'ok', service: 'yap-api', generator: 'guided' });
@@ -215,10 +235,13 @@ export async function createApp(options: AppOptions = {}) {
       'type' in error &&
       error.type === 'entity.too.large'
     ) {
+      const imageUpload = _request.path.includes('/assets');
       response.status(413).json({
         error: {
-          code: 'BODY_TOO_LARGE',
-          message: 'The request is too large. Keep it under 128 KB.',
+          code: imageUpload ? 'IMAGE_TOO_LARGE' : 'BODY_TOO_LARGE',
+          message: imageUpload
+            ? 'The photo is too large. Keep each photo under 10 MB.'
+            : 'The request is too large. Keep it under 128 KB.',
         },
       });
     } else {

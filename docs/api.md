@@ -2,6 +2,8 @@
 
 Source of truth: [`packages/contracts/src/index.ts`](../packages/contracts/src/index.ts) and [`apps/api/src/app.ts`](../apps/api/src/app.ts). This document describes the first local implementation, not a hosted or authenticated service.
 
+For the new business photo-to-promo flow, use the additive [`/api/workflows` integration guide](promo-backend.md) and the `@yap/contracts/workflow` / `@yap/contracts/render` exports. The `/api/projects` endpoints documented here remain compatible.
+
 ## Run independently
 
 Use Node.js 22.12 or newer and run `npm install` once at the repository root. Build shared runtime schemas before starting either app:

@@ -541,15 +541,19 @@ export function editWorkflowScript(
 ): Workflow {
   if (!workflow.script)
     throw new ApiError(409, 'WORKFLOW_SCRIPT_REQUIRED', 'Generate a script before editing it.');
-  return setWorkflowScript(workflow, {
-    id: randomUUID(),
-    sourceRevision: workflow.contentRevision,
-    hook: content.hook,
-    segments: content.segments,
-    caption: content.caption,
-    provider: workflow.script.provider,
-    createdAt: new Date().toISOString(),
-  });
+  return setWorkflowScript(
+    workflow,
+    {
+      id: randomUUID(),
+      sourceRevision: workflow.contentRevision,
+      hook: content.hook,
+      segments: content.segments,
+      caption: content.caption,
+      provider: workflow.script.provider,
+      createdAt: new Date().toISOString(),
+    },
+    { requireApproval: false },
+  );
 }
 
 export function editWorkflowScenes(
@@ -558,13 +562,17 @@ export function editWorkflowScenes(
 ): Workflow {
   if (!workflow.scenes || !workflow.script)
     throw new ApiError(409, 'WORKFLOW_SCENES_REQUIRED', 'Generate scenes before editing them.');
-  return setWorkflowScenes(workflow, {
-    id: randomUUID(),
-    sourceScriptId: workflow.script.id,
-    scenes: content.scenes,
-    provider: workflow.scenes.provider,
-    createdAt: new Date().toISOString(),
-  });
+  return setWorkflowScenes(
+    workflow,
+    {
+      id: randomUUID(),
+      sourceScriptId: workflow.script.id,
+      scenes: content.scenes,
+      provider: workflow.scenes.provider,
+      createdAt: new Date().toISOString(),
+    },
+    { requireApproval: false },
+  );
 }
 
 function excerpt(text: string, wordLimit: number, charLimit = 1000): string {

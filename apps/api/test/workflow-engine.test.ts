@@ -9,6 +9,7 @@ import {
   buildGuidedScript,
   createWorkflow,
   editWorkflowScript,
+  editWorkflowScenes,
   invalidateWorkflowContent,
   queryWorkflow,
   refineWorkflow,
@@ -250,4 +251,43 @@ test('guided scripts handle all allowed benefit counts and maximum natural langu
     const script = buildGuidedScript(workflow);
     assert.ok(script.segments.every((segment) => segment.text.length > 0));
   }
+});
+
+test('unapproved proposals can be edited and scenes replanned before one final review', () => {
+  const options = { requireApproval: false };
+  let workflow = complete(15);
+  workflow.assets = [asset()];
+  workflow = setWorkflowScript(workflow, buildGuidedScript(workflow, options), options);
+  workflow = setWorkflowScenes(workflow, buildGuidedScenes(workflow, options), options);
+  const firstScriptId = workflow.script!.id;
+  const script = workflow.script!;
+  workflow = editWorkflowScript(workflow, {
+    hook: 'A little break with Loop.',
+    caption: script.caption,
+    segments: script.segments.map((segment, index) =>
+      index === 0 ? { ...segment, text: 'A little break with Loop.' } : segment,
+    ),
+  });
+  assert.notEqual(workflow.script!.id, firstScriptId);
+  assert.equal(workflow.scenes, null);
+  assert.deepEqual(workflow.approvals, { brief: null, script: null, scenes: null });
+  assert.throws(() => buildGuidedScenes(workflow), /Approve the current script/);
+  workflow = setWorkflowScenes(workflow, buildGuidedScenes(workflow, options), options);
+  const scenesId = workflow.scenes!.id;
+  workflow = editWorkflowScenes(workflow, {
+    scenes: workflow.scenes!.scenes.map((scene, index) =>
+      index === 0 ? { ...scene, visual: 'Show the supplied bottle photo in a close view.' } : scene,
+    ),
+  });
+  assert.notEqual(workflow.scenes!.id, scenesId);
+  assert.deepEqual(workflow.approvals, { brief: null, script: null, scenes: null });
+  assert.equal(verifyWorkflow(workflow).scenes.state, 'needs_review');
+  assert.equal(verifyWorkflow(approveAllWorkflow(workflow)).scenes.state, 'approved');
+  const invalidScenes = workflow.scenes!.scenes.map((scene, index) =>
+    index === 0 ? { ...scene, seconds: scene.seconds + 1 } : scene,
+  );
+  assert.throws(
+    () => editWorkflowScenes(workflow, { scenes: invalidScenes }),
+    /failed verification/,
+  );
 });
