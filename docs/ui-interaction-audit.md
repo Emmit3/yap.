@@ -4,7 +4,20 @@ Source review on November 14, 2026, in the creator budget integration worktree. 
 
 The main task remains: supply an idea and photos, refine a proposal, explicitly review production cost, then download a real film and caption. Decorative artwork and progress labels do not need click handlers. Controls that claim to save, share, approve or copy must complete that action or offer a usable recovery.
 
-## Findings requiring owner action
+## Release reconciliation
+
+All seven initial findings below are resolved in the integrated release candidate:
+
+- `b0da0fb` adds exact quote/cost approval, shared budget display, provider-correct duration/model controls and reference filter reset.
+- `cf8bedf` fixes caption clipboard recovery and legacy tab keyboard behavior, makes parent catalog loading retryable, and verifies all 103 reference selections including three citation-only entries.
+- `89c5e07` fixes per-reference personal actions and share links; independent identity checks preserve all 77 unique media entries across three layout calculations.
+- `618c51d` checkpoints completed drafting stages so recoverable failures do not repurchase them. API recovery and manual editing remain separate from production approval.
+- `80822e0` makes saved-script timing review directly reachable without a clip plan and adds deliberate adjacent-moment combination, preserving all text and the exact total duration.
+- `bf4f584` improves field boundaries and uses consistent neutral focus. The checked source color pairs meet 3:1 against their white/light-gray surfaces; rendered contrast still requires visual verification.
+
+The findings and inventory below record the starting snapshot and its original line anchors. Current primary navigation groups creations, references and the workspace guide, with New creation separate and Create/View analytics inside the same creation.
+
+## Initial findings and resolutions
 
 ### P0: Creator production controls do not yet implement the quote contract
 
@@ -84,7 +97,7 @@ The main task remains: supply an idea and photos, refine a proposal, explicitly 
 - Source-level form labels are present for the inspected entry, interview, promo, research, search and shot controls; no unlabeled visible form control was identified. Generated icon controls generally provide explicit accessible names.
 - Main app, creator, research and film-room styles contain focus-visible rules, disabled states and reduced-motion overrides. Their rendered contrast and target sizes are not verified by this report.
 - Shared navigation, genuine save/download handlers, explicit destructive confirmations, version conflict recovery, safe external citations and real job polling are strengths to preserve.
-- The highest-priority work is the creator contract integration, followed by clipboard recovery and truthful landing personal actions. Implement keyboard/empty-state consistency next, then run a scoped `$impeccable polish` pass. Browser verification remains outstanding under the user's explicit no-computer-use instruction.
+- Quote integration, clipboard recovery, personal actions, keyboard navigation and filter recovery are implemented and checked at source/HTTP level. Browser verification remains unperformed under the user's explicit no-computer-use instruction.
 
 ## Follow-up ownership
 
