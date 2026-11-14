@@ -18,6 +18,8 @@ _This composition uses licensed studies already on the website. It is a workflow
 
 The cinematic landing, **Social research** workspace (`#/social`), and photo promo studio are connected in the actual React application. Research never approves a script or starts a render.
 
+The **[product film reference room](http://127.0.0.1:5173/showcase/film-references.html)** collects 103 distinct campaign and spec films across 87 brand labels. Search by product or technique, filter by category and creator, watch the original films, and export a shortlist with stable IDs and source URLs. These external presentation references remain separate from creator facts and media. [The complete catalogue and evidence](docs/research/product-films/README.md) document the sources, editorial notes, and excluded leads.
+
 ## Agent architecture
 
 [![Architecture: Deep Agents coordinator, ordered specialists, virtual research files, evidence graph, separate creator facts, structural checks, explicit approval, and rendering.](docs/assets/architecture.png)](docs/assets/architecture.svg)
