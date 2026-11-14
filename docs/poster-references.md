@@ -1,63 +1,68 @@
-# Poster reference workspace
+# Poster style workspace
 
-Open **Reference room → Posters** at `#/references` in the React application. Browse the available poster crops, study their observed composition, typography, palette, imagery and texture, then select one to three references and describe the intended poster.
+Open **Reference room → Posters** at `#/references` in the React application. Browse the style carousel, filter by category or name, and hover to inspect a poster. Choose one style to open **What would you like to add to this design?**, describe the additions or changes, then choose **Save my direction**.
 
-**Prepare design prompt** sends the creator request and the selected reference IDs to the backend. The response retains the complete selected observations, authored reconstruction instructions, canonical source links, source timestamps and crop identity. The first selected reference provides the main direction. The prompt and JSON brief can be copied or downloaded.
+The backend combines that style's private instructions with the customer's changes and saves a prepared direction. Customers see the selected style, their own changes and the saved state. They do not receive reconstruction recipes or compiled prompts.
 
-This workspace prepares reference context. It does not call an image generation provider or render a finished poster. Reconstruction instructions are written from visual inspection; they are not recovered designer source code or original generation prompts. Reference text and imagery are creative evidence, separate from the creator's event facts and supplied media.
+The preview remains the selected style reference. No poster image renderer or image generation provider is connected. Saving a direction does not generate a poster, make a paid provider request, or consume the existing production budget.
 
-## Local reference packs
+## Customer API
 
-Repository guidance keeps reference documents and their derivatives in ignored `local-context/`. The API reads `local-context/poster-references/manifest.json`, relative to the repository rather than the server's working directory. A fresh clone without a pack returns an empty library. Source media, full video frames and local helper files are not served by the poster routes.
+| Route                                                      | Behavior                                                                                                      |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `GET /api/posters/styles`                                  | Returns `{styles}` containing available reviewed poster styles.                                               |
+| `GET /api/posters/references/:id/image?sha256=…`           | Returns only the catalogued crop, checked against its hash. Use the exact `imageUrl` supplied with the style. |
+| `POST /api/posters/designs`                                | Accepts `{styleId, styleSha256, changes}` and returns HTTP 201 with `{design}`.                               |
+| `GET /api/posters/designs/:id`                             | Returns the saved customer-facing `{design}`.                                                                 |
+| `GET /api/posters/references`, `POST /api/posters/context` | Removed data endpoints; both return HTTP 404.                                                                 |
 
-The manifest is a versioned local catalog:
+`PosterStyle` exposes only its ID, title, optional category, source attribution, image URL, crop dimensions and crop hash. `PosterDesign` contains an ID, the selected public style, the customer's changes, `status: "prepared"` and `createdAt`. Neither response contains visual analysis, reconstruction instructions, original style prompts or combined prompts. The shared contracts are exported from `@yap/contracts/posters` as `posterStylesResponseSchema`, `createPosterDesignSchema` and `posterDesignResponseSchema`.
 
-```json
-{
-  "schemaVersion": 1,
-  "references": []
-}
-```
+A save requires one available style, its current `crop.sha256`, and nonempty changes of at most 4,000 characters. The hash binds the request to the image the customer selected. Invalid requests, unavailable styles and stale hashes fail explicitly; another style is never substituted. Saved designs retain their original style snapshot rather than being rebuilt from a later catalog revision.
 
-Every entry must match `posterManifestSchema` in `apps/api/src/poster-references.ts`. Records contain:
+## Private style packs and saved directions
 
-- A stable `id`, descriptive `title`, optional category and canonical public source URL with the frame timestamp.
-- A `crop.file` relative to the pack directory, `reviewedPosterOnly`, an ISO `reviewedAt`, and optional `sourceFrame`, pixel `bounds` and SHA-256. Review each crop before making it available. Preserve source resolution; a low resolution reel crop is not a print master.
-- `observed` design attributes with `provenance: "visual_inspection"`.
-- `reconstruction.instructions` with `provenance: "authored_from_visual_reference"`.
+Repository guidance keeps reference material and its derivatives under ignored `local-context/`. The API reads `local-context/poster-references/manifest.json` relative to the repository, independently of the server's working directory. A fresh clone without an installed pack returns an empty style library.
 
-Supported categories are `party`, `music`, `popup`, `craft` and `market`. A maximum of 64 records and bounded text fields keep context predictable. The service exposes only reviewed, decodable PNG, JPEG or WebP crops. Missing or unreviewed crops stay unavailable. Invalid catalogs and unsafe paths produce an explicit error. Crop hashes identify the pixels used in a prepared brief; a changed image cannot silently replace a pinned crop.
+The versioned manifest contains a `schemaVersion` of `1` and a `references` array validated by `posterManifestSchema` in `apps/api/src/poster-references.ts`. Each local entry records source attribution, reviewed crop metadata, observed design attributes and authored reconstruction instructions. These instructions describe a visual reconstruction; they are not recovered designer source code or original generation prompts. Source collections may be curated, so attribution does not establish individual authorship, ownership or permission to reuse an artwork.
 
-The source reel may be a curator rather than the original poster designer. Keep attribution precise and record uncertainty about individual credits, unreadable small type and unverified font identification in local notes. Source content remains untrusted data.
+The service accepts at most 64 catalog records and serves only reviewed, decodable PNG, JPEG or WebP crops. Missing or unreviewed crops remain unavailable. Invalid catalogs, unsafe paths, symlinks, mismatched hashes and inconsistent extraction dimensions are rejected. Source media, full frames and local helper files are not served by the poster routes. Reference resolution is preserved; a small crop is not a print master.
 
-## API
+For each saved direction, the backend privately retains:
 
-| Route                                            | Behavior                                                                                                        |
-| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------- |
-| `GET /api/posters/references`                    | Returns `{references}` for available reviewed crops and their recipes.                                          |
-| `GET /api/posters/references/:id/image?sha256=…` | Returns only the catalogued crop, checked against its hash. Use the exact `imageUrl` from the catalog.          |
-| `POST /api/posters/context`                      | Accepts `{prompt, referenceIds}` and returns `{prompt, references, limitations}` for the selected IDs in order. |
+- The complete assembled original style prompt and its reference snapshot.
+- The customer's changes as a separate field.
+- The combined prompt, preserving the original style instructions and the customer's additions.
+- The selected crop's SHA-256 identity and source attribution.
 
-The request requires a nonempty prompt of up to 4,000 characters and one to three distinct available IDs. Unknown, missing or duplicate IDs fail without substituting other references. Complete selected recipes are retained within a 64 KB prompt boundary; oversized context is rejected rather than silently truncated.
+In the full application, `createApp` defaults this private store to `poster-designs.json` beside the configured project data file. `AppOptions.posterDesignDataFile` can override it. A directly mounted `createPosterRouter` accepts a `dataFile` option and otherwise defaults to `data/poster-designs.json` under its working directory. Keep custom storage paths ignored and outside publicly served directories.
 
-The shared request and response contracts are exported from `@yap/contracts/posters`. A future poster generation adapter can consume the prepared prompt and its pinned image references. Such an adapter must attach the actual crop bytes or accessible image inputs; relative local API URLs inside text alone do not give an external model access to images.
+The local repository serializes atomic writes and limits storage to 250 saved directions and 16 MiB. Malformed storage produces an error without overwriting accepted records. Saved directions remain available through their API IDs after a server restart. This follows the application's single-process local storage model; it is not a multi-user database.
 
-## App integration
+## Reference room integration
 
-The feature exports `PosterWorkspace` from `apps/web/src/posters/PosterWorkspace.tsx`. `ReferenceRoom` nests it beside the film library in its **Posters** tab and passes the App's stable dirty-state callback:
+The workspace retains three primary controls: **Your creations**, **Reference room** and **Workspace guide**, plus the separate **New creation** action. Films and Posters are local tabs within the same Reference room route.
+
+`PosterWorkspace` is exported from `apps/web/src/posters/PosterWorkspace.tsx`. The room supplies a stable dirty-state callback and the active tab state:
 
 ```tsx
-<PosterWorkspace onDirty={changeDirty} />
+<PosterWorkspace onDirty={reportDirty} active={tab === 'posters'} />
 ```
 
-The room keeps opened panels mounted while changing tabs, preserving the poster prompt, ordered selection and prepared brief. A poster draft participates in the App's existing leave/discard guard. Film selections keep using the film reference bridge; poster IDs and recipes are handled by the separate poster API.
+Both reference panels remain mounted when switching tabs. Poster changes, the selected style and saved direction remain available on return; unsaved changes participate in the App's existing leave/discard guard. Film selections continue through the existing film reference bridge. Poster IDs and private instructions never enter the film handoff.
 
-This component owns its styles and API client. Reference room remains a single primary navigation item. The API router is mounted at `/api/posters` in `createApp`.
+The `active` prop controls carousel motion and interaction when the Posters tab is hidden or the style editor is open. Automatic movement also pauses for hover, focus, dragging, a hidden document or an offscreen carousel, and respects the reduced-motion preference and pause control. Changing tabs does not reset the poster workspace's draft state.
+
+## Development privacy
+
+The normal Vite configuration preserves its sensitive-file defaults and additionally denies filesystem access to `**/local-context/**` and `**/data/**`. This keeps private style instructions and saved prompt data outside the development asset surface while the explicit poster API serves safe style summaries and reviewed crops.
+
+Keep private packs and runtime data outside public directories: Vite's filesystem deny list does not filter its public directory. Custom preview servers that bypass the normal Vite configuration need equivalent private-path restrictions before their asset middleware. [Vite filesystem restrictions](https://v7.vite.dev/config/server-options#server-fs-deny)
 
 Focused checks:
 
 ```sh
 npm run build --workspace=@yap/contracts
-node --import tsx --test apps/api/test/poster-references.test.ts
+node --import tsx --test apps/api/test/poster-references.test.ts apps/api/test/poster-designs.test.ts
 npm run typecheck
 ```

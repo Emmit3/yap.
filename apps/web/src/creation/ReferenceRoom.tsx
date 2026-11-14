@@ -145,7 +145,7 @@ export function ReferenceRoom({
         aria-labelledby={`${tabId}-posters-tab`}
         hidden={tab !== 'posters'}
       >
-        <PosterWorkspace onDirty={reportDirty} />
+        <PosterWorkspace onDirty={reportDirty} active={tab === 'posters'} />
       </div>
     </section>
   );

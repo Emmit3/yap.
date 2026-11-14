@@ -41,6 +41,7 @@ export interface AppOptions {
   creatorDataFile?: string;
   creatorDirectory?: string;
   posterReferencesDirectory?: string;
+  posterDesignDataFile?: string;
   creatorOptions?: Partial<
     Pick<
       CreatorRouterOptions,
@@ -116,7 +117,14 @@ export async function createApp(options: AppOptions = {}) {
   );
   app.use(express.json({ limit: '128kb' }));
   app.use('/api/workflows', workflow.router);
-  app.use('/api/posters', createPosterRouter({ rootDirectory: options.posterReferencesDirectory }));
+  app.use(
+    '/api/posters',
+    createPosterRouter({
+      rootDirectory: options.posterReferencesDirectory,
+      dataFile:
+        options.posterDesignDataFile ?? join(dirname(projectDataFile), 'poster-designs.json'),
+    }),
+  );
   app.locals.shutdown = workflow.close;
 
   app.get('/api/health', (_request, response) => {

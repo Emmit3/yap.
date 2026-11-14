@@ -1,7 +1,4 @@
-import {
-  posterContextResponseSchema,
-  posterReferencesResponseSchema,
-} from '@yap/contracts/posters';
+import { posterStylesResponseSchema, posterDesignResponseSchema } from '@yap/contracts/posters';
 
 const origin = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
 
@@ -11,7 +8,7 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
     headers: { ...(init?.body ? { 'Content-Type': 'application/json' } : {}), ...init?.headers },
   });
   if (!result.ok) {
-    let message = 'Poster references could not be loaded. Try again.';
+    let message = 'Your design could not be saved. Please try again.';
     try {
       const body = await result.json();
       if (typeof body?.error?.message === 'string') message = body.error.message;
@@ -24,16 +21,21 @@ async function request(path: string, init?: RequestInit): Promise<unknown> {
 }
 
 export const posterApi = {
-  async list(signal: AbortSignal) {
-    return posterReferencesResponseSchema.parse(await request('/references', { signal }));
+  async styles(signal: AbortSignal) {
+    return posterStylesResponseSchema.parse(await request('/styles', { signal }));
   },
-  async context(prompt: string, referenceIds: string[], signal: AbortSignal) {
-    return posterContextResponseSchema.parse(
-      await request('/context', {
+  async createDesign(styleId: string, changes: string, styleSha256: string, signal: AbortSignal) {
+    return posterDesignResponseSchema.parse(
+      await request('/designs', {
         method: 'POST',
-        body: JSON.stringify({ prompt, referenceIds }),
+        body: JSON.stringify({ styleId, changes, styleSha256 }),
         signal,
       }),
+    );
+  },
+  async getDesign(id: string, signal: AbortSignal) {
+    return posterDesignResponseSchema.parse(
+      await request(`/designs/${encodeURIComponent(id)}`, { signal }),
     );
   },
   imageUrl(path: string) {

@@ -114,3 +114,50 @@ export const posterContextResponseSchema = z
 export type PosterReference = z.infer<typeof posterReferenceSchema>;
 export type PosterContext = z.infer<typeof posterContextResponseSchema>;
 export type PosterContextRequest = z.infer<typeof posterContextRequestSchema>;
+
+/** Customer-facing styles intentionally omit the private visual analysis and reconstruction. */
+export const posterStyleSchema = z
+  .object({
+    id: posterReferenceIdSchema,
+    title: text(200),
+    category: posterCategorySchema.optional(),
+    source: posterSourceSchema,
+    imageUrl: z.string().max(240),
+    crop: z
+      .object({
+        width: pixels.positive(),
+        height: pixels.positive(),
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+  })
+  .strict()
+  .refine(
+    (style) =>
+      style.imageUrl === `/api/posters/references/${style.id}/image?sha256=${style.crop.sha256}`,
+    'The image URL must match this style and crop hash.',
+  );
+export const createPosterDesignSchema = z
+  .object({
+    styleId: posterReferenceIdSchema,
+    styleSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    changes: text(4000),
+  })
+  .strict();
+export const posterDesignSchema = z
+  .object({
+    id: z.uuid(),
+    style: posterStyleSchema,
+    changes: text(4000),
+    status: z.literal('prepared'),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+export const posterStylesResponseSchema = z
+  .object({ styles: z.array(posterStyleSchema).max(64) })
+  .strict();
+export const posterDesignResponseSchema = z.object({ design: posterDesignSchema }).strict();
+
+export type PosterStyle = z.infer<typeof posterStyleSchema>;
+export type PosterDesign = z.infer<typeof posterDesignSchema>;
+export type CreatePosterDesign = z.infer<typeof createPosterDesignSchema>;

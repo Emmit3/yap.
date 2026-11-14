@@ -6,12 +6,10 @@ import { once } from 'node:events';
 import test, { type TestContext } from 'node:test';
 import express, { type ErrorRequestHandler } from 'express';
 import sharp from 'sharp';
-import {
-  posterReferencesResponseSchema,
-  posterContextResponseSchema,
-} from '@yap/contracts/posters';
+import { posterStylesResponseSchema, posterContextResponseSchema } from '@yap/contracts/posters';
 import { ApiError } from '../src/errors.js';
 import { createPosterRouter } from '../src/poster-router.js';
+import { PosterReferenceLibrary } from '../src/poster-references.js';
 
 const fixed = '2026-11-14T16:00:00.000Z';
 const entry = (id = 'poster-one') => ({
@@ -46,7 +44,10 @@ async function fixture(t: TestContext) {
     .toBuffer();
   const app = express();
   app.use(express.json());
-  app.use('/api/posters', createPosterRouter({ rootDirectory: root }));
+  app.use(
+    '/api/posters',
+    createPosterRouter({ rootDirectory: root, dataFile: join(directory, 'designs.json') }),
+  );
   const errors: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
     if (error instanceof ApiError)
       response.status(error.status).json({ error: { code: error.code, message: error.message } });
@@ -68,6 +69,7 @@ async function fixture(t: TestContext) {
     directory,
     root,
     png,
+    library: new PosterReferenceLibrary({ rootDirectory: root }),
     request: (path: string, init?: RequestInit) => fetch(`${base}${path}`, init),
     manifest: (references: unknown[]) =>
       writeFile(join(root, 'manifest.json'), JSON.stringify({ schemaVersion: 1, references })),
@@ -82,13 +84,13 @@ const contextRequest = (referenceIds: string[], prompt = 'A poster for my music 
 
 test('absent local catalog is an empty reference room without fabricated options', async (t) => {
   const f = await fixture(t);
-  const response = await f.request('/api/posters/references');
+  const response = await f.request('/api/posters/styles');
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { references: [] });
+  assert.deepEqual(await response.json(), { styles: [] });
   assert.equal((await f.request('/api/posters/references/not-present/image')).status, 404);
   assert.equal(
     (await f.request('/api/posters/context', contextRequest(['not-present']))).status,
-    400,
+    404,
   );
 });
 
@@ -100,15 +102,15 @@ test('catalog exposes only available reviewed crops, canonical provenance and pi
   await f.image(reviewed.id);
   await f.image(unreviewed.id);
   await f.manifest([reviewed, unreviewed, entry('missing-crop')]);
-  const { references } = posterReferencesResponseSchema.parse(
-    await (await f.request('/api/posters/references')).json(),
+  const { styles: references } = posterStylesResponseSchema.parse(
+    await (await f.request('/api/posters/styles')).json(),
   );
   assert.equal(references.length, 1);
   const reference = references[0]!;
   assert.equal(reference.source.url, 'https://www.instagram.com/reel/DfVgIHsB1sk/');
   assert.equal(reference.source.timestampSeconds, 1.25);
-  assert.equal(reference.observed.provenance, 'visual_inspection');
-  assert.equal(reference.reconstruction.provenance, 'authored_from_visual_reference');
+  assert.equal('observed' in reference, false);
+  assert.equal('reconstruction' in reference, false);
   assert.equal(reference.category, 'music');
   assert.equal(reference.crop.width, 12);
   assert.equal(reference.crop.height, 18);
@@ -128,12 +130,9 @@ test('generation context retains exactly selected references in order and separa
   for (const record of records) await f.image(record.id);
   await f.manifest(records);
   const prompt = 'Use this exact supplied title: Saturday Session.';
-  const response = await f.request(
-    '/api/posters/context',
-    contextRequest(['poster-three', 'poster-one'], prompt),
+  const body = posterContextResponseSchema.parse(
+    await f.library.context({ prompt, referenceIds: ['poster-three', 'poster-one'] }),
   );
-  assert.equal(response.status, 200);
-  const body = posterContextResponseSchema.parse(await response.json());
   assert.deepEqual(
     body.references.map((reference: { id: string }) => reference.id),
     ['poster-three', 'poster-one'],
@@ -159,12 +158,14 @@ test('invalid or unknown explicit selections cannot silently gain fallback refer
   await f.image('poster-one');
   await f.manifest([entry()]);
   for (const ids of [[], ['poster-one', 'poster-one'], ['unknown'], ['a', 'b', 'c', 'd']]) {
-    const response = await f.request('/api/posters/context', contextRequest(ids));
-    assert.equal(response.status, 400);
+    await assert.rejects(
+      () => f.library.context({ prompt: 'A poster.', referenceIds: ids }),
+      (error: unknown) => error instanceof ApiError && error.status === 400,
+    );
   }
-  assert.equal(
-    (await f.request('/api/posters/context', contextRequest(['poster-one'], ''))).status,
-    400,
+  await assert.rejects(
+    () => f.library.context({ prompt: '', referenceIds: ['poster-one'] }),
+    (error: unknown) => error instanceof ApiError && error.status === 400,
   );
 });
 
@@ -182,12 +183,12 @@ test('malformed catalogs and traversal paths are rejected rather than exposed', 
     [{ ...entry(), inventedSourceScript: 'not present in source' }],
   ]) {
     await f.manifest(records);
-    const response = await f.request('/api/posters/references');
+    const response = await f.request('/api/posters/styles');
     assert.equal(response.status, 503);
     assert.equal((await response.json()).error.code, 'POSTER_CATALOG_INVALID');
   }
   await writeFile(join(f.root, 'manifest.json'), '{ broken JSON');
-  assert.equal((await f.request('/api/posters/references')).status, 503);
+  assert.equal((await f.request('/api/posters/styles')).status, 503);
 });
 
 test('catalogued image links cannot escape through a directory symlink', async (t) => {
@@ -209,7 +210,7 @@ test('catalogued image links cannot escape through a directory symlink', async (
   const reference = entry();
   reference.crop.file = 'linked/poster-one.png';
   await f.manifest([reference]);
-  assert.equal((await f.request('/api/posters/references')).status, 503);
+  assert.equal((await f.request('/api/posters/styles')).status, 503);
   assert.equal((await f.request('/api/posters/references/poster-one/image')).status, 503);
 });
 
@@ -220,10 +221,10 @@ test('mislabeled non-image files and mismatched pinned crops never become refere
     'poster-one',
     Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>'),
   );
-  assert.equal((await f.request('/api/posters/references')).status, 503);
+  assert.equal((await f.request('/api/posters/styles')).status, 503);
   await f.image('poster-one');
-  const { references } = posterReferencesResponseSchema.parse(
-    await (await f.request('/api/posters/references')).json(),
+  const { styles: references } = posterStylesResponseSchema.parse(
+    await (await f.request('/api/posters/styles')).json(),
   );
   const pinnedUrl = references[0]!.imageUrl;
   const replacement = await sharp({
@@ -253,7 +254,7 @@ test('declared extraction bounds must match the isolated image dimensions', asyn
       },
     },
   ]);
-  assert.equal((await f.request('/api/posters/references')).status, 503);
+  assert.equal((await f.request('/api/posters/styles')).status, 503);
   await f.manifest([
     {
       ...reference,
@@ -264,7 +265,7 @@ test('declared extraction bounds must match the isolated image dimensions', asyn
       },
     },
   ]);
-  const response = await f.request('/api/posters/references');
+  const response = await f.request('/api/posters/styles');
   assert.equal(response.status, 200);
-  assert.equal(posterReferencesResponseSchema.parse(await response.json()).references.length, 1);
+  assert.equal(posterStylesResponseSchema.parse(await response.json()).styles.length, 1);
 });
