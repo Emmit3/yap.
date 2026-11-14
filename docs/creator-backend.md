@@ -39,6 +39,8 @@ Input supports media/text mode, natural language, public HTTPS URLs, location, p
 
 Research runs independently while answers save. If the source input stays the same, completion retains later answers, chosen references and any newer plan, adding a collection-timing limitation when needed. If source input changes, the old result fails with `CREATOR_ANALYSIS_STALE`. Per-session operation locks span creator/workflow writes; research's final commit uses that same lock.
 
+Preparation checkpoints each completed script and scene stage before another paid stage. Creator drafting receives the selected provider's timing limits. If saved timing or scene structure cannot form a valid clip plan, `CREATOR_PREPARE_REVIEW_REQUIRED` returns 409: reload the session envelope, edit the saved script in Director, and prepare again. The workflow version can advance even when no clip plan is created. Completed stages are reused; recovery does not automatically repeat paid drafting or change the creator's words.
+
 ## Real paid clip generation
 
 ### Exact quotes and durable budget
