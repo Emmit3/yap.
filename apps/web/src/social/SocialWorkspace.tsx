@@ -29,8 +29,11 @@ import {
   type SocialPost,
   type SocialProviderStatus,
   type SocialQueryResponse,
+  type SocialResearchCapabilities,
 } from '@yap/contracts/social';
 import ResearchGraph from './Graph';
+import ResearchActivity from './ResearchActivity';
+import { useResearchRun } from './useResearchRun';
 import { researchError, socialApi } from './api';
 import './social.css';
 
@@ -68,6 +71,9 @@ export interface SocialWorkspaceProps {
 export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorkspaceProps) {
   const [investigations, setInvestigations] = useState<SocialInvestigationSummary[]>([]);
   const [providers, setProviders] = useState<SocialProviderStatus[]>([]);
+  const [researchCapabilities, setResearchCapabilities] =
+    useState<SocialResearchCapabilities | null>(null);
+  const [harness, setHarness] = useState<'pipeline' | 'deepagents'>('pipeline');
   const [active, setActive] = useState<SocialInvestigation | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -114,6 +120,23 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       noteKind !== originalNote.kind ||
       JSON.stringify(noteEvidenceIds) !== JSON.stringify(originalNote.evidenceIds)
     : noteText.trim().length > 0;
+  const activity = useResearchRun({
+    onBusy: (value) =>
+      setBusy((current) => (value ? 'collect' : current === 'collect' ? '' : current)),
+    onError: setError,
+    onComplete: (investigation, run) => {
+      setInvestigations((previous) => [
+        investigation,
+        ...previous.filter((item) => item.id !== investigation.id),
+      ]);
+      openInvestigation(investigation);
+      setStatus(
+        run.execution === 'demo_replay'
+          ? 'Example replay complete. All evidence and activity in this example are illustrative.'
+          : 'Research complete. Explore the source evidence, connections, and creative findings.',
+      );
+    },
+  });
 
   useEffect(() => {
     onDirty?.(noteDirty);
@@ -129,13 +152,15 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
     let current = true;
     async function load() {
       try {
-        const [library, integrations] = await Promise.all([
+        const [library, integrations, capabilities] = await Promise.all([
           socialApi.list(),
           socialApi.providers(),
+          socialApi.researchCapabilities(),
         ]);
         if (!current) return;
         setInvestigations(library.investigations);
         setProviders(integrations.providers);
+        setResearchCapabilities(capabilities);
       } catch (caught) {
         if (current) setError(researchError(caught));
       } finally {
@@ -209,9 +234,14 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
     setBusy('refresh');
     setError('');
     try {
-      const [library, integrations] = await Promise.all([socialApi.list(), socialApi.providers()]);
+      const [library, integrations, capabilities] = await Promise.all([
+        socialApi.list(),
+        socialApi.providers(),
+        socialApi.researchCapabilities(),
+      ]);
       setInvestigations(library.investigations);
       setProviders(integrations.providers);
+      setResearchCapabilities(capabilities);
       setStatus('Saved research and source availability refreshed.');
     } catch (caught) {
       setError(researchError(caught));
@@ -219,38 +249,29 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       setBusy('');
     }
   }
-  async function create(mode: 'demo' | 'live') {
+  async function create(mode: 'demo' | 'live', discard = false) {
     if (busy) return;
+    if (noteDirty && !discard) {
+      setPendingChange(() => () => {
+        void create(mode, true);
+      });
+      return;
+    }
     if (mode === 'live' && (!topic.trim() || !platforms.length)) {
       setError('Enter a theme and choose at least one source.');
       return;
     }
-    setBusy('collect');
     setError('');
     setStatus('');
-    const requestEpoch = epoch.current;
-    try {
-      const result = await socialApi.create({
-        topic: topic.trim() || 'Better coffee at home',
-        audience: audience.trim(),
-        platforms: platforms.length ? platforms : ['x', 'instagram', 'web'],
-        days,
-        limit,
-        mode,
-      });
-      if (requestEpoch !== epoch.current) return;
-      setInvestigations((previous) => [result.investigation, ...previous]);
-      openInvestigation(result.investigation);
-      setStatus(
-        mode === 'demo'
-          ? 'Example opened. All posts and metrics in this investigation are synthetic.'
-          : 'Research saved. Explore the collected sample and its coverage.',
-      );
-    } catch (caught) {
-      if (requestEpoch === epoch.current) setError(researchError(caught));
-    } finally {
-      setBusy('');
-    }
+    await activity.start({
+      topic: topic.trim() || 'Better coffee at home',
+      audience: audience.trim(),
+      platforms: platforms.length ? platforms : ['x', 'instagram', 'web'],
+      days,
+      limit,
+      mode,
+      harness,
+    });
   }
   async function importEvidence() {
     if (busy) return;
@@ -553,6 +574,22 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
         </div>
       </header>
 
+      {activity.run && (
+        <ResearchActivity
+          run={activity.run}
+          connected={activity.connected}
+          resultLoaded={activity.resultLoaded}
+          resultOpen={active?.id === activity.run.investigationId}
+          onOpenResults={() => {
+            if (activity.run?.investigationId)
+              void openSavedInvestigation(activity.run.investigationId);
+          }}
+          onCancel={() => void activity.cancel()}
+          onReconnect={activity.reconnect}
+          onDismiss={activity.dismiss}
+        />
+      )}
+
       {error && (
         <div className="social-notice social-notice-error" role="alert">
           <WarningCircle size={20} />
@@ -626,11 +663,12 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                   disabled={!!busy}
                   onClick={() => void create('demo')}
                 >
-                  {busy === 'collect' ? 'Preparing research…' : 'Explore the coffee example'}
+                  {busy === 'collect' ? 'Following the research…' : 'Watch the research demo'}
                   <ArrowRight size={18} />
                 </button>
                 <span className="social-caption">
-                  Example posts are synthetic and clearly labeled.
+                  Follow the example tasks and research files. Evidence and activity are
+                  illustrative.
                 </span>
               </div>
               <form
@@ -712,6 +750,35 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                     </select>
                   </label>
                 </div>
+                <label className="research-harness-choice">
+                  <span>Research engine</span>
+                  <select
+                    value={harness}
+                    disabled={!!busy}
+                    onChange={(event) =>
+                      setHarness(event.target.value as 'pipeline' | 'deepagents')
+                    }
+                  >
+                    <option value="pipeline">Direct public search</option>
+                    <option
+                      value="deepagents"
+                      disabled={
+                        !researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
+                          ?.configured
+                      }
+                    >
+                      LangChain Deep Agents
+                    </option>
+                  </select>
+                  <p>
+                    {harness === 'deepagents'
+                      ? 'A coordinator delegates research and analysis, sharing evidence through research files.'
+                      : researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
+                            ?.configured
+                        ? 'Choose direct search or let Deep Agents coordinate the research.'
+                        : 'Deep Agents becomes available when its model and public search providers are configured on the server.'}
+                  </p>
+                </label>
                 <button
                   type="submit"
                   className="social-button social-button-primary"
