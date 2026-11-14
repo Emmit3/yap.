@@ -3,13 +3,28 @@ export const lerp = (from, to, progress) => from + (to - from) * progress;
 export const smooth = (value) => { const t = clamp(value); return t * t * (3 - 2 * t); };
 export const phase = (progress, from, to) => smooth((progress - from) / (to - from));
 
+export function wallLayout(width, height) {
+  const mobile = width < 700;
+  const rows = 5;
+  const gap = mobile ? 12 : 14;
+  const cardWidth = Math.min(300, width * (mobile ? .52 : .255), height * .175 / .64);
+  const cardHeight = cardWidth * .64;
+  const spacing = cardWidth + gap;
+  const estimate = Math.ceil(width / spacing) + (mobile ? 4 : 6);
+  const columns = estimate % 2 ? estimate : estimate + 1;
+  return { mobile, rows, columns, count: rows * columns, cardWidth, cardHeight, gap, spacing,
+    radius: Math.max(width * .85, columns * spacing / 2.4),
+    perspective: Math.max(1200, width * 1.4), period: columns * spacing };
+}
+
+export const wrapPosition = (value, period) => ((value + period / 2) % period + period) % period - period / 2;
+
 /** A center-out camera arrival layered over the existing wall-to-strip pose. */
 export function loadPose(elapsed, index, width, height, progress = 0) {
-  const mobile = width < 700;
-  const columns = mobile ? 5 : 7;
-  const row = Math.floor(index / columns) - 1;
+  const { mobile, columns } = wallLayout(width, height);
+  const row = Math.floor(index / columns) - 2;
   const column = index % columns - (columns - 1) / 2;
-  const delay = .04 + Math.abs(column) * .055 + Math.abs(row) * .075;
+  const delay = .04 + Math.abs(column) / ((columns - 1) / 2) * .17 + Math.abs(row) * .05;
   const t = clamp((elapsed - delay) / 1.15);
   const arrive = 1 - (1 - t) ** 4;
   // Scrolling takes ownership immediately instead of fighting the load animation.
@@ -30,18 +45,15 @@ export function loadPose(elapsed, index, width, height, progress = 0) {
 
 /** One pose owner for both the Burst cylinder and the settled Frieze strip. */
 export function tilePose(index, selected, progress, width, height, drift = 0) {
-  const mobile = width < 700;
-  const count = mobile ? 15 : 21;
-  const columns = mobile ? 5 : 7;
+  const { mobile, count, columns, cardWidth:wallWidth, cardHeight:wallHeight, gap, spacing, radius, period } = wallLayout(width, height);
   const row = Math.floor(index / columns);
   const column = index % columns - (columns - 1) / 2;
-  const wallWidth = mobile ? width * .46 : Math.min(380, width * .255);
-  const wallHeight = wallWidth * .64;
-  const angle = column * (mobile ? .33 : .31) + drift * (row % 2 ? -1 : 1);
-  const radius = wallWidth * (mobile ? 3.2 : 3.5);
+  const wrapped = wrapPosition(column * spacing + drift * (row % 2 ? -1 : 1) * (.86 + row * .07), period);
+  const angle = wrapped / radius;
   const wallX = Math.sin(angle) * radius;
-  const wallY = (row - 1) * (wallHeight + (mobile ? 18 : 28));
+  const wallY = (row - 2) * (wallHeight + gap);
   const wallZ = (Math.cos(angle) - 1) * radius - 65;
+  const wallOpacity = 1 - phase(Math.abs(wrapped) / (period / 2), .88, .98);
   const mix = phase(progress, .08, .74);
   const stripWidth = mobile ? 138 : Math.min(236, width * .165);
   const stripHeight = stripWidth * .64;
@@ -50,7 +62,7 @@ export function tilePose(index, selected, progress, width, height, drift = 0) {
   const stripY = height * (mobile ? .335 : .325);
   const stripYaw = clamp(distance * -7, -34, 34);
   const edgeOpacity = clamp(7 - Math.abs(distance), 0, 1);
-  const route = Math.sin(mix * Math.PI) * (row - 1) * height * .11;
+  const route = Math.sin(mix * Math.PI) * (row - 2) * height * .055;
   return {
     x: lerp(wallX, stripX, mix),
     y: lerp(wallY, stripY, mix) + route,
@@ -59,7 +71,7 @@ export function tilePose(index, selected, progress, width, height, drift = 0) {
     width: wallWidth,
     height: wallHeight,
     scale: lerp(1, stripWidth / wallWidth, mix),
-    opacity: lerp(1, edgeOpacity, mix),
+    opacity: lerp(wallOpacity, edgeOpacity, mix),
     stripHeight, count,
   };
 }

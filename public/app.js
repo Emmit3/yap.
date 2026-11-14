@@ -1,4 +1,4 @@
-import { clamp, lerp, phase, sceneState, tilePose, loadPose } from './motion.js';
+import { clamp, lerp, phase, sceneState, tilePose, loadPose, wallLayout } from './motion.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -20,7 +20,7 @@ const introKicker = $('.intro-kicker');
 const introCaption = $('.intro-caption');
 const introScroll = $('.intro-scroll');
 const siteHead = $('.site-head');
-const reels = [
+const fallbackReels = [
   { file:'fashion', title:'A little louder', category:'EDITORIAL', screen:'Wear the\nwhole feeling.', caption:'For the days that deserve a little more color.' },
   { file:'coast', title:'Somewhere slower', category:'ESCAPE', screen:'Take the\nlong way home.', caption:'A small detour. A whole different feeling.' },
   { file:'ocean', title:'Blue, for a while', category:'NATURE STUDY', screen:'Nothing but\nthe blue.', caption:'A little space to let your mind wander.' },
@@ -35,13 +35,18 @@ const reels = [
   { file:'city', title:'Everyday, differently', category:'STREET STORIES', screen:'Find the story\non your street.', caption:'A little love letter to the places we pass.' },
 ];
 
+const media = await fetch('./wall-media.json').then(response=>response.ok?response.json():null).catch(()=>null);
+const reels = media?.clips?.length ? media.clips : fallbackReels.map(reel=>({ ...reel,
+  poster:`./media/reel-${reel.file}.jpg`, video:reel.video?'./media/reel-demo.mp4':null }));
+
 let reduced = motionPreference.matches;
 let width = innerWidth;
 let height = innerHeight;
 let travel = 1;
 let sceneTop = 0;
-let count = width < 700 ? 15 : 21;
-let selected = Math.min(10, count - 1);
+let layout = wallLayout(width,height);
+let count = layout.count;
+let selected = Math.floor(count / 2);
 let selectedSmooth = selected;
 let progress = reduced ? 1 : 0;
 let targetProgress = progress;
@@ -51,17 +56,22 @@ let lastTime = 0;
 let ambient = 0;
 let playbackPaused = reduced;
 let hasVideoFrame = false;
+let phonePlayToken = 0;
 let changeTimer;
 let toastTimer;
 let settled = false;
 let customIdea = '';
 let tiles = [];
+let wallVideos = [];
+let lastVideoSync = -Infinity;
 let dragStart = null;
 let dragged = false;
 let currentStep = 0;
 
 function buildWall() {
-  count = width < 700 ? 15 : 21;
+  wallVideos.forEach(entry=>{entry.active=false;entry.node.pause();entry.node.removeAttribute('src');entry.node.load();});
+  wallVideos=[];
+  count = layout.count;
   selected = clamp(selected, 0, count - 1);
   selectedSmooth = selected;
   wall.replaceChildren();
@@ -73,7 +83,7 @@ function buildWall() {
     button.setAttribute('aria-pressed', String(index === selected));
     button.tabIndex = -1;
     const image = document.createElement('img');
-    image.src = `./media/reel-${reel.file}.jpg`;
+    image.src = reel.poster;
     image.alt = '';
     image.draggable = false;
     image.decoding = 'async';
@@ -81,6 +91,16 @@ function buildWall() {
     name.className = 'plane-name';
     name.textContent = reel.title;
     button.append(image, name);
+    if(reel.video){
+      const clip=document.createElement('video');
+      clip.className='wall-video';clip.muted=true;clip.defaultMuted=true;clip.loop=true;clip.playsInline=true;clip.autoplay=true;clip.preload='none';
+      clip.setAttribute('muted','');clip.setAttribute('playsinline','');clip.setAttribute('aria-hidden','true');clip.poster=reel.poster;
+      const entry={ node:clip,tile:button,src:reel.video,index,row:Math.floor(index/layout.columns),active:false,failed:false,visible:false,score:0 };
+      clip.addEventListener('play',()=>{if(!entry.active)clip.pause();});
+      clip.addEventListener('loadedmetadata',()=>{if(Number.isFinite(clip.duration)&&clip.duration>0)clip.currentTime=(index*.67)%clip.duration;});
+      clip.addEventListener('error',()=>{entry.failed=true;entry.active=false;button.classList.remove('is-playing');});
+      button.insertBefore(clip,name);button.wallMedia=entry;wallVideos.push(entry);
+    }
     button.addEventListener('click', () => { if (!dragged && settled) selectReel(index); });
     button.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
@@ -94,14 +114,17 @@ function buildWall() {
 }
 
 function measure() {
-  const oldMobile = width < 700;
+  const oldColumns=layout.columns;
   width = innerWidth;
   height = stage.clientHeight;
+  layout=wallLayout(width,height);
   sceneTop = experience.offsetTop;
   travel = Math.max(1, experience.offsetHeight - height);
-  if (oldMobile !== (width < 700)) { buildWall(); updateReel(false); }
+  wall.style.perspective=`${layout.perspective}px`;
+  if (oldColumns !== layout.columns) { buildWall(); updateReel(false); }
   tiles.forEach((tile,index)=>{const pose=tilePose(index,selected,progress,width,height);tile.style.width=`${pose.width}px`;tile.style.height=`${pose.height}px`;});
   readScroll();
+  lastVideoSync=-Infinity;
   requestFrame();
 }
 
@@ -129,11 +152,12 @@ function draw(time) {
     selectedSmooth = lerp(selectedSmooth, selected, reduced ? 1 : 1 - Math.exp(-dt / 130));
     if (Math.abs(selectedSmooth - selected) < .001) selectedSmooth = selected;
   }
-  if (!reduced && sceneVisible && !playbackPaused && progress < .5) ambient += dt * .000015;
+  const movingWall=canPlayWall() && progress<.04;
+  if (movingWall) ambient += dt * (width<700?.022:.036);
   const state = sceneState(progress);
   const elapsed = reduced ? 2 : (time - bootTime) / 1000;
   const entrance = phase(elapsed, 0, 1.6);
-  const drift = reduced ? 0 : Math.sin(ambient) * .055;
+  const drift = reduced ? 0 : ambient;
   tiles.forEach((tile, index) => {
     const pose = tilePose(index, selectedSmooth, progress, width, height, drift);
     const load = loadPose(elapsed, index, width, height, Math.max(progress,targetProgress));
@@ -142,7 +166,18 @@ function draw(time) {
     tile.style.zIndex = String(100 - Math.round(Math.abs(index - selectedSmooth)));
     tile.tabIndex = settled && pose.opacity > .5 ? (index === selected ? 0 : -1) : -1;
     tile.style.pointerEvents = settled && pose.opacity > .5 ? 'auto' : 'none';
+    const entry=tile.wallMedia;
+    if(entry){
+      const projection=layout.perspective/(layout.perspective-pose.z-load.z);
+      const x=(pose.x+load.x)*projection;
+      const y=(pose.y+load.y)*projection;
+      const halfW=pose.width*pose.scale*load.scale*projection/2;
+      const halfH=pose.height*pose.scale*load.scale*projection/2;
+      entry.visible=pose.opacity*load.opacity>.1 && Math.abs(x)<width/2+halfW && Math.abs(y)<height/2+halfH && (progress<.65 || Math.abs(index-selectedSmooth)<=1);
+      entry.score=Math.abs(x)/width + Math.abs(y)/height*.15;
+    }
   });
+  syncWallPlayback(time);
   $('.wall-shade').style.opacity = state.shade;
   intro.style.opacity = String(state.intro);
   intro.style.transform = `translateY(${-phase(progress,.02,.25)*48}px)`;
@@ -177,41 +212,82 @@ function draw(time) {
   setVisibility(rail, state.rail > .9);
   $('.scene-progress span').style.transform = `scaleY(${progress})`;
   const isSettled = state.rail > .92;
-  if (settled !== isSettled) { settled = isSettled; stage.classList.toggle('settled', settled); }
-  if ((sceneVisible && !reduced && !playbackPaused) || progress !== targetProgress || selectedSmooth !== selected || entrance < 1) requestFrame();
+  if (settled !== isSettled) { settled = isSettled; stage.classList.toggle('settled', settled); updatePlayback(); }
+  if (movingWall || progress !== targetProgress || selectedSmooth !== selected || entrance < 1) requestFrame();
 }
 
 function requestFrame() { if (!frameId && !document.hidden) frameId = requestAnimationFrame(draw); }
 let bootTime = performance.now();
 
+function canPlayWall(){
+  return !reduced && !playbackPaused && sceneVisible && !document.hidden && !film.open && !studio.open && !opening.open;
+}
+
+function syncWallPlayback(time=performance.now(),force=false){
+  if(!force && time-lastVideoSync<250)return;
+  lastVideoSync=time;
+  const wanted=new Set();
+  if(canPlayWall()){
+    const budget=navigator.connection?.saveData?2:width<700?5:8;
+    const visible=wallVideos.filter(entry=>entry.visible&&!entry.failed).sort((a,b)=>a.score-b.score);
+    for(let row=0;row<layout.rows;row++){
+      const entry=visible.find(item=>item.row===row);
+      if(entry && wanted.size<budget)wanted.add(entry);
+    }
+    for(const entry of visible){if(wanted.size>=budget)break;wanted.add(entry);}
+  }
+  wallVideos.forEach(entry=>{
+    const active=wanted.has(entry);
+    if(active===entry.active)return;
+    entry.active=active;
+    if(active){
+      if(!entry.node.getAttribute('src'))entry.node.src=entry.src;
+      entry.node.play().then(()=>{if(entry.active)entry.tile.classList.add('is-playing');else entry.node.pause();}).catch(error=>{
+        if(error.name==='AbortError')return;
+        entry.failed=true;entry.active=false;entry.tile.classList.remove('is-playing');
+      });
+    }else entry.node.pause();
+  });
+}
+
 function updatePlayback() {
   const data = reels[selected % reels.length];
-  const shouldPlay = data.video && !playbackPaused && sceneVisible && !document.hidden && !film.open;
+  const token=++phonePlayToken;
+  const shouldPlay = data.video && settled && !playbackPaused && sceneVisible && !document.hidden && !film.open && !studio.open && !opening.open;
   document.body.classList.toggle('is-paused', reduced || playbackPaused || !sceneVisible || document.hidden);
-  if (shouldPlay) video.play().then(() => { if(reels[selected % reels.length].video){hasVideoFrame = true; video.classList.add('is-playing');} }).catch(() => { video.classList.remove('is-playing'); });
+  if (shouldPlay) video.play().then(() => { if(token===phonePlayToken){hasVideoFrame = true; video.classList.add('is-playing');} }).catch(() => { if(token===phonePlayToken)video.classList.remove('is-playing'); });
   else video.pause();
   if (!data.video || !hasVideoFrame) video.classList.remove('is-playing');
   $('#toggle-playback').setAttribute('aria-label', playbackPaused ? 'Play reel' : 'Pause reel');
   $('#toggle-playback use').setAttribute('href', playbackPaused ? '#play' : '#pause');
+  $('#toggle-wall-motion').setAttribute('aria-pressed',String(playbackPaused));
+  $('#toggle-wall-motion .wall-pause-label').textContent=playbackPaused?'Resume motion':'Pause motion';
+  $('#toggle-wall-motion use').setAttribute('href',playbackPaused?'#play':'#pause');
+  syncWallPlayback(performance.now(),true);
   requestFrame();
 }
 
 function updateReel(animate = true) {
   const data = reels[selected % reels.length];
   const apply = () => {
-    poster.src = `./media/reel-${data.file}.jpg`;
+    poster.src = data.poster;
+    video.poster = data.poster;
     poster.alt = data.title;
     poster.classList.toggle('is-static', reduced);
     $('#screen-title').textContent = customIdea || data.screen;
     $('#screen-title').style.whiteSpace = customIdea ? 'normal' : 'pre-line';
     $('#reel-caption').textContent = data.caption;
+    $('#reel-credit').textContent=data.credit||'Illustrative sample footage';
+    $('.reel-tiny').textContent=customIdea?'YOUR IDEA · CONCEPT PREVIEW':'CREATIVE FILM REFERENCE';
     $('#active-title').textContent = data.title;
     $('#active-category').textContent = data.category;
-    $('#reel-counter').textContent = `${String(selected+1).padStart(2,'0')} / ${count}`;
+    $('#reel-counter').textContent = `${String(selected%reels.length+1).padStart(2,'0')} / ${reels.length}`;
     tiles.forEach((tile,i) => { tile.classList.toggle('is-selected',i === selected); tile.setAttribute('aria-pressed',String(i===selected)); });
     $('#previous-reel').disabled = selected === 0;
     $('#next-reel').disabled = selected === count - 1;
+    if(data.video && video.getAttribute('src')!==data.video){video.pause();video.src=data.video;video.load();}
     if (data.video) { video.currentTime = 0; hasVideoFrame = false; }
+    lastVideoSync=-Infinity;
     updatePlayback();
   };
   clearTimeout(changeTimer);
@@ -274,7 +350,9 @@ window.addEventListener('pointerup',event => {
 });
 window.addEventListener('pointercancel',event=>{if(dragStart && event.pointerId===dragStart.pointerId){dragStart=null;dragged=false;wall.style.cursor='';requestFrame();}});
 
-$('#toggle-playback').addEventListener('click',()=>{playbackPaused=!playbackPaused;updatePlayback();});
+function toggleMotion(){playbackPaused=!playbackPaused;wallVideos.forEach(entry=>entry.failed=false);updatePlayback();}
+$('#toggle-playback').addEventListener('click',toggleMotion);
+$('#toggle-wall-motion').addEventListener('click',toggleMotion);
 $('#silent-sample').addEventListener('click',()=>showToast('This sample clip is silent.'));
 $$('[data-toggle]').forEach(button=>button.addEventListener('click',()=>{
   const active=button.getAttribute('aria-pressed')!=='true';button.setAttribute('aria-pressed',String(active));
@@ -286,7 +364,8 @@ $('#share-reel').addEventListener('click',async()=>{
   try { await navigator.clipboard.writeText(url.href);showToast('Showcase link copied.'); } catch { showToast('Share this showcase using the page URL.'); }
 });
 
-$$('[data-studio]').forEach(button=>button.addEventListener('click',()=>{studio.showModal();setTimeout(()=>$('#idea-input').focus(),0);}));
+$$('[data-studio]').forEach(button=>button.addEventListener('click',()=>{studio.showModal();updatePlayback();setTimeout(()=>$('#idea-input').focus(),0);}));
+studio.addEventListener('close',updatePlayback);
 $$('[data-close-dialog]').forEach(button=>button.addEventListener('click',()=>studio.close()));
 studio.addEventListener('click',event=>{if(event.target===studio){const rect=studio.getBoundingClientRect();if(event.clientX<rect.left||event.clientX>rect.right||event.clientY<rect.top||event.clientY>rect.bottom)studio.close();}});
 $('#idea-input').addEventListener('input',()=>{$('#idea-count').textContent=`${$('#idea-input').value.length} / 140`;});
@@ -299,13 +378,14 @@ $('#idea-form').addEventListener('submit',event=>{
   updateReel(false);studio.close();goToProduct();showToast('Your idea is in the concept preview.');
 });
 $('#idea-input').addEventListener('input',()=>$('#idea-input').setCustomValidity(''));
-$('#watch-film').addEventListener('click',()=>{film.showModal();updatePlayback();filmVideo.play().catch(()=>{});});
+$('#watch-film').addEventListener('click',()=>{const data=reels[selected%reels.length];filmVideo.src=data.video||'./media/reel-demo.mp4';filmVideo.poster=data.poster;$('.film-dialog>span').textContent=`${data.title} · FILM REFERENCE`;film.showModal();updatePlayback();filmVideo.play().catch(()=>{});});
 $$('[data-close-film]').forEach(button=>button.addEventListener('click',()=>film.close()));
 film.addEventListener('close',()=>{filmVideo.pause();updatePlayback();});
 film.addEventListener('click',event=>{if(event.target===film)film.close();});
 function replayWall(){
   window.scrollTo({top:0,behavior:'instant'});
   bootTime=performance.now();lastTime=0;
+  ambient=0;lastVideoSync=-Infinity;
   progress=targetProgress=reduced?1:0;
   stage.tabIndex=-1;stage.focus({preventScroll:true});
   requestFrame();
@@ -319,6 +399,7 @@ function playOpening() {
   window.scrollTo({top:0,behavior:'instant'});
   opening.classList.remove('is-running');
   opening.showModal();
+  updatePlayback();
   void opening.offsetWidth;
   opening.classList.add('is-running');
   $('#skip-opening').focus();
@@ -327,7 +408,7 @@ function playOpening() {
 }
 $('#play-opening').addEventListener('click',playOpening);
 $('#skip-opening').addEventListener('click',()=>opening.close());
-opening.addEventListener('close',()=>{clearTimeout(openingTimer);opening.classList.remove('is-running');replayWall();});
+opening.addEventListener('close',()=>{clearTimeout(openingTimer);opening.classList.remove('is-running');replayWall();updatePlayback();});
 
 function setStep(index,focus=false) {
   currentStep=clamp(index,0,2);

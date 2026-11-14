@@ -129,5 +129,117 @@
       "width": 720,
       "height": 1280
     }
+  ],
+  "wallVideos": [
+    {
+      "file": "wall-earbuds.mp4",
+      "poster": "wall-earbuds.jpg",
+      "title": "AirPods Pro 3 product turn",
+      "source": "Apple",
+      "sourcePage": "https://www.apple.com/airpods-pro/",
+      "sourceUrl": "https://www.apple.com/105/media/us/airpods-pro/2025/7acffb13-4adb-40b1-9393-8f1c99bc6c90/anim/initial/large.mp4",
+      "contributorProfile": "Apple",
+      "license": "Official product reference excerpt, no stock license claimed",
+      "licenseContext": "Publicly published official AirPods Pro 3 product animation excerpt. Attributed product reference, not a yap output; not represented as stock footage.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-timepiece.mp4",
+      "poster": "wall-timepiece.jpg",
+      "title": "Hands on an automatic watch",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/hands-on-an-automatic-watch-3672/",
+      "sourceUrl": "https://assets.mixkit.co/videos/3672/3672-720.mp4",
+      "contributorProfile": "https://mixkit.co/@edgarfernandez/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-sneaker.mp4",
+      "poster": "wall-sneaker.jpg",
+      "title": "Feet of a young man with red tennis shoes",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/feet-of-a-young-man-with-red-tennis-shoes-3525/",
+      "sourceUrl": "https://assets.mixkit.co/videos/3525/3525-720.mp4",
+      "contributorProfile": "https://mixkit.co/@jibaroartz/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-automotive.mp4",
+      "poster": "wall-automotive.jpg",
+      "title": "Close up of red sports car",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/close-up-of-red-sports-car-63/",
+      "sourceUrl": "https://assets.mixkit.co/videos/63/63-720.mp4",
+      "contributorProfile": "https://mixkit.co/@marcolopez/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-beverage.mp4",
+      "poster": "wall-beverage.jpg",
+      "title": "Filling a glass with soda from a bottle",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/filling-a-glass-with-soda-from-a-bottle-5096/",
+      "sourceUrl": "https://assets.mixkit.co/videos/5096/5096-720.mp4",
+      "contributorProfile": "https://mixkit.co/@arvizum/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-beauty.mp4",
+      "poster": "wall-beauty.jpg",
+      "title": "Makeup and powder brush",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/makeup-and-powder-brush-381/",
+      "sourceUrl": "https://assets.mixkit.co/videos/381/381-720.mp4",
+      "contributorProfile": "https://mixkit.co/@edgarfernandez/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-lipstick.mp4",
+      "poster": "wall-lipstick.jpg",
+      "title": "A person opens a pink lipstick",
+      "source": "Mixkit",
+      "sourcePage": "https://mixkit.co/free-stock-video/a-person-opens-a-pink-lipstick-382/",
+      "sourceUrl": "https://assets.mixkit.co/videos/382/382-720.mp4",
+      "contributorProfile": "https://mixkit.co/@edgarfernandez/",
+      "license": "Mixkit Stock Video Free License",
+      "licenseUrl": "https://mixkit.co/license/#videoFree",
+      "licenseContext": "Exact source clip page states commercial or personal use under Mixkit Stock Video Free License.",
+      "durationSeconds": 6,
+      "derived": "Muted excerpt, H.264 24 fps, fitted within 854 by 480 pixels, faststart MP4."
+    },
+    {
+      "file": "wall-jacquemus.mp4",
+      "poster": "wall-jacquemus.jpg",
+      "title": "Jacquemus at l'Opera",
+      "source": "Jacquemus",
+      "creator": "Ian Padgham / Origiful",
+      "sourcePage": "https://www.instagram.com/reel/CqqCfr-uovy/",
+      "creatorSource": "https://www.origiful.com/client-work",
+      "license": "Original branded campaign reference excerpt, no stock license claimed",
+      "licenseContext": "Publicly published original @jacquemus campaign, kept as an attributed reference. Not represented as created by yap or as stock footage.",
+      "durationSeconds": 6,
+      "derived": "Muted 6s excerpt starting 0.2s into original; H.264, 24fps, 270x480, faststart."
+    }
   ]
 }
