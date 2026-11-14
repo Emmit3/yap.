@@ -1,0 +1,200 @@
+.poster-carousel {
+  min-width: 0;
+}
+.poster-carousel-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.poster-carousel-heading h2 {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.poster-carousel-heading p {
+  color: #626262;
+  font-size: 14px;
+  line-height: 20px;
+  margin-top: 0;
+}
+.poster-carousel-total {
+  color: #626262;
+  font-size: 12px;
+  line-height: 16px;
+  padding-top: 8px;
+  white-space: nowrap;
+}
+.poster-carousel-stage {
+  height: 400px;
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transform-style: preserve-3d;
+  touch-action: pan-y;
+  user-select: none;
+  cursor: grab;
+}
+.poster-carousel-stage.is-dragging {
+  cursor: grabbing;
+}
+.poster-carousel-item {
+  position: absolute;
+  top: 46%;
+  left: 50%;
+  padding: 0;
+  border-radius: 0;
+  transform-origin: center;
+  transform-style: preserve-3d;
+  will-change: transform;
+  background: transparent;
+  backface-visibility: hidden;
+  -webkit-user-drag: none;
+}
+.poster-carousel-art {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center;
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.poster-carousel-art img {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.poster-carousel-item:focus-visible {
+  outline-offset: 8px;
+}
+.poster-carousel-item:focus-visible .poster-carousel-art {
+  transform: translateY(-8px) scale(1.04);
+}
+.poster-carousel-stage.is-dragging .poster-carousel-art {
+  transform: none;
+}
+.poster-carousel-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding-bottom: 24px;
+}
+.poster-carousel-caption {
+  min-width: 0;
+}
+.poster-carousel-caption > span {
+  display: block;
+  color: #626262;
+  font-size: 12px;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.poster-carousel-caption p {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+.poster-carousel-controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.poster-carousel-arrow {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: #e9e9e6;
+  transition:
+    background-color 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.poster-carousel-motion {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: background-color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.poster-carousel-arrow:hover:enabled,
+.poster-carousel-motion:hover:enabled {
+  background: #deded9;
+}
+.poster-carousel-arrow:active:enabled {
+  transform: scale(0.96);
+}
+.poster-carousel-empty {
+  padding: 64px 0;
+  color: #626262;
+  font-size: 16px;
+  line-height: 24px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .poster-carousel-item:hover .poster-carousel-art {
+    transform: translateY(-8px) scale(1.04);
+  }
+  .poster-carousel-stage.is-dragging .poster-carousel-item:hover .poster-carousel-art {
+    transform: none;
+  }
+}
+@media (max-width: 700px) {
+  .poster-carousel-heading {
+    gap: 16px;
+  }
+  .poster-carousel-heading h2 {
+    font-size: 20px;
+    line-height: 28px;
+  }
+  .poster-carousel-stage {
+    height: 400px;
+  }
+  .poster-carousel-footer {
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .poster-carousel-caption p {
+    font-size: 14px;
+    line-height: 20px;
+  }
+  .poster-carousel-motion {
+    padding: 8px;
+  }
+  .poster-carousel-motion > span {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .poster-carousel-art,
+  .poster-carousel-arrow,
+  .poster-carousel-motion {
+    transition: none;
+  }
+  .poster-carousel-item:hover .poster-carousel-art,
+  .poster-carousel-item:focus-visible .poster-carousel-art,
+  .poster-carousel-arrow:active:enabled {
+    transform: none;
+  }
+}

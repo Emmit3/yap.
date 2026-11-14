@@ -22,6 +22,7 @@ import { createCreatorRouter, type CreatorRouterOptions } from './creator-router
 import { createCreatorPaidRequests, BUDGET_OPENAI_MODEL } from './creator-paid-requests.js';
 import { createCreatorResearch, creatorResearchConfigFromEnv } from './creator-research.js';
 import { createCreatorVisionAuditor } from './creator-media.js';
+import { createPosterRouter } from './poster-router.js';
 
 export interface AppOptions {
   dataFile?: string;
@@ -39,6 +40,8 @@ export interface AppOptions {
   socialFetch?: typeof globalThis.fetch;
   creatorDataFile?: string;
   creatorDirectory?: string;
+  posterReferencesDirectory?: string;
+  posterDesignDataFile?: string;
   creatorOptions?: Partial<
     Pick<
       CreatorRouterOptions,
@@ -114,6 +117,14 @@ export async function createApp(options: AppOptions = {}) {
   );
   app.use(express.json({ limit: '128kb' }));
   app.use('/api/workflows', workflow.router);
+  app.use(
+    '/api/posters',
+    createPosterRouter({
+      rootDirectory: options.posterReferencesDirectory,
+      dataFile:
+        options.posterDesignDataFile ?? join(dirname(projectDataFile), 'poster-designs.json'),
+    }),
+  );
   app.locals.shutdown = workflow.close;
 
   app.get('/api/health', (_request, response) => {
