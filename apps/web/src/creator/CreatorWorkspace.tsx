@@ -38,6 +38,7 @@ import { rovingIndex } from './keyboard';
 import {
   approvalCurrent,
   clipPreviewIsCurrent,
+  combineScriptMoments,
   isActiveJob,
   nextQuestion,
   outputIsCurrent,
@@ -118,6 +119,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
+  const scriptTimingInput = useRef<HTMLInputElement>(null);
   const state = c.state;
   const active = isActiveJob(c.job);
   const production = active && c.job?.kind === 'production';
@@ -160,6 +162,11 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
       /* The current view still works. */
     }
     if (focusPanel) requestAnimationFrame(() => panelHeading.current?.focus());
+  }
+  function reviewSavedTiming() {
+    setInspector('script');
+    changeView('director', false);
+    requestAnimationFrame(() => (scriptTimingInput.current ?? panelHeading.current)?.focus());
   }
   useEffect(() => {
     if (c.plan && selectedShot >= c.plan.clips.length) setSelectedShot(0);
@@ -315,6 +322,23 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
           </button>
         </div>
       )}
+      {state?.workflow.script && !state.session.plan && (
+        <aside className="creator-feedback">
+          <TextT size={20} />
+          <div>
+            <p>
+              <strong>Your saved script is ready to edit.</strong>
+            </p>
+            <p>
+              Review the timing, save your changes, then prepare again. Your existing words are
+              kept; preparing resumes from the saved drafting progress.
+            </p>
+            <button className="creator-text-button" onClick={reviewSavedTiming}>
+              Edit saved script timing <ArrowUpRight size={16} />
+            </button>
+          </div>
+        </aside>
+      )}
 
       <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
         {view === 'guided' ? (
@@ -469,6 +493,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                   ) : (
                     <ScriptInspector
                       c={c}
+                      timingInputRef={scriptTimingInput}
                       disabled={
                         locked ||
                         active ||
@@ -1436,7 +1461,15 @@ function ShotInspector({
   );
 }
 
-function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: boolean }) {
+function ScriptInspector({
+  c,
+  disabled,
+  timingInputRef,
+}: {
+  c: CreatorController;
+  disabled: boolean;
+  timingInputRef: RefObject<HTMLInputElement | null>;
+}) {
   if (!c.script)
     return (
       <div className="creator-inspector-empty">
@@ -1444,9 +1477,18 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
         <p>The script appears after you prepare the proposal.</p>
       </div>
     );
+  const segments = c.script.segments;
+  const totalSeconds = segments.reduce((total, segment) => total + segment.seconds, 0);
+  const targetSeconds = c.state?.workflow.brief.duration;
   return (
     <div className="creator-script-inspector">
       <h3>The words behind it.</h3>
+      <p className="creator-fineprint" role="status">
+        {totalSeconds} seconds in this script
+        {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.
+        {c.capabilities &&
+          ` Each moment needs at least ${c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
+      </p>
       <fieldset disabled={disabled}>
         <label>
           Opening hook
@@ -1460,49 +1502,86 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
             }
           />
         </label>
-        {c.script.segments.map((segment, index) => (
-          <label key={segment.id}>
-            Moment {index + 1} / {segment.seconds}s
-            <textarea
-              value={segment.text}
-              maxLength={2000}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id ? { ...item, text: event.target.value } : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-            <input
-              aria-label={`Seconds for script moment ${index + 1}`}
-              type="number"
-              min={1}
-              max={60}
-              step={1}
-              value={segment.seconds}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id
-                            ? { ...item, seconds: Number(event.target.value) }
-                            : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-          </label>
-        ))}
+        {segments.map((segment, index) => {
+          const combination = combineScriptMoments(segments, index);
+          const hasNext = index < segments.length - 1;
+          return (
+            <div className="creator-script-moment" key={segment.id}>
+              <label>
+                Moment {index + 1}
+                <textarea
+                  value={segment.text}
+                  maxLength={2000}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id ? { ...item, text: event.target.value } : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Duration (seconds)
+                <input
+                  ref={index === 0 ? timingInputRef : undefined}
+                  aria-label={`Seconds for script moment ${index + 1}`}
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={segment.seconds}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id
+                                ? { ...item, seconds: Number(event.target.value) }
+                                : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              {hasNext && (
+                <>
+                  <button
+                    type="button"
+                    className="creator-text-button"
+                    disabled={!combination.segments}
+                    aria-label={`Combine moment ${index + 1} with moment ${index + 2}`}
+                    aria-describedby={
+                      combination.reason ? `creator-combine-reason-${segment.id}` : undefined
+                    }
+                    onClick={() =>
+                      c.setScript((previous) => {
+                        if (!previous) return previous;
+                        const next = combineScriptMoments(previous.segments, index);
+                        return next.segments ? { ...previous, segments: next.segments } : previous;
+                      })
+                    }
+                  >
+                    Combine with next moment
+                  </button>
+                  {combination.reason && (
+                    <p className="creator-fineprint" id={`creator-combine-reason-${segment.id}`}>
+                      {combination.reason}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </fieldset>
       <button
         className="creator-primary-button"
@@ -1512,7 +1591,8 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
         Save script <Check size={16} />
       </button>
       <p className="creator-fineprint">
-        After a script edit, prepare again to rebuild the shot plan.
+        Combining keeps both texts and adds their durations. Adjust timing to keep your chosen film
+        length, save, then prepare again to rebuild the shot plan.
       </p>
     </div>
   );
@@ -1740,10 +1820,18 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
       )}
       {job.status === 'succeeded' && job.output && !current && (
         <div className="creator-inline-error">
-          <p>
+          <p id="creator-earlier-export-reason">
             This completed job belongs to an earlier version. Its receipt and clip audits remain
-            visible; prepare and approve the current plan before producing a new film.
+            visible. Film downloads require the current approved version; prepare and approve the
+            current plan before producing a new film.
           </p>
+          <button
+            className="creator-primary-button"
+            disabled
+            aria-describedby="creator-earlier-export-reason"
+          >
+            <DownloadSimple size={18} /> Download film
+          </button>
         </div>
       )}
       {job.status === 'succeeded' && job.output && current && (
@@ -1794,7 +1882,7 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
               type="button"
               className="creator-primary-button"
               onClick={() => void downloadFilm()}
-              disabled={downloading || Boolean(c.busy)}
+              disabled={!current || downloading || Boolean(c.busy)}
             >
               <DownloadSimple size={18} />{' '}
               {downloading

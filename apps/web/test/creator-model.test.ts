@@ -8,6 +8,7 @@ import {
   approvalCurrent,
   checkedPhotos,
   clipPreviewIsCurrent,
+  combineScriptMoments,
   generatedSeconds,
   nextQuestion,
   outputIsCurrent,
@@ -282,4 +283,52 @@ test('horizontal tabs support wrapping arrows, Home and End without handling unr
   assert.equal(rovingIndex('End', 0, 3), 2);
   assert.equal(rovingIndex('Tab', 0, 2), null);
   assert.equal(rovingIndex('ArrowRight', 0, 0), null);
+});
+
+test('explicitly combining short script moments preserves every word and the exact total duration', () => {
+  const segments = Array.from({ length: 5 }, (_, index) => ({
+    id: randomUUID(),
+    text: `Saved wording ${index + 1}`,
+    seconds: 3,
+  }));
+  const snapshot = structuredClone(segments);
+  const first = combineScriptMoments(segments, 0);
+  assert.ok(first.segments);
+  const second = combineScriptMoments(first.segments, 1);
+  assert.ok(second.segments);
+  assert.deepEqual(
+    second.segments.map((segment) => segment.seconds),
+    [6, 6, 3],
+  );
+  assert.equal(
+    second.segments.reduce((total, segment) => total + segment.seconds, 0),
+    15,
+  );
+  assert.equal(
+    second.segments.map((segment) => segment.text).join('\n'),
+    segments.map((segment) => segment.text).join('\n'),
+  );
+  assert.deepEqual(
+    second.segments.map((segment) => segment.id),
+    [segments[0].id, segments[2].id, segments[4].id],
+  );
+  assert.deepEqual(segments, snapshot);
+  // The user can now choose 5+5+5 without deleting words or increasing the 15s film length.
+  assert.equal(second.segments.length, 3);
+});
+
+test('combining cannot discard overflow text or bypass the saved script duration limits', () => {
+  const segments = [
+    { id: randomUUID(), text: 'First', seconds: 30 },
+    { id: randomUUID(), text: 'Second', seconds: 31 },
+  ];
+  assert.match(combineScriptMoments(segments, 0).reason, /60 seconds/);
+  segments[1].seconds = 30;
+  assert.ok(combineScriptMoments(segments, 0).segments);
+  segments[0].text = 'x'.repeat(1999);
+  assert.match(combineScriptMoments(segments, 0).reason, /2,000 characters/);
+  assert.equal(combineScriptMoments(segments, 0).segments, null);
+  assert.equal(combineScriptMoments(segments, -1).segments, null);
+  assert.equal(combineScriptMoments(segments, 1).segments, null);
+  assert.equal(combineScriptMoments(segments, 0.5).segments, null);
 });
