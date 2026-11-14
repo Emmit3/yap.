@@ -6,17 +6,17 @@ A cinematic frontend concept for an ideas-to-video product. Five rows of product
 
 ## Run locally
 
-Requires Node.js 20 or newer. No dependencies or install step are needed.
+The standalone showcase uses only Node.js built-ins. The complete workspace requires Node.js 22.12 or newer and the root dependency installation.
 
 ```sh
-npm run dev
+npm run dev:showcase
 ```
 
 Open http://localhost:4173. Set `PORT` to change the port.
 
 ```sh
-npm run check
-npm run build
+npm run check:showcase
+npm run build:showcase
 ```
 
 The static production site is written to `dist/`. It can be served by any static host.
@@ -33,7 +33,7 @@ The static production site is written to `dist/`. It can be served by any static
 - Reduced motion shows the usable phone and filmstrip immediately. Ambient motion and video pause offscreen or in a hidden tab.
 - An optional 2.8 second editorial opening cut can be tried from the footer or by opening `/?intro=1`. It is off by default, has a skip control, and is bypassed for reduced motion.
 
-This is a hackathon frontend. Studio previews use sample imagery and footage; video generation, accounts, and social publishing are not connected.
+The standalone showcase uses sample imagery and footage. When embedded in the React application, its studio and social navigation open the connected workspace. Accounts and automatic social posting are not connected.
 
 ## References and media
 

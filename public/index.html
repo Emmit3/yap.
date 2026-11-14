@@ -1,146 +1,463 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#000000">
-  <meta name="description" content="Good ideas, made REEL. Explore yap, a new home for turning the thought in your head into the next reel in your feed.">
-  <meta property="og:title" content="yap. — good ideas, made REEL">
-  <meta property="og:description" content="A little thought. A whole new reel. Meet your next creative playground.">
-  <meta property="og:image" content="./media/reel-night.jpg">
-  <title>yap. — good ideas, made REEL</title>
-  <link rel="icon" href="./favicon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="preload" as="image" href="./media/reel-night.jpg">
-  <link rel="stylesheet" href="./styles.css">
-  <script type="module" src="./app.js"></script>
-</head>
-<body>
-  <a class="skip-link" href="#product">Skip to product</a>
-  <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><defs>
-    <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
-    <symbol id="diagonal" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6h12v12"/></symbol>
-    <symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7"/></symbol>
-    <symbol id="play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z"/></symbol>
-    <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14"/></symbol>
-    <symbol id="sound" viewBox="0 0 24 24"><path d="m11 5-6 4H2v6h3l6 4ZM15 8q6 4 0 8M18 4q10 8 0 16"/></symbol>
-    <symbol id="mute" viewBox="0 0 24 24"><path d="m11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6"/></symbol>
-    <symbol id="heart" viewBox="0 0 24 24"><path d="M20.5 4.7a5.6 5.6 0 0 0-8.5.7 5.6 5.6 0 0 0-8.5-.7c-3.2 3.2-.9 7.6 1.8 10.2L12 21l6.7-6.1c2.7-2.6 5-7 1.8-10.2Z"/></symbol>
-    <symbol id="bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z"/></symbol>
-    <symbol id="share" viewBox="0 0 24 24"><path d="M12 16V2m-5 5 5-5 5 5M5 10H3v11h18V10h-2"/></symbol>
-    <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
-    <symbol id="spark" viewBox="0 0 24 24"><path d="m12 2 2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6Z"/></symbol>
-    <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7"/></symbol>
-  </defs></svg>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="Good ideas, made REEL. Explore yap, a new home for turning the thought in your head into the next reel in your feed."
+    />
+    <meta property="og:title" content="yap. — good ideas, made REEL" />
+    <meta
+      property="og:description"
+      content="A little thought. A whole new reel. Meet your next creative playground."
+    />
+    <meta property="og:image" content="./media/reel-night.jpg" />
+    <title>yap. — good ideas, made REEL</title>
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="preload" as="image" href="./media/reel-night.jpg" />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#product">Skip to product</a>
+    <svg class="icon-defs" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <symbol id="arrow" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6" /></symbol>
+        <symbol id="diagonal" viewBox="0 0 24 24"><path d="M6 18 18 6M6 6h12v12" /></symbol>
+        <symbol id="chevron" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" /></symbol>
+        <symbol id="play" viewBox="0 0 24 24"><path d="m9 5 11 7-11 7Z" /></symbol>
+        <symbol id="pause" viewBox="0 0 24 24"><path d="M8 5v14M16 5v14" /></symbol>
+        <symbol id="sound" viewBox="0 0 24 24">
+          <path d="m11 5-6 4H2v6h3l6 4ZM15 8q6 4 0 8M18 4q10 8 0 16" />
+        </symbol>
+        <symbol id="mute" viewBox="0 0 24 24">
+          <path d="m11 5-6 4H2v6h3l6 4ZM16 9l6 6m0-6-6 6" />
+        </symbol>
+        <symbol id="heart" viewBox="0 0 24 24">
+          <path
+            d="M20.5 4.7a5.6 5.6 0 0 0-8.5.7 5.6 5.6 0 0 0-8.5-.7c-3.2 3.2-.9 7.6 1.8 10.2L12 21l6.7-6.1c2.7-2.6 5-7 1.8-10.2Z"
+          />
+        </symbol>
+        <symbol id="bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4Z" /></symbol>
+        <symbol id="share" viewBox="0 0 24 24">
+          <path d="M12 16V2m-5 5 5-5 5 5M5 10H3v11h18V10h-2" />
+        </symbol>
+        <symbol id="close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18" /></symbol>
+        <symbol id="spark" viewBox="0 0 24 24">
+          <path d="m12 2 2.6 7.4L22 12l-7.4 2.6L12 22l-2.6-7.4L2 12l7.4-2.6Z" />
+        </symbol>
+        <symbol id="check" viewBox="0 0 24 24"><path d="m5 12 5 5L20 7" /></symbol>
+      </defs>
+    </svg>
 
-  <header class="site-head">
-    <a class="wordmark" href="#top" aria-label="yap home">yap<span>.</span></a>
-    <nav class="main-nav" aria-label="Main navigation">
-      <button data-jump="product">The product</button>
-      <button data-jump="reels">Made with yap</button>
-      <a href="#how-it-works">How it works</a>
-      <button data-social hidden>Social research</button>
-    </nav>
-    <button class="header-cta" data-studio>Enter studio <svg class="icon"><use href="#diagonal"/></svg></button>
-  </header>
+    <header class="site-head">
+      <a class="wordmark" href="#top" aria-label="yap home">yap<span>.</span></a>
+      <nav class="main-nav" aria-label="Main navigation">
+        <button data-jump="product">The product</button>
+        <button data-jump="reels">Reel references</button>
+        <a href="#how-it-works">How it works</a>
+        <button data-social hidden>Social research</button>
+      </nav>
+      <button class="header-cta" data-studio>
+        Enter studio <svg class="icon"><use href="#diagonal" /></svg>
+      </button>
+    </header>
 
-  <main>
-    <section class="experience" id="top" aria-label="From a world of ideas to a finished reel">
-      <div class="experience-stage">
-        <div class="wall" id="wall" aria-label="Five rows of cinematic product film references"></div>
-        <div class="wall-shade" aria-hidden="true"></div>
-        <div class="intro-layer">
-          <p class="eyebrow intro-kicker"><span class="live-dot"></span> A little thought. Endless possibilities.</p>
-          <h1><span class="intro-line"><span>Good ideas.</span></span><span class="intro-line"><span>Made REEL.</span></span></h1>
-          <p class="intro-caption">The stuff in your head deserves<br>a life outside it.</p>
-          <button class="intro-scroll" data-jump="product"><span class="scroll-track"><i></i></span> Scroll to make it real</button>
-          <div class="intro-bottom"><span>YOUR IMAGINATION, IN MOTION</span><button class="wall-pause" id="toggle-wall-motion" aria-pressed="false"><svg class="icon"><use href="#pause"/></svg><span class="wall-pause-label">Pause motion</span></button></div>
-        </div>
-
-        <div class="product-layer" id="product">
-          <div class="product-copy">
-            <p class="eyebrow"><span class="live-dot"></span> Meet your creative playground</p>
-            <h2>From your head.<br>To their feed.</h2>
-            <p class="product-description">That half formed thought. That what if.<br>Give it a story. Give it a sound. Give it a reel.</p>
-            <div class="product-actions">
-              <button class="primary-button" data-studio>Make something <svg class="icon"><use href="#diagonal"/></svg></button>
-              <button class="text-button" id="watch-film"><span class="play-circle"><svg class="icon"><use href="#play"/></svg></span> Watch a reel</button>
+    <main>
+      <section class="experience" id="top" aria-label="From a world of ideas to a finished reel">
+        <div class="experience-stage">
+          <div
+            class="wall"
+            id="wall"
+            aria-label="Five rows of cinematic product film references"
+          ></div>
+          <div class="wall-shade" aria-hidden="true"></div>
+          <div class="intro-layer">
+            <p class="eyebrow intro-kicker">
+              <span class="live-dot"></span> A little thought. Endless possibilities.
+            </p>
+            <h1>
+              <span class="intro-line"><span>Good ideas.</span></span
+              ><span class="intro-line"><span>Made REEL.</span></span>
+            </h1>
+            <p class="intro-caption">The stuff in your head deserves<br />a life outside it.</p>
+            <button class="intro-scroll" data-jump="product">
+              <span class="scroll-track"><i></i></span> Scroll to make it real
+            </button>
+            <div class="intro-bottom">
+              <span>YOUR IMAGINATION, IN MOTION</span
+              ><button class="wall-pause" id="toggle-wall-motion" aria-pressed="false">
+                <svg class="icon"><use href="#pause" /></svg
+                ><span class="wall-pause-label">Pause motion</span>
+              </button>
             </div>
-            <div class="product-footnote"><span class="asterisk">✳</span> Less overthinking. More making.</div>
           </div>
-          <div class="device-note"><span class="device-note-line"></span><p>FROM A LITTLE IDEA<br>TO THE BIG SCREEN.<br><strong>THE ONE IN YOUR HAND.</strong></p></div>
-        </div>
 
-        <div class="phone-anchor" aria-label="Deployed reel preview">
-          <div class="phone-motion">
-            <div class="phone-side phone-side-left"></div><div class="phone-side phone-side-right"></div>
-            <div class="phone-body">
-              <div class="phone-screen">
-                <img class="phone-poster" id="phone-poster" src="./media/reel-night.jpg" alt="Neon lights on a city street">
-                <video id="reel-video" playsinline muted loop preload="metadata" poster="./media/reel-night.jpg" aria-label="A sample deployed city reel"><source src="./media/reel-demo.mp4" type="video/mp4"></video>
-                <div class="screen-shade"></div>
-                <div class="phone-island"><span></span><i></i></div>
-                <div class="screen-status"><span>9:41</span><span class="signal-bars">▂▃▅ <span class="battery"></span></span></div>
-                <div class="reel-topbar"><span>Reels</span><svg class="icon"><use href="#spark"/></svg></div>
-                <div class="reel-live"><span></span> Reference reel</div>
-                <div class="reel-center"><span class="reel-tiny">CREATIVE FILM REFERENCE</span><p id="screen-title">The detail.<br>The whole story.</p></div>
-                <div class="reel-side-actions">
-                  <button aria-label="Like sample reel" aria-pressed="false" data-toggle="like"><svg class="icon"><use href="#heart"/></svg></button>
-                  <button aria-label="Save sample reel" aria-pressed="false" data-toggle="save"><svg class="icon"><use href="#bookmark"/></svg></button>
-                  <button aria-label="Share this reel" id="share-reel"><svg class="icon"><use href="#share"/></svg></button>
+          <div class="product-layer" id="product">
+            <div class="product-copy">
+              <p class="eyebrow"><span class="live-dot"></span> Meet your creative playground</p>
+              <h2>From your head.<br />To their feed.</h2>
+              <p class="product-description">
+                Your product. Your photos.<br />A story made for the feed.
+              </p>
+              <div class="product-actions">
+                <button class="primary-button" data-studio>
+                  Make something <svg class="icon"><use href="#diagonal" /></svg>
+                </button>
+                <button class="text-button" id="watch-film">
+                  <span class="play-circle"
+                    ><svg class="icon"><use href="#play" /></svg
+                  ></span>
+                  Watch a reel
+                </button>
+              </div>
+              <div class="product-footnote">
+                <span class="asterisk">✳</span> Less overthinking. More making.
+              </div>
+            </div>
+            <div class="device-note">
+              <span class="device-note-line"></span>
+              <p>
+                FROM A LITTLE IDEA<br />TO THE BIG SCREEN.<br /><strong
+                  >THE ONE IN YOUR HAND.</strong
+                >
+              </p>
+            </div>
+          </div>
+
+          <div class="phone-anchor" aria-label="Deployed reel preview">
+            <div class="phone-motion">
+              <div class="phone-side phone-side-left"></div>
+              <div class="phone-side phone-side-right"></div>
+              <div class="phone-body">
+                <div class="phone-screen">
+                  <img
+                    class="phone-poster"
+                    id="phone-poster"
+                    src="./media/reel-night.jpg"
+                    alt="Neon lights on a city street"
+                  />
+                  <video
+                    id="reel-video"
+                    playsinline
+                    muted
+                    loop
+                    preload="metadata"
+                    poster="./media/reel-night.jpg"
+                    aria-label="A sample deployed city reel"
+                  >
+                    <source src="./media/reel-demo.mp4" type="video/mp4" />
+                  </video>
+                  <div class="screen-shade"></div>
+                  <div class="phone-island"><span></span><i></i></div>
+                  <div class="screen-status">
+                    <span>9:41</span
+                    ><span class="signal-bars">▂▃▅ <span class="battery"></span></span>
+                  </div>
+                  <div class="reel-topbar">
+                    <span>Reels</span><svg class="icon"><use href="#spark" /></svg>
+                  </div>
+                  <div class="reel-live"><span></span> Reference reel</div>
+                  <div class="reel-center">
+                    <span class="reel-tiny">CREATIVE FILM REFERENCE</span>
+                    <p id="screen-title">The detail.<br />The whole story.</p>
+                  </div>
+                  <div class="reel-side-actions">
+                    <button aria-label="Like sample reel" aria-pressed="false" data-toggle="like">
+                      <svg class="icon"><use href="#heart" /></svg>
+                    </button>
+                    <button aria-label="Save sample reel" aria-pressed="false" data-toggle="save">
+                      <svg class="icon"><use href="#bookmark" /></svg>
+                    </button>
+                    <button aria-label="Share this reel" id="share-reel">
+                      <svg class="icon"><use href="#share" /></svg>
+                    </button>
+                  </div>
+                  <div class="reel-bottom">
+                    <div class="reel-account">
+                      <span class="avatar">y.</span
+                      ><span>yap.references <small>Campaigns &amp; product studies.</small></span>
+                    </div>
+                    <p id="reel-caption">A little inspiration for your next idea.</p>
+                    <div class="reel-audio">
+                      <span aria-hidden="true">↗</span
+                      ><span id="reel-credit">Attributed film reference</span>
+                    </div>
+                  </div>
+                  <div class="reel-progress"><span></span></div>
+                  <div class="phone-home"></div>
                 </div>
-                <div class="reel-bottom"><div class="reel-account"><span class="avatar">y.</span><span>yap.references <small>Campaigns &amp; product studies.</small></span></div><p id="reel-caption">A little inspiration for your next idea.</p><div class="reel-audio"><span aria-hidden="true">↗</span><span id="reel-credit">Attributed film reference</span></div></div>
-                <div class="reel-progress"><span></span></div>
-                <div class="phone-home"></div>
+              </div>
+            </div>
+            <div class="phone-caption">
+              <span class="live-dot"></span> An idea, out in the world.
+            </div>
+          </div>
+
+          <div class="reel-rail-ui" id="reels">
+            <div class="rail-topline">
+              <span class="eyebrow">The possibility reel</span
+              ><span class="rail-hint">Drag to explore <span>↔</span></span>
+            </div>
+            <div class="rail-footer">
+              <div class="rail-title">
+                <span id="reel-counter">01 / 21</span><strong id="active-title">After hours</strong
+                ><span id="active-category">CITY STUDY</span>
+              </div>
+              <div class="rail-controls">
+                <button class="round-button prev" id="previous-reel" aria-label="Previous reel">
+                  <svg class="icon"><use href="#chevron" /></svg></button
+                ><button class="round-button" id="next-reel" aria-label="Next reel">
+                  <svg class="icon"><use href="#chevron" /></svg></button
+                ><button class="sound-button" id="toggle-playback" aria-label="Pause reel">
+                  <svg class="icon"><use href="#pause" /></svg></button
+                ><button
+                  class="sound-button"
+                  id="silent-sample"
+                  aria-label="About the silent sample"
+                  title="Silent sample"
+                >
+                  <svg class="icon"><use href="#mute" /></svg>
+                </button>
               </div>
             </div>
           </div>
-          <div class="phone-caption"><span class="live-dot"></span> An idea, out in the world.</div>
+          <div class="scene-progress" aria-hidden="true"><span></span><i></i></div>
         </div>
+      </section>
 
-        <div class="reel-rail-ui" id="reels">
-          <div class="rail-topline"><span class="eyebrow">The possibility reel</span><span class="rail-hint">Drag to explore <span>↔</span></span></div>
-          <div class="rail-footer"><div class="rail-title"><span id="reel-counter">01 / 21</span><strong id="active-title">After hours</strong><span id="active-category">CITY STUDY</span></div><div class="rail-controls"><button class="round-button prev" id="previous-reel" aria-label="Previous reel"><svg class="icon"><use href="#chevron"/></svg></button><button class="round-button" id="next-reel" aria-label="Next reel"><svg class="icon"><use href="#chevron"/></svg></button><button class="sound-button" id="toggle-playback" aria-label="Pause reel"><svg class="icon"><use href="#pause"/></svg></button><button class="sound-button" id="silent-sample" aria-label="About the silent sample" title="Silent sample"><svg class="icon"><use href="#mute"/></svg></button></div></div>
+      <section class="manifesto" aria-label="Our belief">
+        <p class="eyebrow reveal">For the thought that won't leave you alone.</p>
+        <p class="manifesto-statement" id="manifesto-text">
+          You don't need a big production.<br />You need an idea you can't let go of.
+        </p>
+        <span class="manifesto-star" aria-hidden="true">✳</span>
+      </section>
+
+      <section class="workflow" id="how-it-works">
+        <div class="section-heading reveal">
+          <div>
+            <p class="eyebrow">A shorter distance from what if to here it is.</p>
+            <h2>Stay in the idea.<br />We'll meet you there.</h2>
+          </div>
+          <span class="section-note">THE YAP VISION<br />THOUGHT → STORY → REEL</span>
         </div>
-        <div class="scene-progress" aria-hidden="true"><span></span><i></i></div>
+        <div class="workflow-layout">
+          <div
+            class="workflow-steps"
+            role="tablist"
+            aria-label="Explore the creative process"
+            aria-orientation="vertical"
+          >
+            <button
+              class="workflow-step is-active"
+              id="step-idea"
+              role="tab"
+              aria-selected="true"
+              aria-controls="workflow-visual"
+              data-step="0"
+            >
+              <span class="step-index">01</span
+              ><span
+                ><strong>Let it out.</strong
+                ><small>Start with your photos and a little what if.</small></span
+              ><svg class="icon"><use href="#arrow" /></svg>
+            </button>
+            <button
+              class="workflow-step"
+              id="step-story"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workflow-visual"
+              tabindex="-1"
+              data-step="1"
+            >
+              <span class="step-index">02</span
+              ><span
+                ><strong>Find its rhythm.</strong
+                ><small>Shape the scenes, the feeling, the way it moves.</small></span
+              ><svg class="icon"><use href="#arrow" /></svg>
+            </button>
+            <button
+              class="workflow-step"
+              id="step-reel"
+              role="tab"
+              aria-selected="false"
+              aria-controls="workflow-visual"
+              tabindex="-1"
+              data-step="2"
+            >
+              <span class="step-index">03</span
+              ><span
+                ><strong>Put it out there.</strong
+                ><small>A reel ready for a world that keeps scrolling.</small></span
+              ><svg class="icon"><use href="#arrow" /></svg>
+            </button>
+          </div>
+          <div
+            class="workflow-visual"
+            id="workflow-visual"
+            role="tabpanel"
+            aria-labelledby="step-idea"
+            tabindex="0"
+          >
+            <div class="demo-top">
+              <span class="mini-wordmark">yap.</span
+              ><span class="demo-label">A LOOK INSIDE THE IDEA</span><span class="demo-dot"></span>
+            </div>
+            <div class="idea-demo">
+              <span class="demo-eyebrow">EVERY REEL STARTS SOMEWHERE.</span>
+              <p id="typed-idea">A love letter to the city<br />after everyone goes home.</p>
+              <span class="typing-cursor"></span>
+              <div class="demo-prompt">
+                <svg class="icon"><use href="#spark" /></svg><span>Give this idea a life.</span
+                ><button aria-label="Explore this sample idea" data-studio>
+                  <svg class="icon"><use href="#arrow" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="story-demo" hidden>
+              <div class="story-shot">
+                <img
+                  src="./media/reel-city.jpg"
+                  alt="A city street establishing the story"
+                  loading="lazy"
+                /><span>THE SETTING</span>
+              </div>
+              <div class="story-shot">
+                <img
+                  src="./media/reel-night.jpg"
+                  alt="Neon details set the mood"
+                  loading="lazy"
+                /><span>THE FEELING</span>
+              </div>
+              <div class="story-shot">
+                <img
+                  src="./media/reel-portrait.jpg"
+                  alt="A cinematic portrait brings a human moment"
+                  loading="lazy"
+                /><span>THE MOMENT</span>
+              </div>
+              <div class="story-timeline"><span></span><i></i></div>
+              <p>Three moments. One little world.</p>
+            </div>
+            <div class="publish-demo" hidden>
+              <span class="publish-icon"
+                ><svg class="icon"><use href="#check" /></svg
+              ></span>
+              <p>Out of your head.<br />Into the world.</p>
+              <span class="publish-format">9:16 <i></i> YOUR NEXT REEL</span
+              ><button class="text-button" data-jump="product">
+                See it in motion <svg class="icon"><use href="#arrow" /></svg>
+              </button>
+            </div>
+            <div class="demo-bottom">
+              <span>Illustrative product concept</span><span class="demo-position">IDEA / 01</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="closing" id="studio">
+        <p class="eyebrow reveal">You know that idea?</p>
+        <h2 class="reveal">Yeah. <span>That one.</span></h2>
+        <button class="closing-cta reveal" data-studio>
+          Let's make it real.
+          <span
+            ><svg class="icon"><use href="#diagonal" /></svg
+          ></span>
+        </button>
+        <p class="closing-small">A creative playground for whatever's on your mind.</p>
+      </section>
+      <footer>
+        <a href="#top" class="wordmark" aria-label="Back to yap home">yap<span>.</span></a>
+        <p>good ideas, made REEL</p>
+        <div>
+          <a href="./credits.html">Media credits</a
+          ><button id="play-opening">Try the opening cut <span>↗</span></button
+          ><button id="replay-intro">Replay the wall <span>↺</span></button>
+        </div>
+      </footer>
+    </main>
+
+    <dialog class="studio-dialog" id="studio-dialog" aria-labelledby="studio-heading">
+      <form id="idea-form">
+        <button
+          type="button"
+          class="dialog-close round-button"
+          data-close-dialog
+          aria-label="Close studio"
+        >
+          <svg class="icon"><use href="#close" /></svg>
+        </button>
+        <p class="eyebrow"><span class="live-dot"></span> Your creative playground</p>
+        <h2 id="studio-heading">Give that idea<br />a first frame.</h2>
+        <label for="idea-input">What's on your mind?</label
+        ><textarea
+          id="idea-input"
+          maxlength="140"
+          required
+          placeholder="A love letter to my city after dark…"
+        ></textarea>
+        <div class="input-meta">
+          <span>A thought is enough to start.</span><span id="idea-count">0 / 140</span>
+        </div>
+        <fieldset>
+          <legend>Pick a feeling.</legend>
+          <div class="mood-options">
+            <label
+              ><input type="radio" name="mood" value="10" checked /><span>Cinematic</span></label
+            ><label><input type="radio" name="mood" value="2" /><span>Out in the wild</span></label
+            ><label><input type="radio" name="mood" value="0" /><span>Editorial</span></label>
+          </div>
+        </fieldset>
+        <button class="primary-button" type="submit">
+          Preview my idea <svg class="icon"><use href="#diagonal" /></svg>
+        </button>
+        <p class="dialog-note">An interactive concept preview using sample footage.</p>
+      </form>
+    </dialog>
+    <dialog class="film-dialog" id="film-dialog" aria-label="Watch a sample reel">
+      <button class="dialog-close round-button" data-close-film aria-label="Close film">
+        <svg class="icon"><use href="#close" /></svg></button
+      ><video id="film-video" controls playsinline preload="none" poster="./media/reel-night.jpg">
+        <source src="./media/reel-demo.mp4" type="video/mp4" /></video
+      ><span>AFTER HOURS · A SAMPLE REEL</span>
+    </dialog>
+    <dialog class="opening-cut" id="opening-cut" aria-label="Optional yap opening film">
+      <div class="cut-frame cut-one" aria-hidden="true">
+        <img src="./media/reel-portrait.jpg" alt="" /><span>what if.</span>
       </div>
-    </section>
-
-    <section class="manifesto" aria-label="Our belief">
-      <p class="eyebrow reveal">For the thought that won't leave you alone.</p>
-      <p class="manifesto-statement" id="manifesto-text">You don't need a big production.<br>You need an idea you can't let go of.</p>
-      <span class="manifesto-star" aria-hidden="true">✳</span>
-    </section>
-
-    <section class="workflow" id="how-it-works">
-      <div class="section-heading reveal"><div><p class="eyebrow">A shorter distance from what if to here it is.</p><h2>Stay in the idea.<br>We'll meet you there.</h2></div><span class="section-note">THE YAP VISION<br>THOUGHT → STORY → REEL</span></div>
-      <div class="workflow-layout">
-        <div class="workflow-steps" role="tablist" aria-label="Explore the creative process" aria-orientation="vertical">
-          <button class="workflow-step is-active" id="step-idea" role="tab" aria-selected="true" aria-controls="workflow-visual" data-step="0"><span class="step-index">01</span><span><strong>Let it out.</strong><small>Start with a thought, a voice note, a wild what if.</small></span><svg class="icon"><use href="#arrow"/></svg></button>
-          <button class="workflow-step" id="step-story" role="tab" aria-selected="false" aria-controls="workflow-visual" tabindex="-1" data-step="1"><span class="step-index">02</span><span><strong>Find its rhythm.</strong><small>Shape the scenes, the feeling, the way it moves.</small></span><svg class="icon"><use href="#arrow"/></svg></button>
-          <button class="workflow-step" id="step-reel" role="tab" aria-selected="false" aria-controls="workflow-visual" tabindex="-1" data-step="2"><span class="step-index">03</span><span><strong>Put it out there.</strong><small>A reel ready for a world that keeps scrolling.</small></span><svg class="icon"><use href="#arrow"/></svg></button>
-        </div>
-        <div class="workflow-visual" id="workflow-visual" role="tabpanel" aria-labelledby="step-idea" tabindex="0">
-          <div class="demo-top"><span class="mini-wordmark">yap.</span><span class="demo-label">A LOOK INSIDE THE IDEA</span><span class="demo-dot"></span></div>
-          <div class="idea-demo"><span class="demo-eyebrow">EVERY REEL STARTS SOMEWHERE.</span><p id="typed-idea">A love letter to the city<br>after everyone goes home.</p><span class="typing-cursor"></span><div class="demo-prompt"><svg class="icon"><use href="#spark"/></svg><span>Give this idea a life.</span><button aria-label="Explore this sample idea" data-studio><svg class="icon"><use href="#arrow"/></svg></button></div></div>
-          <div class="story-demo" hidden><div class="story-shot"><img src="./media/reel-city.jpg" alt="A city street establishing the story" loading="lazy"><span>THE SETTING</span></div><div class="story-shot"><img src="./media/reel-night.jpg" alt="Neon details set the mood" loading="lazy"><span>THE FEELING</span></div><div class="story-shot"><img src="./media/reel-portrait.jpg" alt="A cinematic portrait brings a human moment" loading="lazy"><span>THE MOMENT</span></div><div class="story-timeline"><span></span><i></i></div><p>Three moments. One little world.</p></div>
-          <div class="publish-demo" hidden><span class="publish-icon"><svg class="icon"><use href="#check"/></svg></span><p>Out of your head.<br>Into the world.</p><span class="publish-format">9:16 <i></i> YOUR NEXT REEL</span><button class="text-button" data-jump="product">See it in motion <svg class="icon"><use href="#arrow"/></svg></button></div>
-          <div class="demo-bottom"><span>Illustrative product concept</span><span class="demo-position">IDEA / 01</span></div>
-        </div>
+      <div class="cut-frame cut-two" aria-hidden="true">
+        <div class="cut-photo"><img src="./media/reel-city.jpg" alt="" /></div>
+        <div class="cut-photo"><img src="./media/reel-fashion.jpg" alt="" /></div>
+        <div class="cut-photo"><img src="./media/reel-ocean.jpg" alt="" /></div>
+        <span>a little<br />louder.</span>
       </div>
-    </section>
-
-    <section class="closing" id="studio"><p class="eyebrow reveal">You know that idea?</p><h2 class="reveal">Yeah. <span>That one.</span></h2><button class="closing-cta reveal" data-studio>Let's make it real. <span><svg class="icon"><use href="#diagonal"/></svg></span></button><p class="closing-small">A creative playground for whatever's on your mind.</p></section>
-    <footer><a href="#top" class="wordmark" aria-label="Back to yap home">yap<span>.</span></a><p>good ideas, made REEL</p><div><a href="./credits.html">Media credits</a><button id="play-opening">Try the opening cut <span>↗</span></button><button id="replay-intro">Replay the wall <span>↺</span></button></div></footer>
-  </main>
-
-  <dialog class="studio-dialog" id="studio-dialog" aria-labelledby="studio-heading">
-    <form id="idea-form"><button type="button" class="dialog-close round-button" data-close-dialog aria-label="Close studio"><svg class="icon"><use href="#close"/></svg></button><p class="eyebrow"><span class="live-dot"></span> Your creative playground</p><h2 id="studio-heading">Give that idea<br>a first frame.</h2><label for="idea-input">What's on your mind?</label><textarea id="idea-input" maxlength="140" required placeholder="A love letter to my city after dark…"></textarea><div class="input-meta"><span>A thought is enough to start.</span><span id="idea-count">0 / 140</span></div><fieldset><legend>Pick a feeling.</legend><div class="mood-options"><label><input type="radio" name="mood" value="10" checked><span>Cinematic</span></label><label><input type="radio" name="mood" value="2"><span>Out in the wild</span></label><label><input type="radio" name="mood" value="0"><span>Editorial</span></label></div></fieldset><button class="primary-button" type="submit">Preview my idea <svg class="icon"><use href="#diagonal"/></svg></button><p class="dialog-note">An interactive concept preview using sample footage.</p></form>
-  </dialog>
-  <dialog class="film-dialog" id="film-dialog" aria-label="Watch a sample reel"><button class="dialog-close round-button" data-close-film aria-label="Close film"><svg class="icon"><use href="#close"/></svg></button><video id="film-video" controls playsinline preload="none" poster="./media/reel-night.jpg"><source src="./media/reel-demo.mp4" type="video/mp4"></video><span>AFTER HOURS · A SAMPLE REEL</span></dialog>
-  <dialog class="opening-cut" id="opening-cut" aria-label="Optional yap opening film"><div class="cut-frame cut-one" aria-hidden="true"><img src="./media/reel-portrait.jpg" alt=""><span>what if.</span></div><div class="cut-frame cut-two" aria-hidden="true"><div class="cut-photo"><img src="./media/reel-city.jpg" alt=""></div><div class="cut-photo"><img src="./media/reel-fashion.jpg" alt=""></div><div class="cut-photo"><img src="./media/reel-ocean.jpg" alt=""></div><span>a little<br>louder.</span></div><div class="cut-frame cut-three" aria-hidden="true"><span>good<br>ideas.</span><i>THE ONES YOU CAN'T SHAKE.</i></div><div class="cut-frame cut-four" aria-hidden="true"><img src="./media/reel-night.jpg" alt=""><span>made<br>REEL.</span></div><div class="cut-frame cut-five" aria-hidden="true"><span>yap.</span><i>GOOD IDEAS, MADE REEL.</i></div><div class="cut-chrome"><span>THE OPENING CUT / YAP STUDIO</span><button id="skip-opening">Skip intro <svg class="icon"><use href="#arrow"/></svg></button></div></dialog>
-  <div class="toast" id="toast" role="status" aria-live="polite"></div>
-</body>
+      <div class="cut-frame cut-three" aria-hidden="true">
+        <span>good<br />ideas.</span><i>THE ONES YOU CAN'T SHAKE.</i>
+      </div>
+      <div class="cut-frame cut-four" aria-hidden="true">
+        <img src="./media/reel-night.jpg" alt="" /><span>made<br />REEL.</span>
+      </div>
+      <div class="cut-frame cut-five" aria-hidden="true">
+        <span>yap.</span><i>GOOD IDEAS, MADE REEL.</i>
+      </div>
+      <div class="cut-chrome">
+        <span>THE OPENING CUT / YAP STUDIO</span
+        ><button id="skip-opening">
+          Skip intro <svg class="icon"><use href="#arrow" /></svg>
+        </button>
+      </div>
+    </dialog>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </body>
 </html>
