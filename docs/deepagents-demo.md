@@ -1,6 +1,6 @@
 # Yap Deep Agents demo
 
-## Track outcome
+## Product outcome
 
 Yap's research demo should demonstrate one connected task: take a creator's theme, gather bounded public evidence, combine what posts say with observed network structure, and turn reviewed findings into a cited creative direction. The proposal then enters the existing promo workflow, where the creator supplies their own product facts and reviews the script.
 
@@ -142,7 +142,7 @@ The replay may animate over a few seconds so people can read the stages. Its eve
 6. **Use the existing promo flow:** supply the creator's own product facts, prepare a script, and show how the reviewed direction influences presentation. Preserve citations. No automatic creative approval or render is implied.
 7. **Close with technical evidence:** describe the bounded tool calls, sparse deterministic analysis, specialist context separation, virtual files, and error behavior. Distinguish implemented live execution from replayed UI behavior.
 
-For complexity, show a coordinated multi-step task with shared artifacts rather than a single model prompt. For effective harness use, demonstrate real specialist delegation and tool/file activity with bounded scope. For demo clarity, keep the final outcome visible: an explorable finding becomes an evidence-backed script decision. These are product-facing interpretations of the requested track criteria, not additional official judging rules inferred from the workshop repository.
+Keep the final outcome visible: an explorable finding becomes an attributed script decision. Show the actual specialist delegation, shared artifacts, and bounded work that produced it, and identify any collection or interpretation limits.
 
 ## Delivery checks
 
