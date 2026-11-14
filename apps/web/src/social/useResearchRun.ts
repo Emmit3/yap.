@@ -25,20 +25,24 @@ const pause = (signal: AbortSignal) =>
     }, 750);
     signal.addEventListener('abort', abort, { once: true });
   });
-function remember(id: string | null) {
+function remember(id: string | null, key = savedRunKey) {
   try {
-    if (id) sessionStorage.setItem(savedRunKey, id);
-    else sessionStorage.removeItem(savedRunKey);
+    if (id) sessionStorage.setItem(key, id);
+    else sessionStorage.removeItem(key);
   } catch {
     /* In-memory activity remains usable. */
   }
 }
 
-export function useResearchRun(callbacks: {
-  onComplete(investigation: SocialInvestigation, run: SocialResearchRun): void;
-  onBusy(value: boolean): void;
-  onError(message: string): void;
-}) {
+export function useResearchRun(
+  callbacks: {
+    onComplete(investigation: SocialInvestigation, run: SocialResearchRun): void;
+    onBusy(value: boolean): void;
+    onError(message: string): void;
+  },
+  options: { storageKey?: string } = {},
+) {
+  const storageKey = useRef(options.storageKey ?? savedRunKey);
   const [run, setRun] = useState<SocialResearchRun | null>(null);
   const [connected, setConnected] = useState(true);
   const [resultLoaded, setResultLoaded] = useState(false);
@@ -66,7 +70,7 @@ export function useResearchRun(callbacks: {
               'This research run could not finish. Review the source activity and try again.',
           );
         }
-        remember(null);
+        remember(null, storageKey.current);
         return;
       }
       await pause(signal);
@@ -87,7 +91,7 @@ export function useResearchRun(callbacks: {
       await follow(snapshot, current.signal);
     } catch (error) {
       if (error instanceof ResearchApiError && error.status === 404) {
-        remember(null);
+        remember(null, storageKey.current);
         knownId.current = null;
         if (mounted.current) setRun(null);
       }
@@ -107,7 +111,7 @@ export function useResearchRun(callbacks: {
     mounted.current = true;
     let saved: string | null = null;
     try {
-      saved = sessionStorage.getItem(savedRunKey);
+      saved = sessionStorage.getItem(storageKey.current);
     } catch {
       /* Storage is optional. */
     }
@@ -130,7 +134,7 @@ export function useResearchRun(callbacks: {
     try {
       const snapshot = (await socialApi.startRun(input, current.signal)).run;
       knownId.current = snapshot.id;
-      remember(snapshot.id);
+      remember(snapshot.id, storageKey.current);
       await follow(snapshot, current.signal);
     } catch (error) {
       if (!current.signal.aborted && mounted.current) {
@@ -162,7 +166,7 @@ export function useResearchRun(callbacks: {
         return;
       }
       if (terminal(result.run)) {
-        remember(null);
+        remember(null, storageKey.current);
         activeController?.abort();
         controller.current = null;
         if (mounted.current) latest.current.onBusy(false);
@@ -187,7 +191,7 @@ export function useResearchRun(callbacks: {
       if (run && terminal(run)) {
         setRun(null);
         knownId.current = null;
-        remember(null);
+        remember(null, storageKey.current);
       }
     },
   };

@@ -33,6 +33,8 @@ import {
 } from '@yap/contracts/social';
 import ResearchGraph from './Graph';
 import ResearchActivity from './ResearchActivity';
+import AnalyticsOverview from './AnalyticsOverview';
+import { researchActivityStorageKey, researchContextSeed } from './analytics-overview';
 import { useResearchRun } from './useResearchRun';
 import { researchError, socialApi } from './api';
 import './social.css';
@@ -61,6 +63,12 @@ const snippet = (text: string, length = 180) =>
   text.length > length ? `${text.slice(0, length).trim()}…` : text;
 
 export interface SocialWorkspaceProps {
+  /** Compact, same-page presentation; keeps the research lifecycle and guards intact. */
+  embedded?: boolean;
+  /** Mount-time pristine context. Re-key the workspace to seed another creation. */
+  initialTopic?: string;
+  initialAudience?: string;
+  initialInvestigationId?: string;
   onUseResearch?: (
     handoff: SocialHandoff,
     investigation: SocialInvestigation,
@@ -68,7 +76,16 @@ export interface SocialWorkspaceProps {
   onDirty?: (dirty: boolean) => void;
 }
 
-export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorkspaceProps) {
+export default function SocialWorkspace({
+  onUseResearch,
+  onDirty,
+  embedded = false,
+  initialTopic,
+  initialAudience,
+  initialInvestigationId,
+}: SocialWorkspaceProps) {
+  const seed = useRef(researchContextSeed(initialTopic, initialAudience));
+  const initialSavedId = useRef(initialInvestigationId);
   const [investigations, setInvestigations] = useState<SocialInvestigationSummary[]>([]);
   const [providers, setProviders] = useState<SocialProviderStatus[]>([]);
   const [researchCapabilities, setResearchCapabilities] =
@@ -80,8 +97,8 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [newResearch, setNewResearch] = useState(false);
-  const [topic, setTopic] = useState('');
-  const [audience, setAudience] = useState('');
+  const [topic, setTopic] = useState(seed.current.topic);
+  const [audience, setAudience] = useState(seed.current.audience);
   const [platforms, setPlatforms] = useState<SocialPlatform[]>(['x', 'instagram', 'web']);
   const [days, setDays] = useState(7);
   const [limit, setLimit] = useState(60);
@@ -114,6 +131,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   const epoch = useRef(0);
   const noteEditor = useRef<HTMLTextAreaElement>(null);
   const inspector = useRef<HTMLElement>(null);
+  const findings = useRef<HTMLElement>(null);
   const submittedForm = useRef<string | null>(null);
   const originalNote = active?.notes.find((note) => note.id === editingNote);
   const noteDirty = originalNote
@@ -133,8 +151,8 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   });
   const researchFormDirty =
     (!active || newResearch) &&
-    (!!topic.trim() ||
-      !!audience.trim() ||
+    (topic.trim() !== seed.current.topic ||
+      audience.trim() !== seed.current.audience ||
       !!importJson.trim() ||
       publicOnly ||
       days !== 7 ||
@@ -143,28 +161,31 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       platforms.length !== 3 ||
       !(['x', 'instagram', 'web'] as const).every((platform) => platforms.includes(platform)));
   const workspaceDirty = noteDirty || researchFormDirty;
-  const activity = useResearchRun({
-    onBusy: (value) =>
-      setBusy((current) => (value ? 'collect' : current === 'collect' ? '' : current)),
-    onError: setError,
-    onComplete: (investigation, run) => {
-      setInvestigations((previous) => [
-        investigation,
-        ...previous.filter((item) => item.id !== investigation.id),
-      ]);
-      openInvestigation(
-        investigation,
-        false,
-        submittedForm.current === formSignature && !importJson.trim() && !publicOnly,
-      );
-      submittedForm.current = null;
-      setStatus(
-        run.execution === 'demo_replay'
-          ? 'Example replay complete. All evidence and activity in this example are illustrative.'
-          : 'Research complete. Explore the source evidence, connections, and creative findings.',
-      );
+  const activity = useResearchRun(
+    {
+      onBusy: (value) =>
+        setBusy((current) => (value ? 'collect' : current === 'collect' ? '' : current)),
+      onError: setError,
+      onComplete: (investigation, run) => {
+        setInvestigations((previous) => [
+          investigation,
+          ...previous.filter((item) => item.id !== investigation.id),
+        ]);
+        openInvestigation(
+          investigation,
+          false,
+          submittedForm.current === formSignature && !importJson.trim() && !publicOnly,
+        );
+        submittedForm.current = null;
+        setStatus(
+          run.execution === 'demo_replay'
+            ? 'Example replay complete. All evidence and activity in this example are illustrative.'
+            : 'Research complete. Explore the source evidence, connections, and creative findings.',
+        );
+      },
     },
-  });
+    { storageKey: researchActivityStorageKey(embedded, seed.current, initialSavedId.current) },
+  );
 
   useEffect(() => {
     onDirty?.(workspaceDirty);
@@ -178,17 +199,38 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
 
   useEffect(() => {
     let current = true;
+    const controller = new AbortController();
+    const loadEpoch = epoch.current;
     async function load() {
       try {
-        const [library, integrations, capabilities] = await Promise.all([
+        const [library, integrations, capabilities, saved] = await Promise.allSettled([
           socialApi.list(),
           socialApi.providers(),
           socialApi.researchCapabilities(),
+          initialSavedId.current
+            ? socialApi.get(initialSavedId.current, controller.signal)
+            : Promise.resolve(null),
         ]);
         if (!current) return;
-        setInvestigations(library.investigations);
-        setProviders(integrations.providers);
-        setResearchCapabilities(capabilities);
+        const failures: string[] = [];
+        if (library.status === 'fulfilled')
+          setInvestigations((previous) =>
+            [
+              ...new Map(
+                [...library.value.investigations, ...previous].map((item) => [item.id, item]),
+              ).values(),
+            ].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
+          );
+        else failures.push(researchError(library.reason));
+        if (integrations.status === 'fulfilled') setProviders(integrations.value.providers);
+        else failures.push(researchError(integrations.reason));
+        if (capabilities.status === 'fulfilled') setResearchCapabilities(capabilities.value);
+        else failures.push(researchError(capabilities.reason));
+        if (saved.status === 'fulfilled' && saved.value && loadEpoch === epoch.current)
+          openInvestigation(saved.value.investigation);
+        else if (saved.status === 'rejected' && loadEpoch === epoch.current)
+          failures.push(`Saved analytics could not be opened. ${researchError(saved.reason)}`);
+        if (failures.length) setError([...new Set(failures)].join(' '));
       } catch (caught) {
         if (current) setError(researchError(caught));
       } finally {
@@ -198,13 +240,14 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
     void load();
     return () => {
       current = false;
+      controller.abort();
       epoch.current += 1;
     };
   }, []);
 
   function resetResearchForm() {
-    setTopic('');
-    setAudience('');
+    setTopic(seed.current.topic);
+    setAudience(seed.current.audience);
     setPlatforms(['x', 'instagram', 'web']);
     setDays(7);
     setLimit(60);
@@ -529,7 +572,11 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
     try {
       await onUseResearch(handoff, active);
       setUsed(true);
-      setStatus('Research sent to creation. Your source references are included.');
+      setStatus(
+        embedded
+          ? 'Research applied to this creation. Your source references are included.'
+          : 'Research sent to creation. Your source references are included.',
+      );
     } catch (caught) {
       setError(researchError(caught));
     } finally {
@@ -609,15 +656,21 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   }
 
   return (
-    <div className="social-workspace">
+    <div className={`social-workspace${embedded ? ' social-workspace-embedded' : ''}`}>
       <header className="social-page-heading">
         <div>
-          <div className="social-heading-symbol">
-            <Graph size={20} />
-            <span>Research studio</span>
-          </div>
-          <h1>Find your next angle.</h1>
-          <p>Explore the conversation. See the connections. Make something with a point of view.</p>
+          {!embedded && (
+            <div className="social-heading-symbol">
+              <Graph size={20} />
+              <span>Research studio</span>
+            </div>
+          )}
+          {embedded ? <h2>Research and findings</h2> : <h1>Find your next angle.</h1>}
+          <p>
+            {embedded
+              ? 'Review the evidence behind your creative direction, then apply the parts worth using here.'
+              : 'Explore the conversation. See the connections. Make something with a point of view.'}
+          </p>
         </div>
         <div className="social-heading-actions">
           {!!investigations.length && (
@@ -808,61 +861,70 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                     ))}
                   </div>
                 </fieldset>
-                <div className="social-form-row">
-                  <label>
-                    Time window
+                <details className="social-research-options">
+                  <summary>
+                    Research options{' '}
+                    <span>
+                      {days} days · {limit} items ·{' '}
+                      {harness === 'deepagents' ? 'Deep Agents' : 'Direct search'}
+                    </span>
+                  </summary>
+                  <div className="social-form-row">
+                    <label>
+                      Time window
+                      <select
+                        value={days}
+                        disabled={!!busy}
+                        onChange={(event) => setDays(Number(event.target.value))}
+                      >
+                        <option value={7}>Past 7 days</option>
+                        <option value={30}>Past 30 days</option>
+                        <option value={90}>Past 90 days</option>
+                      </select>
+                    </label>
+                    <label>
+                      Result limit
+                      <select
+                        value={limit}
+                        disabled={!!busy}
+                        onChange={(event) => setLimit(Number(event.target.value))}
+                      >
+                        <option value={30}>30 results</option>
+                        <option value={60}>60 results</option>
+                        <option value={100}>100 results</option>
+                      </select>
+                    </label>
+                  </div>
+                  <label className="research-harness-choice">
+                    <span>Research engine</span>
                     <select
-                      value={days}
+                      value={harness}
                       disabled={!!busy}
-                      onChange={(event) => setDays(Number(event.target.value))}
-                    >
-                      <option value={7}>Past 7 days</option>
-                      <option value={30}>Past 30 days</option>
-                      <option value={90}>Past 90 days</option>
-                    </select>
-                  </label>
-                  <label>
-                    Result limit
-                    <select
-                      value={limit}
-                      disabled={!!busy}
-                      onChange={(event) => setLimit(Number(event.target.value))}
-                    >
-                      <option value={30}>30 results</option>
-                      <option value={60}>60 results</option>
-                      <option value={100}>100 results</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="research-harness-choice">
-                  <span>Research engine</span>
-                  <select
-                    value={harness}
-                    disabled={!!busy}
-                    onChange={(event) =>
-                      setHarness(event.target.value as 'pipeline' | 'deepagents')
-                    }
-                  >
-                    <option value="pipeline">Direct public search</option>
-                    <option
-                      value="deepagents"
-                      disabled={
-                        !researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
-                          ?.configured
+                      onChange={(event) =>
+                        setHarness(event.target.value as 'pipeline' | 'deepagents')
                       }
                     >
-                      LangChain Deep Agents
-                    </option>
-                  </select>
-                  <p>
-                    {harness === 'deepagents'
-                      ? 'A coordinator delegates research and analysis, sharing evidence through research files.'
-                      : researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
+                      <option value="pipeline">Direct public search</option>
+                      <option
+                        value="deepagents"
+                        disabled={
+                          !researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
                             ?.configured
-                        ? 'Choose direct search or let Deep Agents coordinate the research.'
-                        : 'Deep Agents becomes available when its model and public search providers are configured on the server.'}
-                  </p>
-                </label>
+                        }
+                      >
+                        LangChain Deep Agents
+                      </option>
+                    </select>
+                    <p>
+                      {harness === 'deepagents'
+                        ? 'A coordinator delegates research and analysis, sharing evidence through research files.'
+                        : researchCapabilities?.harnesses.find((item) => item.id === 'deepagents')
+                              ?.configured
+                          ? 'Choose direct search or let Deep Agents coordinate the research.'
+                          : 'Deep Agents becomes available when its model and public search providers are configured on the server.'}
+                    </p>
+                  </label>
+                </details>
                 <button
                   type="submit"
                   className="social-button social-button-primary"
@@ -959,43 +1021,21 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                     </span>
                   </div>
                   <h2>{active.topic}</h2>
-                  <p>{active.analysis.summary}</p>
-                </div>
-                <div className="social-coverage-counts">
-                  <span>
-                    <strong>{active.analysis.coverage.postCount}</strong>posts in sample
-                  </span>
-                  <span>
-                    <strong>{active.analysis.coverage.actorCount}</strong>public actors
-                  </span>
-                  <span>
-                    <strong>{active.analysis.coverage.observedRelationshipCount}</strong>observed
-                    links
-                  </span>
+                  {active.audience && <p>Research audience: {active.audience}</p>}
                 </div>
               </section>
-              {active.mode === 'demo' && (
-                <div className="social-notice social-notice-example">
-                  <Lightbulb size={18} />
-                  <span>
-                    This example demonstrates the workflow. Its posts, accounts, relationships, and
-                    metrics are synthetic.
-                  </span>
-                </div>
-              )}
-              {!!active.analysis.coverage.warnings.length && (
-                <details className="social-coverage-notice">
-                  <summary>
-                    <WarningCircle size={16} />
-                    Coverage notes ({active.analysis.coverage.warnings.length})
-                  </summary>
-                  <ul>
-                    {active.analysis.coverage.warnings.map((warning) => (
-                      <li key={warning}>{warning}</li>
-                    ))}
-                  </ul>
-                </details>
-              )}
+              <AnalyticsOverview
+                investigation={active}
+                selectedInsightIds={selectedInsights}
+                disabled={!!busy}
+                onToggleInsight={(id) => toggleSelection(id, 'insight')}
+                onEvidence={(id) => {
+                  selectPost(id);
+                }}
+                onReviewFindings={() =>
+                  findings.current?.scrollIntoView({ behavior: 'auto', block: 'start' })
+                }
+              />
 
               <section className="social-explorer" aria-label="Explore collected evidence">
                 <div className="social-explorer-toolbar">
@@ -1125,7 +1165,21 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                           <span className="social-platform-badge">
                             {platformNames[selectedPost.platform]}
                           </span>
-                          <span>{formatDate(selectedPost.publishedAt)}</span>
+                          <span>
+                            {selectedPost.publishedAt ? (
+                              <>
+                                Published{' '}
+                                <time
+                                  dateTime={selectedPost.publishedAt}
+                                  title={selectedPost.publishedAt}
+                                >
+                                  {formatDate(selectedPost.publishedAt)}
+                                </time>
+                              </>
+                            ) : (
+                              'Publication date unknown'
+                            )}
+                          </span>
                         </div>
                         <h3>{selectedActor?.name ?? 'Public source'}</h3>
                         {selectedActor?.handle && (
@@ -1156,7 +1210,16 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                         </div>
                         <p className="social-caption">
                           {selectedPost.provider} · {selectedPost.contentKind.replace('_', ' ')} ·
-                          collected {formatDate(selectedPost.collectedAt)}
+                          collected{' '}
+                          <time
+                            dateTime={selectedPost.collectedAt}
+                            title={selectedPost.collectedAt}
+                          >
+                            {new Date(selectedPost.collectedAt).toLocaleString(undefined, {
+                              dateStyle: 'medium',
+                              timeStyle: 'short',
+                            })}
+                          </time>
                         </p>
                         {selectedRank && (
                           <>
@@ -1312,14 +1375,18 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                   </div>
                 ) : (
                   <p className="social-empty-text">
-                    No verified publication dates are available. Collection time does not establish
+                    No source publication dates are available. Collection time does not establish
                     when a narrative started.
                   </p>
                 )}
               </section>
 
               <div className="social-decisions-layout">
-                <section className="social-findings" aria-labelledby="social-findings-title">
+                <section
+                  className="social-findings"
+                  aria-labelledby="social-findings-title"
+                  ref={findings}
+                >
                   <div className="social-section-heading">
                     <div>
                       <h3 id="social-findings-title">From evidence to an angle</h3>
@@ -1468,10 +1535,16 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                     onClick={() => void useResearch()}
                   >
                     {busy === 'apply'
-                      ? 'Sending to creation…'
+                      ? embedded
+                        ? 'Applying research…'
+                        : 'Sending to creation…'
                       : used
-                        ? 'Sent to creation'
-                        : 'Use this direction in a script'}
+                        ? embedded
+                          ? 'Applied to this creation'
+                          : 'Sent to creation'
+                        : embedded
+                          ? 'Apply to this creation'
+                          : 'Use this direction in a script'}
                     {used ? <Check size={18} /> : <ArrowRight size={18} />}
                   </button>
                   {!onUseResearch && (
@@ -1483,73 +1556,78 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                 </section>
               )}
 
-              <section className="social-query-panel" aria-labelledby="social-query-title">
-                <div>
-                  <span className="social-section-icon">
-                    <ChatCircleText size={22} />
-                  </span>
-                  <h3 id="social-query-title">Ask the evidence.</h3>
-                  <p>
-                    Retrieve relevant messages and actors from this investigation. Answers use the
-                    collected sample.
-                  </p>
-                  <span className="social-caption">
-                    Extractive retrieval · no additional web search
-                  </span>
-                </div>
-                <div>
-                  <form onSubmit={(event) => void ask(event)}>
-                    <label htmlFor="social-question" className="social-sr-only">
-                      Question about the current investigation
-                    </label>
-                    <textarea
-                      id="social-question"
-                      value={question}
-                      onChange={(event) => setQuestion(event.target.value)}
-                      maxLength={2000}
-                      placeholder="Which examples explain the audience's problem most clearly?"
-                      required
-                      disabled={!!busy}
-                    />
-                    <button
-                      type="submit"
-                      className="social-button social-button-secondary"
-                      disabled={!!busy || !question.trim()}
-                    >
-                      {busy === 'query' ? 'Retrieving evidence…' : 'Find an answer'}
-                      <ArrowRight size={18} />
-                    </button>
-                  </form>
-                  {answer && (
-                    <div className="social-query-answer" aria-live="polite">
-                      <span className="social-caption">
-                        {answer.confidence} confidence within this sample
-                      </span>
-                      <p>{answer.answer}</p>
-                      {answer.evidence.map((evidence, index) => (
-                        <button
-                          key={evidence.postId}
-                          className="social-query-evidence"
-                          onClick={() => {
-                            selectPost(evidence.postId);
-                            inspector.current?.scrollIntoView({ behavior: 'auto', block: 'start' });
-                          }}
-                          type="button"
-                        >
-                          <span>{index + 1}</span>
-                          {snippet(evidence.excerpt, 140)}
-                          <ArrowUpRight size={16} />
-                        </button>
-                      ))}
-                      {answer.limitations.map((limitation) => (
-                        <p className="social-caption" key={limitation}>
-                          {limitation}
-                        </p>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </section>
+              <details className="social-query-disclosure">
+                <summary>
+                  Ask this evidence sample{' '}
+                  <span>Retrieve cited records without another web search</span>
+                </summary>
+                <section className="social-query-panel" aria-labelledby="social-query-title">
+                  <div>
+                    <span className="social-section-icon">
+                      <ChatCircleText size={22} />
+                    </span>
+                    <h3 id="social-query-title">Ask the evidence.</h3>
+                    <p>
+                      Retrieve relevant messages and actors from this investigation. Answers use the
+                      collected sample.
+                    </p>
+                    <span className="social-caption">
+                      Extractive retrieval · no additional web search
+                    </span>
+                  </div>
+                  <div>
+                    <form onSubmit={(event) => void ask(event)}>
+                      <label htmlFor="social-question" className="social-sr-only">
+                        Question about the current investigation
+                      </label>
+                      <textarea
+                        id="social-question"
+                        value={question}
+                        onChange={(event) => setQuestion(event.target.value)}
+                        maxLength={2000}
+                        placeholder="Which examples explain the audience's problem most clearly?"
+                        required
+                        disabled={!!busy}
+                      />
+                      <button
+                        type="submit"
+                        className="social-button social-button-secondary"
+                        disabled={!!busy || !question.trim()}
+                      >
+                        {busy === 'query' ? 'Retrieving evidence…' : 'Find an answer'}
+                        <ArrowRight size={18} />
+                      </button>
+                    </form>
+                    {answer && (
+                      <div className="social-query-answer" aria-live="polite">
+                        <span className="social-caption">
+                          {answer.confidence} confidence within this sample
+                        </span>
+                        <p>{answer.answer}</p>
+                        {answer.evidence.map((evidence, index) => (
+                          <button
+                            key={evidence.postId}
+                            className="social-query-evidence"
+                            onClick={() => {
+                              selectPost(evidence.postId);
+                            }}
+                            type="button"
+                          >
+                            <span>{index + 1}</span>
+                            {snippet(evidence.excerpt, 140)}
+                            <ArrowUpRight size={16} />
+                          </button>
+                        ))}
+                        {answer.limitations.map((limitation) => (
+                          <p className="social-caption" key={limitation}>
+                            {limitation}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
+              </details>
 
               <footer className="social-research-footer">
                 <p>

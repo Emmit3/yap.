@@ -4,6 +4,9 @@ import {
   filmFilterOptions,
   readFilmShortlist,
   filmShortlistExport,
+  filmReferenceRequest,
+  filmCreationHref,
+  FILM_REFERENCE_LIMIT,
 } from './film-references-core.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -45,6 +48,37 @@ function readableDate(value) {
 function announce(value) {
   $('#fr-action-status').textContent = value;
 }
+function useSelection(selection) {
+  const message = filmReferenceRequest(catalog.films, selection);
+  if (!message) return false;
+  try {
+    if (window.parent !== window && window.parent.location.origin === location.origin) {
+      window.parent.postMessage(message, location.origin);
+      announce('Opening the creation workspace with the selected reference links and notes.');
+      return true;
+    }
+  } catch {
+    // Cross-origin hosts cannot receive this bridge. The local creation link remains usable.
+  }
+  announce(
+    'Opening Yap with the selected creative references. Original films stay on their source sites.',
+  );
+  return false;
+}
+function useReferenceLink(film, compact = false) {
+  const link = node(
+    'a',
+    compact ? 'fr-text-button fr-use-reference' : 'fr-button fr-use-reference',
+    'Use reference',
+  );
+  link.href = filmCreationHref(catalog.films, film.id);
+  link.dataset.referenceId = film.id;
+  link.setAttribute('aria-label', `Use ${film.title} as a creative reference`);
+  link.addEventListener('click', (event) => {
+    if (useSelection(film.id)) event.preventDefault();
+  });
+  return link;
+}
 function saveButton(film) {
   const button = node('button', 'fr-text-button fr-save');
   button.type = 'button';
@@ -71,7 +105,15 @@ function filmRow(film, index) {
   if (film.year) meta.append(node('span', '', String(film.year)));
   if (film.kind === 'spec') meta.append(node('span', '', 'Spec film'));
   if (film.featured) meta.append(node('span', 'fr-featured', '↗ Highlight'));
-  body.append(meta, node('h3', '', film.title), node('p', 'fr-creator', `By ${film.creator}`));
+  const heading = node('h3');
+  const title = externalLink('', film.watchUrl, 'fr-film-title');
+  title.append(node('span', '', film.title));
+  const titleArrow = node('span', 'fr-title-arrow', '↗');
+  titleArrow.setAttribute('aria-hidden', 'true');
+  title.append(titleArrow);
+  title.setAttribute('aria-label', `Watch ${film.title} on the original site, opens a new tab`);
+  heading.append(title);
+  body.append(meta, heading, node('p', 'fr-creator', `By ${film.creator}`));
   if (film.product) body.append(node('p', 'fr-creator', film.product));
   body.append(
     node(
@@ -90,11 +132,11 @@ function filmRow(film, index) {
   proof.append(externalLink('Read the creator’s case study ↗', film.url));
   body.append(proof);
   const actions = node('div', 'fr-film-actions');
-  const watch = externalLink('Watch film ↗', film.watchUrl, 'fr-button');
+  const watch = externalLink('Watch original ↗', film.watchUrl, 'fr-button fr-button-secondary');
   watch.setAttribute('aria-label', `Watch ${film.title} on the original site, opens a new tab`);
-  const source = externalLink('Case study ↗', film.url, 'fr-button fr-button-secondary');
+  const source = externalLink('Creator source ↗', film.url, 'fr-text-button fr-source');
   source.setAttribute('aria-label', `Read the case study for ${film.title}, opens a new tab`);
-  actions.append(watch, source, saveButton(film));
+  actions.append(useReferenceLink(film), watch, source, saveButton(film));
   item.append(number, body, actions);
   return item;
 }
@@ -146,10 +188,13 @@ function populateOptions(select, field, label) {
 }
 function renderShortlist() {
   const films = catalog.films.filter((film) => shortlisted.has(film.id));
+  const exceedsLimit = films.length > FILM_REFERENCE_LIMIT;
   $('#fr-nav-count').textContent = String(films.length);
   $('#fr-shortlist-summary').textContent = films.length
-    ? `${films.length} ${films.length === 1 ? 'film' : 'films'} saved. Copy or download the original sources.`
-    : 'Save films as you browse, then take the sources with you.';
+    ? exceedsLimit
+      ? `${films.length} films saved. ${shortlistLimitMessage(films.length)} Your full saved list can still be copied or downloaded.`
+      : `${films.length} ${films.length === 1 ? 'film' : 'films'} saved. Use up to ${FILM_REFERENCE_LIMIT} films in one creative direction, or keep a copy of their source links.`
+    : `Save up to ${FILM_REFERENCE_LIMIT} films, then use their links and notes in your creative direction.`;
   shortlistItems.replaceChildren(
     ...films.map((film) => {
       const item = node('li');
@@ -158,12 +203,26 @@ function renderShortlist() {
       remove.type = 'button';
       remove.dataset.removeId = film.id;
       remove.setAttribute('aria-label', `Remove ${film.title} from your shortlist`);
-      item.append(externalLink(film.title, film.watchUrl), remove);
+      const reference = node('div', 'fr-shortlist-reference');
+      reference.append(
+        externalLink(film.title, film.watchUrl),
+        node('p', '', `${film.brand} · ${film.creator}`),
+      );
+      const actions = node('div', 'fr-shortlist-row-actions');
+      actions.append(useReferenceLink(film, true), remove);
+      item.append(reference, actions);
       return item;
     }),
   );
-  for (const id of ['#fr-copy', '#fr-download', '#fr-clear-shortlist'])
-    $(id).disabled = !films.length || (id === '#fr-copy' && copying);
+  for (const id of ['#fr-use-shortlist', '#fr-copy', '#fr-download', '#fr-clear-shortlist'])
+    $(id).disabled =
+      !films.length ||
+      (id === '#fr-use-shortlist' && exceedsLimit) ||
+      (id === '#fr-copy' && copying);
+}
+function shortlistLimitMessage(count) {
+  const removeCount = count - FILM_REFERENCE_LIMIT;
+  return `Use up to ${FILM_REFERENCE_LIMIT} films at a time. Remove ${removeCount} ${removeCount === 1 ? 'film' : 'films'} to use this shortlist.`;
 }
 function persistShortlist() {
   try {
@@ -177,7 +236,15 @@ function toggleShortlist(id) {
   const film = catalog.films.find((entry) => entry.id === id);
   if (!film) return;
   if (shortlisted.has(id)) shortlisted.delete(id);
-  else shortlisted.add(id);
+  else {
+    if (shortlisted.size >= FILM_REFERENCE_LIMIT) {
+      announce(
+        `Your shortlist already has ${shortlisted.size} films. Remove a film before adding another. The maximum is ${FILM_REFERENCE_LIMIT}.`,
+      );
+      return;
+    }
+    shortlisted.add(id);
+  }
   const persisted = persistShortlist();
   list.querySelectorAll('.fr-save').forEach((button) => {
     if (button.dataset.filmId === id) updateSaveButton(button, film);
@@ -313,6 +380,16 @@ $('#fr-clear-shortlist').addEventListener('click', () => {
       : 'Shortlist cleared for this visit. Browser storage is unavailable.',
   );
   $('#fr-shortlist-title').focus();
+});
+$('#fr-use-shortlist').addEventListener('click', () => {
+  const ids = [...shortlisted];
+  if (ids.length > FILM_REFERENCE_LIMIT) {
+    announce(shortlistLimitMessage(ids.length));
+    return;
+  }
+  const href = filmCreationHref(catalog.films, ids);
+  if (!href) return;
+  if (!useSelection(ids)) window.location.assign(href);
 });
 $('#fr-copy').addEventListener('click', async () => {
   if (copying || !shortlisted.size) return;

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowUpRight, Check, FilmSlate, MagnifyingGlass, X } from '@phosphor-icons/react';
 import type { CreatorExternalReference } from '@yap/contracts/creator';
 import {
@@ -29,6 +29,7 @@ export function ReferenceBoard({
   const [limit, setLimit] = useState(8);
   const [previewId, setPreviewId] = useState<string | null>(null);
   const [choices, setChoices] = useState<Record<string, string[]>>({});
+  const searchInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
@@ -76,7 +77,7 @@ export function ReferenceBoard({
               <FilmSlate size={18} />
               <span>
                 <strong>{film.title}</strong>
-                <small>{film.techniques.join(' / ')}</small>
+                <small>{film.techniques.join(' / ') || 'Attributed film reference'}</small>
               </span>
               <button
                 type="button"
@@ -95,6 +96,7 @@ export function ReferenceBoard({
         <label className="creator-search">
           <MagnifyingGlass size={18} />
           <input
+            ref={searchInput}
             aria-label="Search film references"
             placeholder="Brand, film or technique"
             value={search}
@@ -138,6 +140,25 @@ export function ReferenceBoard({
           <p className="creator-result-count" role="status">
             {filtered.length} {filtered.length === 1 ? 'film' : 'films'} in this view
           </p>
+          {!filtered.length && (
+            <div className="creator-catalog-loading">
+              <h3>No films match these filters.</h3>
+              <p>Try another brand or technique, or return to the full reference room.</p>
+              <button
+                type="button"
+                className="creator-secondary-button"
+                onClick={() => {
+                  setSearch('');
+                  setCategory('all');
+                  setLimit(8);
+                  setPreviewId(null);
+                  searchInput.current?.focus();
+                }}
+              >
+                Clear filters
+              </button>
+            </div>
+          )}
           <div className="creator-film-grid">
             {filtered.slice(0, limit).map((film) => {
               const embed = externalFilmEmbed(film.watchUrl);
@@ -186,6 +207,12 @@ export function ReferenceBoard({
                       </label>
                     ))}
                   </fieldset>
+                  {!film.techniques.length && (
+                    <p className="creator-fineprint">
+                      No source-supported technique tags are available. You can still use the cited
+                      film as a reference.
+                    </p>
+                  )}
                   <details>
                     <summary>Source evidence</summary>
                     <p>{film.evidence}</p>
@@ -198,11 +225,22 @@ export function ReferenceBoard({
                     </a>
                     <button
                       type="button"
-                      disabled={disabled || !techniques.length || (!saved && selected.length >= 12)}
+                      disabled={
+                        disabled ||
+                        (film.techniques.length > 0 && !techniques.length) ||
+                        Boolean(saved && !film.techniques.length) ||
+                        (!saved && selected.length >= 12)
+                      }
                       onClick={() => onSelect(selectedFilm(film, techniques))}
                     >
                       {saved ? <Check size={16} /> : <FilmSlate size={16} />}{' '}
-                      {saved ? 'Update techniques' : 'Use techniques'}
+                      {!film.techniques.length
+                        ? saved
+                          ? 'Reference selected'
+                          : 'Use cited reference'
+                        : saved
+                          ? 'Update techniques'
+                          : 'Use techniques'}
                     </button>
                   </div>
                   {embed && (

@@ -7,6 +7,7 @@ import {
   Camera,
   ChatCircleText,
   Check,
+  Copy,
   DownloadSimple,
   FilmSlate,
   Heart,
@@ -23,21 +24,28 @@ import {
   X,
 } from '@phosphor-icons/react';
 import type { SocialHandoff } from '@yap/contracts/social';
-import type { CreatorClip, CreatorJob, CreatorSource } from '@yap/contracts/creator';
+import type {
+  CreatorClip,
+  CreatorExternalReference,
+  CreatorJob,
+  CreatorSource,
+} from '@yap/contracts/creator';
 import { LoadingState } from '../components';
 import { promoApi } from '../promo/api';
 import { creatorApi } from './api';
+import { fetchCreatorVideo } from './downloads';
 import { rovingIndex } from './keyboard';
 import {
   approvalCurrent,
   clipPreviewIsCurrent,
-  generatedSeconds,
+  combineScriptMoments,
   isActiveJob,
   nextQuestion,
   outputIsCurrent,
   planCurrent,
 } from './model';
 import { ReferenceBoard } from './ReferenceBoard';
+import { BudgetReview } from './BudgetReview';
 import { useCreatorSession, type CreatorController, type SourceForm } from './useCreatorSession';
 import './creator.css';
 
@@ -47,6 +55,14 @@ export interface CreatorWorkspaceProps {
   onCreated(id: string): void;
   onDirty(dirty: boolean): void;
   initialResearch?: SocialHandoff;
+  initialExternalReferences?: CreatorExternalReference[];
+  onContextChange?(context: {
+    topic: string;
+    audience?: string;
+    research?: SocialHandoff;
+    resourceId?: string;
+    isBusy?: boolean;
+  }): void;
   onOpenPromo(workflowId: string): void;
 }
 type View = 'guided' | 'director';
@@ -84,23 +100,59 @@ function moveTab(
 
 export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const c = useCreatorSession(props);
+  const contextCallback = useRef(props.onContextChange);
+  contextCallback.current = props.onContextChange;
+  const context = {
+    topic: c.source.prompt,
+    audience: c.state?.workflow.brief.audience,
+    research: c.state?.workflow.research ?? props.initialResearch,
+    resourceId: c.state?.session.id,
+    isBusy: Boolean(c.busy || c.loading),
+  };
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const contextKey = JSON.stringify(context);
+  useEffect(() => contextCallback.current?.(contextRef.current), [contextKey]);
   const [view, setView] = useState<View>(initialView);
   const [selectedShot, setSelectedShot] = useState(0);
   const [inspector, setInspector] = useState<'shots' | 'script'>('shots');
-  const [reviewed, setReviewed] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
+  const scriptTimingInput = useRef<HTMLInputElement>(null);
   const state = c.state;
   const active = isActiveJob(c.job);
   const production = active && c.job?.kind === 'production';
   const locked = Boolean(c.busy) || c.needsReload || production;
   const edits =
-    c.inputDirty || c.planDirty || c.scriptDirty || c.answersDirty || c.photos.length > 0;
+    c.inputDirty ||
+    c.planDirty ||
+    c.scriptDirty ||
+    c.answersDirty ||
+    c.photoEditsDirty ||
+    c.photos.length > 0;
   const sourceLocked =
-    locked || Boolean(state && (c.planDirty || c.scriptDirty || c.answersDirty || c.reply.trim()));
+    locked ||
+    Boolean(
+      state &&
+      (c.planDirty || c.scriptDirty || c.answersDirty || c.photoEditsDirty || c.reply.trim()),
+    );
+  const savedPhotoLocked =
+    locked ||
+    c.inputDirty ||
+    c.planDirty ||
+    c.scriptDirty ||
+    c.answersDirty ||
+    Boolean(c.reply.trim()) ||
+    c.photos.length > 0;
   const answerLocked =
-    locked || c.inputDirty || c.planDirty || c.scriptDirty || c.answersDirty || c.photos.length > 0;
+    locked ||
+    c.inputDirty ||
+    c.planDirty ||
+    c.scriptDirty ||
+    c.answersDirty ||
+    c.photoEditsDirty ||
+    c.photos.length > 0;
 
   function changeView(next: View, focusPanel = true) {
     setView(next);
@@ -111,10 +163,11 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
     }
     if (focusPanel) requestAnimationFrame(() => panelHeading.current?.focus());
   }
-  useEffect(
-    () => setReviewed(false),
-    [state?.session.plan?.id, state?.session.version, c.dirty, c.job?.id],
-  );
+  function reviewSavedTiming() {
+    setInspector('script');
+    changeView('director', false);
+    requestAnimationFrame(() => (scriptTimingInput.current ?? panelHeading.current)?.focus());
+  }
   useEffect(() => {
     if (c.plan && selectedShot >= c.plan.clips.length) setSelectedShot(0);
   }, [c.plan, selectedShot]);
@@ -265,9 +318,26 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
         <div className="creator-draft-bar">
           <span>Save your local changes before preparing or approving a film.</span>
           <button className="creator-text-button" onClick={c.useSaved} disabled={Boolean(c.busy)}>
-            Use saved text, answers and plan
+            Use saved text, answers, descriptions and plan
           </button>
         </div>
+      )}
+      {state?.workflow.script && !state.session.plan && (
+        <aside className="creator-feedback">
+          <TextT size={20} />
+          <div>
+            <p>
+              <strong>Your saved script is ready to edit.</strong>
+            </p>
+            <p>
+              Review the timing, save your changes, then prepare again. Your existing words are
+              kept; preparing resumes from the saved drafting progress.
+            </p>
+            <button className="creator-text-button" onClick={reviewSavedTiming}>
+              Edit saved script timing <ArrowUpRight size={16} />
+            </button>
+          </div>
+        </aside>
       )}
 
       <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
@@ -310,7 +380,12 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
               )}
             </div>
             <aside className="creator-guided-aside">
-              <SourceBin c={c} onAdd={() => fileInput.current?.click()} disabled={sourceLocked} />
+              <SourceBin
+                c={c}
+                onAdd={() => fileInput.current?.click()}
+                disabled={sourceLocked}
+                savedPhotoDisabled={savedPhotoLocked}
+              />
               <WorkflowProgress c={c} />
             </aside>
           </div>
@@ -324,7 +399,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                 Sources, words and every shot. All in one place.
               </span>
             </div>
-            {!state?.session.plan && (
+            {(!state?.session.plan || c.photos.length > 0 || c.inputDirty) && (
               <SourceComposer
                 c={c}
                 fileInput={fileInput}
@@ -335,7 +410,12 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
             )}
             <div className="creator-director-layout">
               <aside className="creator-source-pane">
-                <SourceBin c={c} onAdd={() => fileInput.current?.click()} disabled={sourceLocked} />
+                <SourceBin
+                  c={c}
+                  onAdd={() => fileInput.current?.click()}
+                  disabled={sourceLocked}
+                  savedPhotoDisabled={savedPhotoLocked}
+                />
                 <WorkflowProgress c={c} />
               </aside>
               <div className="creator-stage-pane">
@@ -405,6 +485,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                         c.inputDirty ||
                         c.scriptDirty ||
                         c.answersDirty ||
+                        c.photoEditsDirty ||
                         Boolean(c.reply.trim()) ||
                         c.photos.length > 0
                       }
@@ -412,12 +493,14 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                   ) : (
                     <ScriptInspector
                       c={c}
+                      timingInputRef={scriptTimingInput}
                       disabled={
                         locked ||
                         active ||
                         c.inputDirty ||
                         c.planDirty ||
                         c.answersDirty ||
+                        c.photoEditsDirty ||
                         Boolean(c.reply.trim()) ||
                         c.photos.length > 0
                       }
@@ -435,6 +518,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                   c.inputDirty ||
                   c.planDirty ||
                   c.scriptDirty ||
+                  c.photoEditsDirty ||
                   Boolean(c.reply.trim()) ||
                   c.photos.length > 0
                 }
@@ -464,12 +548,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
         />
       </details>
       {state?.session.plan && (
-        <ProductionReview
-          c={c}
-          reviewed={reviewed}
-          onReviewed={setReviewed}
-          onOpenPromo={() => props.onOpenPromo(state.workflow.id)}
-        />
+        <BudgetReview c={c} onOpenPromo={() => props.onOpenPromo(state.workflow.id)} />
       )}
       {c.job && <JobPanel c={c} job={c.job} />}
       {state && !state.session.plan && (
@@ -632,10 +711,12 @@ function SourceBin({
   c,
   onAdd,
   disabled,
+  savedPhotoDisabled,
 }: {
   c: CreatorController;
   onAdd(): void;
   disabled: boolean;
+  savedPhotoDisabled: boolean;
 }) {
   const assets = c.state?.workflow.assets ?? [];
   return (
@@ -664,7 +745,41 @@ function SourceBin({
               <span>
                 <Check size={12} /> Saved photo / {asset.width} × {asset.height}
               </span>
-              {asset.description && <p>{asset.description}</p>}
+              <label>
+                Photo description
+                <textarea
+                  aria-label={`Description of ${asset.filename}`}
+                  value={c.photoEdits[asset.id] ?? asset.description}
+                  maxLength={2000}
+                  disabled={savedPhotoDisabled}
+                  onChange={(event) =>
+                    c.setPhotoEdits((previous) => ({ ...previous, [asset.id]: event.target.value }))
+                  }
+                  placeholder="Describe what this photo shows."
+                  rows={3}
+                />
+              </label>
+              <div className="creator-photo-actions">
+                <button
+                  className="creator-text-button"
+                  aria-label={`Save description for ${asset.filename}`}
+                  disabled={
+                    savedPhotoDisabled ||
+                    (c.photoEdits[asset.id] ?? asset.description) === asset.description
+                  }
+                  onClick={() => c.savePhotoDescription(asset.id)}
+                >
+                  Save description
+                </button>
+                <button
+                  className="creator-text-button"
+                  aria-label={`Remove ${asset.filename}`}
+                  disabled={savedPhotoDisabled || c.photoEditsDirty}
+                  onClick={() => c.removePhoto(asset.id)}
+                >
+                  Remove photo
+                </button>
+              </div>
             </figcaption>
           </figure>
         ))}
@@ -718,6 +833,18 @@ function SourceBin({
           </div>
         )}
       </div>
+      {assets.length > 0 && (
+        <p className="creator-fineprint">
+          Saving a description or removing a photo updates your sources and clears the current plan
+          approval. Prepare and review the film again before paid work.
+        </p>
+      )}
+      {c.photoEditsDirty && (
+        <p className="creator-fineprint">
+          Save your photo description changes, or use the saved descriptions, before changing other
+          parts of the film.
+        </p>
+      )}
     </section>
   );
 }
@@ -1213,6 +1340,11 @@ function ShotInspector({
   disabled: boolean;
 }) {
   const clip = c.plan?.clips[index];
+  const minimumSeconds =
+    c.state?.session.plan?.provider === 'fal' ||
+    c.state?.session.plan?.model === 'seedance-v1.5-pro'
+      ? 4
+      : 2;
   if (!clip)
     return (
       <div className="creator-inspector-empty">
@@ -1266,12 +1398,15 @@ function ShotInspector({
           Clip duration
           <input
             type="number"
-            min={2}
+            min={minimumSeconds}
             max={10}
             step={1}
             value={clip.seconds}
             onChange={(event) => update('seconds', Number(event.target.value))}
           />
+          <small className="creator-fineprint">
+            This model accepts {minimumSeconds} to 10 seconds per clip.
+          </small>
         </label>
         <label>
           Source photo
@@ -1326,7 +1461,15 @@ function ShotInspector({
   );
 }
 
-function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: boolean }) {
+function ScriptInspector({
+  c,
+  disabled,
+  timingInputRef,
+}: {
+  c: CreatorController;
+  disabled: boolean;
+  timingInputRef: RefObject<HTMLInputElement | null>;
+}) {
   if (!c.script)
     return (
       <div className="creator-inspector-empty">
@@ -1334,9 +1477,18 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
         <p>The script appears after you prepare the proposal.</p>
       </div>
     );
+  const segments = c.script.segments;
+  const totalSeconds = segments.reduce((total, segment) => total + segment.seconds, 0);
+  const targetSeconds = c.state?.workflow.brief.duration;
   return (
     <div className="creator-script-inspector">
       <h3>The words behind it.</h3>
+      <p className="creator-fineprint" role="status">
+        {totalSeconds} seconds in this script
+        {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.
+        {c.capabilities &&
+          ` Each moment needs at least ${c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
+      </p>
       <fieldset disabled={disabled}>
         <label>
           Opening hook
@@ -1350,49 +1502,86 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
             }
           />
         </label>
-        {c.script.segments.map((segment, index) => (
-          <label key={segment.id}>
-            Moment {index + 1} / {segment.seconds}s
-            <textarea
-              value={segment.text}
-              maxLength={2000}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id ? { ...item, text: event.target.value } : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-            <input
-              aria-label={`Seconds for script moment ${index + 1}`}
-              type="number"
-              min={1}
-              max={60}
-              step={1}
-              value={segment.seconds}
-              onChange={(event) =>
-                c.setScript((previous) =>
-                  previous
-                    ? {
-                        ...previous,
-                        segments: previous.segments.map((item) =>
-                          item.id === segment.id
-                            ? { ...item, seconds: Number(event.target.value) }
-                            : item,
-                        ),
-                      }
-                    : null,
-                )
-              }
-            />
-          </label>
-        ))}
+        {segments.map((segment, index) => {
+          const combination = combineScriptMoments(segments, index);
+          const hasNext = index < segments.length - 1;
+          return (
+            <div className="creator-script-moment" key={segment.id}>
+              <label>
+                Moment {index + 1}
+                <textarea
+                  value={segment.text}
+                  maxLength={2000}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id ? { ...item, text: event.target.value } : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              <label>
+                Duration (seconds)
+                <input
+                  ref={index === 0 ? timingInputRef : undefined}
+                  aria-label={`Seconds for script moment ${index + 1}`}
+                  type="number"
+                  min={1}
+                  max={60}
+                  step={1}
+                  value={segment.seconds}
+                  onChange={(event) =>
+                    c.setScript((previous) =>
+                      previous
+                        ? {
+                            ...previous,
+                            segments: previous.segments.map((item) =>
+                              item.id === segment.id
+                                ? { ...item, seconds: Number(event.target.value) }
+                                : item,
+                            ),
+                          }
+                        : null,
+                    )
+                  }
+                />
+              </label>
+              {hasNext && (
+                <>
+                  <button
+                    type="button"
+                    className="creator-text-button"
+                    disabled={!combination.segments}
+                    aria-label={`Combine moment ${index + 1} with moment ${index + 2}`}
+                    aria-describedby={
+                      combination.reason ? `creator-combine-reason-${segment.id}` : undefined
+                    }
+                    onClick={() =>
+                      c.setScript((previous) => {
+                        if (!previous) return previous;
+                        const next = combineScriptMoments(previous.segments, index);
+                        return next.segments ? { ...previous, segments: next.segments } : previous;
+                      })
+                    }
+                  >
+                    Combine with next moment
+                  </button>
+                  {combination.reason && (
+                    <p className="creator-fineprint" id={`creator-combine-reason-${segment.id}`}>
+                      {combination.reason}
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          );
+        })}
       </fieldset>
       <button
         className="creator-primary-button"
@@ -1402,155 +1591,108 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
         Save script <Check size={16} />
       </button>
       <p className="creator-fineprint">
-        After a script edit, prepare again to rebuild the shot plan.
+        Combining keeps both texts and adds their durations. Adjust timing to keep your chosen film
+        length, save, then prepare again to rebuild the shot plan.
       </p>
     </div>
   );
 }
 
-function ProductionReview({
-  c,
-  reviewed,
-  onReviewed,
-  onOpenPromo,
-}: {
-  c: CreatorController;
-  reviewed: boolean;
-  onReviewed(value: boolean): void;
-  onOpenPromo(): void;
-}) {
-  const state = c.state!;
-  const plan = state.session.plan!;
-  const current = planCurrent(state.session, state.workflow);
-  const available = c.capabilities?.configured && c.capabilities.visionConfigured;
-  const sameApproval = approvalCurrent(state.session, state.workflow);
-  const retryJob =
-    sameApproval &&
-    c.job &&
-    c.job.approvalId === state.session.approval?.id &&
-    ['failed', 'canceled'].includes(c.job.status)
-      ? c.job
-      : null;
-  const blocked = Boolean(c.busy) || isActiveJob(c.job) || c.needsReload || c.dirty || !current;
-  return (
-    <section className="creator-production-review" aria-labelledby="creator-approval-title">
-      <div className="creator-section-title">
-        <div>
-          <span className="creator-kicker">Your film. Your call.</span>
-          <h2 id="creator-approval-title">Give every frame your approval.</h2>
-          <p>
-            Review the words, source photos, shot directions and generation limit before paid work
-            starts.
-          </p>
-        </div>
-        <span className="creator-count">
-          {plan.clips.length} shots / {plan.clips.reduce((total, clip) => total + clip.seconds, 0)}s
-        </span>
-      </div>
-      <dl className="creator-generation-spec">
-        <div>
-          <dt>Model</dt>
-          <dd>Runway Gen 4.5</dd>
-        </div>
-        <div>
-          <dt>Clip format</dt>
-          <dd>720 × 1280 / silent</dd>
-        </div>
-        <div>
-          <dt>Attempt limit</dt>
-          <dd>{plan.maxAttemptsPerClip} per shot</dd>
-        </div>
-        <div>
-          <dt>Generation budget</dt>
-          <dd>Up to {plan.maxGeneratedSeconds}s</dd>
-        </div>
-      </dl>
-      <p className="creator-fineprint">
-        Each shot is{' '}
-        {plan.clips.length === 1
-          ? `${plan.clips[0]?.seconds} seconds`
-          : 'timed individually in the shot plan'}
-        . The saved plan permits up to {plan.clips.length * plan.maxAttemptsPerClip} provider
-        attempts, bounded by {plan.maxGeneratedSeconds} generated seconds. Provider charges apply.
-        Visual audit is required before assembly.
-      </p>
-      {sameApproval && (
-        <p className="creator-fineprint">
-          This version is already approved. Reconnecting or retrying keeps that approval and its
-          remaining attempt budget.
-        </p>
-      )}
-      {generatedSeconds(plan.clips) > plan.maxGeneratedSeconds && (
-        <p className="creator-inline-error">
-          This duration exceeds the saved attempt budget. Shorten the plan and save again.
-        </p>
-      )}
-      {!current && (
-        <div className="creator-inline-error">
-          <p>The saved plan is out of date. Prepare again before approval.</p>
-          <button
-            className="creator-text-button"
-            disabled={Boolean(c.busy) || c.dirty || isActiveJob(c.job)}
-            onClick={c.prepare}
-          >
-            Prepare the current version
-          </button>
-        </div>
-      )}
-      {!available && (
-        <div className="creator-provider-note">
-          <WarningCircle size={20} />
-          <p>
-            {c.capabilities?.reason ||
-              c.capabilityError ||
-              'Generation and visual audit providers are not configured. Your saved direction and editable plan remain available.'}
-          </p>
-        </div>
-      )}
-      <label className="creator-review-checkbox">
-        <input
-          type="checkbox"
-          checked={reviewed}
-          disabled={blocked || !available}
-          onChange={(event) => onReviewed(event.target.checked)}
-        />
-        <span>
-          I reviewed this script, the source choices and every shot. I approve this version and its
-          stated paid generation limit.
-        </span>
-      </label>
-      <div className="creator-review-actions">
-        <button
-          className="creator-primary-button"
-          disabled={
-            blocked ||
-            !reviewed ||
-            !available ||
-            generatedSeconds(plan.clips) > plan.maxGeneratedSeconds
-          }
-          onClick={() => c.approveAndProduce(reviewed, retryJob?.id)}
-        >
-          {retryJob
-            ? 'Retry remaining approved attempts'
-            : sameApproval
-              ? 'Continue approved generation'
-              : 'Approve and generate clips'}{' '}
-          <ArrowUpRight size={18} />
-        </button>
-        <button
-          className="creator-text-button"
-          disabled={Boolean(c.busy) || isActiveJob(c.job) || c.dirty}
-          onClick={onOpenPromo}
-        >
-          Use my photos for a silent promo instead <ArrowRight size={16} />
-        </button>
-      </div>
-    </section>
-  );
-}
-
 function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
   const current = c.state && outputIsCurrent(job, c.state.session, c.state.workflow);
+  const caption = current ? (c.state?.session.plan?.caption ?? '') : '';
+  const captionInput = useRef<HTMLTextAreaElement>(null);
+  const [captionFeedback, setCaptionFeedback] = useState('');
+  const downloadController = useRef<AbortController | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadFeedback, setDownloadFeedback] = useState('');
+  const [downloadError, setDownloadError] = useState('');
+  const [playbackError, setPlaybackError] = useState(false);
+  const [playbackRetry, setPlaybackRetry] = useState(0);
+  useEffect(() => setCaptionFeedback(''), [job.id, caption]);
+  useEffect(() => {
+    setDownloading(false);
+    setDownloadFeedback('');
+    setDownloadError('');
+    setPlaybackError(false);
+    return () => {
+      downloadController.current?.abort();
+      downloadController.current = null;
+    };
+  }, [job.id, current]);
+  function saveBlob(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    try {
+      link.href = url;
+      link.download = filename;
+      document.body.append(link);
+      link.click();
+    } finally {
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+  }
+  async function downloadFilm() {
+    const output = job.output;
+    if (!current || !output || downloadController.current) return;
+    const active = new AbortController();
+    downloadController.current = active;
+    setDownloading(true);
+    setDownloadError('');
+    setDownloadFeedback('Checking the completed film before download.');
+    try {
+      const blob = await fetchCreatorVideo(
+        creatorApi.outputUrl(job.sessionId, job.id, true),
+        output,
+        active.signal,
+      );
+      if (active.signal.aborted || downloadController.current !== active) return;
+      saveBlob(blob, 'yap-film.mp4');
+      setDownloadFeedback('Film download requested.');
+    } catch (error) {
+      if (downloadController.current !== active) return;
+      if (active.signal.aborted)
+        setDownloadFeedback('Film download canceled. You can request it again.');
+      else {
+        setDownloadFeedback('');
+        setDownloadError(
+          error instanceof Error
+            ? error.message
+            : 'The film could not be downloaded. Retry or reload the saved studio.',
+        );
+      }
+    } finally {
+      if (downloadController.current === active) {
+        downloadController.current = null;
+        setDownloading(false);
+      }
+    }
+  }
+  async function copyCaption() {
+    try {
+      await navigator.clipboard.writeText(caption);
+      setCaptionFeedback('Caption copied.');
+    } catch {
+      captionInput.current?.focus();
+      captionInput.current?.select();
+      setCaptionFeedback(
+        'Clipboard access is unavailable. The caption is selected; use your keyboard to copy it.',
+      );
+    }
+  }
+  function downloadCaption() {
+    try {
+      saveBlob(new Blob([caption], { type: 'text/plain;charset=utf-8' }), 'yap-caption.txt');
+      setCaptionFeedback('Caption download requested.');
+    } catch {
+      captionInput.current?.focus();
+      captionInput.current?.select();
+      setCaptionFeedback(
+        'The caption could not be downloaded. The text is selected so you can copy it.',
+      );
+    }
+  }
   const latest = new Map<string, CreatorJob['clips'][number]>();
   job.clips.forEach((receipt) => {
     const old = latest.get(receipt.clipId);
@@ -1678,22 +1820,49 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
       )}
       {job.status === 'succeeded' && job.output && !current && (
         <div className="creator-inline-error">
-          <p>
+          <p id="creator-earlier-export-reason">
             This completed job belongs to an earlier version. Its receipt and clip audits remain
-            visible; prepare and approve the current plan before producing a new film.
+            visible. Film downloads require the current approved version; prepare and approve the
+            current plan before producing a new film.
           </p>
+          <button
+            className="creator-primary-button"
+            disabled
+            aria-describedby="creator-earlier-export-reason"
+          >
+            <DownloadSimple size={18} /> Download film
+          </button>
         </div>
       )}
       {job.status === 'succeeded' && job.output && current && (
         <div className="creator-output">
           <div>
             <video
+              key={`${job.id}-${playbackRetry}`}
               src={creatorApi.outputUrl(job.sessionId, job.id)}
               controls
               playsInline
               preload="metadata"
               aria-label={current ? 'Completed generated film' : 'Earlier generated film'}
+              onError={() => setPlaybackError(true)}
             />
+            {playbackError && (
+              <div className="creator-inline-error" role="alert">
+                <p>
+                  The film preview could not load. Retry the preview or reload the saved studio to
+                  check whether the export is current.
+                </p>
+                <button
+                  className="creator-text-button"
+                  onClick={() => {
+                    setPlaybackError(false);
+                    setPlaybackRetry((value) => value + 1);
+                  }}
+                >
+                  Retry film preview
+                </button>
+              </div>
+            )}
             <span>
               {job.output.width} × {job.output.height} / {job.output.duration}s / Silent
             </span>
@@ -1709,18 +1878,82 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
                 ? 'Watch the whole film. Take the file and caption to the platform you choose.'
                 : 'Your current edits and approvals are kept separate from this completed export.'}
             </p>
-            <a
+            <button
+              type="button"
               className="creator-primary-button"
-              href={creatorApi.outputUrl(job.sessionId, job.id, true)}
-              download
+              onClick={() => void downloadFilm()}
+              disabled={!current || downloading || Boolean(c.busy)}
             >
-              <DownloadSimple size={18} /> Download {current ? 'film' : 'earlier film'}
-            </a>
+              <DownloadSimple size={18} />{' '}
+              {downloading
+                ? 'Checking film download'
+                : downloadError
+                  ? 'Retry film download'
+                  : 'Download film'}
+            </button>
+            {downloading && (
+              <button
+                className="creator-text-button"
+                onClick={() => downloadController.current?.abort()}
+              >
+                Cancel download
+              </button>
+            )}
+            {downloadFeedback && (
+              <p className="creator-caption-feedback" role="status">
+                {downloadFeedback}
+              </p>
+            )}
+            {downloadError && (
+              <div className="creator-inline-error" role="alert">
+                <p>{downloadError}</p>
+                <button className="creator-text-button" onClick={c.reload}>
+                  Reload saved studio
+                </button>
+              </div>
+            )}
             {current && c.state?.session.plan && (
-              <label>
-                Post caption
-                <textarea readOnly value={c.state.session.plan.caption} rows={6} />
-              </label>
+              <>
+                <label>
+                  Post caption
+                  <textarea
+                    ref={captionInput}
+                    readOnly
+                    value={caption}
+                    rows={6}
+                    placeholder="No caption saved for this film."
+                  />
+                </label>
+                <div className="creator-caption-actions">
+                  <button
+                    type="button"
+                    className="creator-secondary-button"
+                    onClick={() => void copyCaption()}
+                    disabled={!caption.trim()}
+                  >
+                    <Copy size={16} /> Copy caption
+                  </button>
+                  <button
+                    type="button"
+                    className="creator-secondary-button"
+                    onClick={downloadCaption}
+                    disabled={!caption.trim()}
+                  >
+                    <DownloadSimple size={16} /> Download caption
+                  </button>
+                </div>
+                {!caption.trim() && (
+                  <p className="creator-fineprint">
+                    No caption was saved with this film. Edit the post caption in the shot plan to
+                    add one for the next version.
+                  </p>
+                )}
+                {captionFeedback && (
+                  <p className="creator-caption-feedback" role="status">
+                    {captionFeedback}
+                  </p>
+                )}
+              </>
             )}
             <p className="creator-fineprint">Nothing has been posted to a social account.</p>
           </div>

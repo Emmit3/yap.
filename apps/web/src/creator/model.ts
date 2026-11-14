@@ -123,6 +123,36 @@ export function planDraft(plan: CreatorPlan | null) {
   return plan ? { clips: plan.clips.map((clip) => ({ ...clip })), caption: plan.caption } : null;
 }
 
+export function combineScriptMoments(
+  segments: NonNullable<Workflow['script']>['segments'],
+  index: number,
+): { segments: NonNullable<Workflow['script']>['segments'] | null; reason: string } {
+  const first = segments[index];
+  const second = segments[index + 1];
+  if (!Number.isInteger(index) || index < 0 || !first || !second)
+    return { segments: null, reason: 'Choose a moment with another moment after it.' };
+  const text = `${first.text}\n${second.text}`;
+  const seconds = first.seconds + second.seconds;
+  if (text.length > 2000)
+    return {
+      segments: null,
+      reason: 'Shorten these two texts to 2,000 characters before combining.',
+    };
+  if (seconds > 60)
+    return {
+      segments: null,
+      reason: 'Reduce their combined duration to 60 seconds or less first.',
+    };
+  return {
+    segments: [
+      ...segments.slice(0, index),
+      { ...first, text, seconds },
+      ...segments.slice(index + 2),
+    ],
+    reason: '',
+  };
+}
+
 export function checkedPhotos(files: File[], savedCount: number, queuedCount: number) {
   if (savedCount + queuedCount + files.length > 20)
     throw new Error(

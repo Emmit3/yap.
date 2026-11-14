@@ -468,57 +468,89 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           2000,
         );
       const signal = response.locals.creatorSignal as AbortSignal;
+      const profile = productionProfile(video);
+      let workflowVersion = previous.version;
+      const checkCurrent = async () => {
+        signal.throwIfAborted();
+        repository.checkVersion(await repository.get(session.id), session.version);
+        options.workflows.checkVersion(await options.workflows.get(previous.id), workflowVersion);
+        signal.throwIfAborted();
+      };
+      const checkpoint = async (next: Workflow) => {
+        await checkCurrent();
+        candidate = await options.workflows.update(previous.id, workflowVersion, () => next);
+        workflowVersion = candidate.version;
+      };
+      const needsReview = (reason: string) =>
+        new ApiError(
+          409,
+          'CREATOR_PREPARE_REVIEW_REQUIRED',
+          `Completed drafting is saved. Reload this creation to review or edit its saved script and scenes, then prepare again. Saved stages will not be drafted again. ${reason}`,
+        );
       if (draftingProvider.name === 'openai' && !budgeted?.provider)
         throw new ApiError(
           503,
           'CREATOR_BUDGET_CONFIGURATION',
           'Creator drafting requires the shared spending ledger.',
         );
-      if (!candidate.script)
-        candidate = setWorkflowScript(
-          candidate,
-          await draftingProvider.script(
+      if (!candidate.script) {
+        await checkCurrent();
+        const script = await draftingProvider.script(
+          { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
+          signal,
+          { minSeconds: profile.minSeconds, maxSeconds: profile.maxSeconds, maxSegments: 12 },
+        );
+        // Preserve a completed paid stage before another provider call or plan validation.
+        await checkpoint(setWorkflowScript(candidate, script, { requireApproval: false }));
+      }
+      if (candidate.script!.segments.some((segment) => segment.seconds < profile.minSeconds))
+        throw needsReview(
+          `Each script segment needs at least ${profile.minSeconds} seconds for this provider. Adjust the saved timing while preserving the total duration before buying scene drafting.`,
+        );
+      if (!candidate.scenes) {
+        await checkCurrent();
+        let scenes;
+        try {
+          scenes = await draftingProvider.scenes(
             { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
             signal,
-          ),
-          { requireApproval: false },
-        );
-      if (!candidate.scenes)
-        candidate = setWorkflowScenes(
-          candidate,
-          await draftingProvider.scenes(
-            { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
-            signal,
-          ),
-          { requireApproval: false },
-        );
-      if (citations.length && candidate.scenes)
-        candidate.scenes.scenes = candidate.scenes.scenes.map((scene) => ({
+          );
+        } catch (error) {
+          if (!signal.aborted && error instanceof ApiError && error.code.startsWith('PROVIDER_'))
+            throw needsReview('Scene drafting did not complete. The saved script can be reused.');
+          throw error;
+        }
+        await checkpoint(setWorkflowScenes(candidate, scenes, { requireApproval: false }));
+      }
+      if (citations.length && candidate.scenes) {
+        const attributed = candidate.scenes.scenes.map((scene) => ({
           ...scene,
-          visual:
-            `${scene.visual.slice(0, 1100)}\nCreative reference attribution only: ${citations.join(' ')}`.slice(
-              0,
-              2000,
-            ),
+          visual: scene.visual.includes(
+            `Creative reference attribution only: ${citations.join(' ')}`,
+          )
+            ? scene.visual
+            : `${scene.visual.slice(0, 1100)}\nCreative reference attribution only: ${citations.join(' ')}`.slice(
+                0,
+                2000,
+              ),
         }));
-      signal.throwIfAborted();
-      repository.checkVersion(await repository.get(session.id), input.expectedVersion);
-      const plan = makePlan(
-        session,
-        { ...candidate, version: previous.version + 1 },
-        productionProfile(video),
-      );
-      const workflow = await options.workflows.update(
-        previous.id,
-        previous.version,
-        () => candidate,
-      );
+        if (JSON.stringify(attributed) !== JSON.stringify(candidate.scenes.scenes))
+          await checkpoint({ ...candidate, scenes: { ...candidate.scenes, scenes: attributed } });
+      }
+      await checkCurrent();
+      let plan: CreatorPlan;
+      try {
+        plan = makePlan(session, candidate, profile);
+      } catch (error) {
+        if (error instanceof ApiError && error.status < 500) throw needsReview(error.message);
+        throw error;
+      }
       const saved = await repository.update(session.id, session.version, (current) => ({
         ...current,
         plan,
         approval: null,
       }));
-      response.json({ session: saved, workflow });
+      response.json({ session: saved, workflow: candidate });
     }),
   );
   router.patch(

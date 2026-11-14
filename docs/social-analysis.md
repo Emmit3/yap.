@@ -4,7 +4,7 @@ Yap's social module turns a theme into a bounded public-evidence investigation, 
 
 ## Run and configure
 
-Use the root `npm install` and `npm run dev` commands. The feature's frontend entry is the default export in `apps/web/src/social/SocialWorkspace.tsx`, mounted by the connected application shell at `#/social` (Social research).
+Use the root `npm install` and `npm run dev` commands. The feature's frontend entry is the default export in `apps/web/src/social/SocialWorkspace.tsx`, embedded under View analytics in `CreationWorkspace` for photo and generated-video creation. `#/social` remains a compatible entry into the combined workspace.
 
 Example mode needs no credentials and makes no network requests. It explicitly labels its accounts, posts, metrics, and relationships as illustrative. Live requests never fall back to the example.
 

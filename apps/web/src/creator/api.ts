@@ -5,6 +5,8 @@ import {
   creatorJobSchema,
   creatorSessionResponseSchema,
   creatorSessionSchema,
+  creatorBudgetResponseSchema,
+  creatorQuoteResponseSchema,
   type CreateCreatorSessionInput,
   type CreatorApproveInput,
   type CreatorJob,
@@ -124,6 +126,7 @@ export function createCreatorApi(origin = '', transport: typeof fetch = fetch) {
       ),
     capabilities: (signal?: AbortSignal) =>
       request('/capabilities', creatorCapabilitiesSchema, {}, signal),
+    budget: (signal?: AbortSignal) => request('/budget', creatorBudgetResponseSchema, {}, signal),
     create: (input: CreateCreatorSessionInput, signal?: AbortSignal) =>
       request('/sessions', creatorSessionResponseSchema, json('POST', input), signal),
     get: (id: string, signal?: AbortSignal) =>
@@ -157,6 +160,8 @@ export function createCreatorApi(origin = '', transport: typeof fetch = fetch) {
         json('PATCH', input),
         signal,
       ),
+    quote: (id: string, input: CreatorPrepareInput, signal?: AbortSignal) =>
+      request(`${sessionPath(id)}/quote`, creatorQuoteResponseSchema, json('POST', input), signal),
     approve: (id: string, input: CreatorApproveInput, signal?: AbortSignal) =>
       request(
         `${sessionPath(id)}/approve`,
