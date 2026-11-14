@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { observePosterPointerRelease } from '../src/posters/poster-pointer-lifecycle.js';
 import {
   posterCarouselLayout,
   posterCarouselPose,
@@ -66,4 +67,49 @@ test('portrait display bounds fit a small screen and cap artwork at 220 by 320',
     assert.ok(layout.perspective > layout.radius);
   }
   assert.deepEqual(posterCarouselLayout(NaN), posterCarouselLayout(800));
+});
+
+function pointerEvent(type: string, pointerId: number) {
+  return Object.assign(new Event(type), { pointerId });
+}
+
+test('an uncaptured pointer released outside the stage frees the next drag', () => {
+  const outside = new EventTarget();
+  const stage = new EventTarget();
+  let pointer: number | null = 7;
+  const stop = observePosterPointerRelease(outside, stage, (event) => {
+    if (event.pointerId === null || event.pointerId === pointer) pointer = null;
+  });
+  outside.dispatchEvent(pointerEvent('pointerup', 8));
+  assert.equal(pointer, 7, 'an unrelated pointer must not finish this session');
+  outside.dispatchEvent(pointerEvent('pointerup', 7));
+  assert.equal(pointer, null, 'outside release must clear the uncaptured pointer');
+  pointer = 9;
+  outside.dispatchEvent(pointerEvent('pointerup', 9));
+  assert.equal(pointer, null, 'a second drag can also finish normally');
+  stop();
+});
+
+test('cancel, lost capture and blur terminate an interrupted session and listeners clean up', () => {
+  const outside = new EventTarget();
+  const stage = new EventTarget();
+  const endings: Array<{ pointerId: number | null; cancelled: boolean }> = [];
+  const stop = observePosterPointerRelease(outside, stage, (event) => endings.push(event));
+  outside.dispatchEvent(pointerEvent('pointercancel', 3));
+  stage.dispatchEvent(pointerEvent('lostpointercapture', 4));
+  outside.dispatchEvent(new Event('blur'));
+  assert.deepEqual(
+    endings.map(({ pointerId, cancelled }) => ({ pointerId, cancelled })),
+    [
+      { pointerId: 3, cancelled: true },
+      { pointerId: 4, cancelled: true },
+      { pointerId: null, cancelled: true },
+    ],
+  );
+  stop();
+  outside.dispatchEvent(pointerEvent('pointerup', 5));
+  outside.dispatchEvent(pointerEvent('pointercancel', 5));
+  stage.dispatchEvent(pointerEvent('lostpointercapture', 5));
+  outside.dispatchEvent(new Event('blur'));
+  assert.equal(endings.length, 3, 'unmounted carousels must retain no release listeners');
 });

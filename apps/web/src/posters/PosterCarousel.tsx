@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent, type PointerEve
 import { ArrowLeft, ArrowRight, Pause, Play } from '@phosphor-icons/react';
 import type { PosterStyle } from '@yap/contracts/posters';
 import { posterApi } from './api';
+import { observePosterPointerRelease } from './poster-pointer-lifecycle';
 import {
   posterCarouselLayout,
   posterCarouselPose,
@@ -256,12 +257,13 @@ export function PosterCarousel({ styles, active, onOpen }: PosterCarouselProps) 
     requestDraw.current();
   }
 
-  function finishPointer(event: PointerEvent<HTMLDivElement>, cancelled = false) {
+  function finishPointer(pointerId: number | null, timeStamp: number, cancelled = false) {
     const pointer = drag.current;
-    if (!pointer || pointer.pointerId !== event.pointerId) return;
+    if (!pointer || (pointerId !== null && pointer.pointerId !== pointerId)) return;
+    // Clear before releasing capture: lostpointercapture must not finish the same drag twice.
+    drag.current = null;
     if (pointer.horizontal) {
-      const velocity =
-        !cancelled && event.timeStamp - pointer.lastTime < 100 ? pointer.velocity : 0;
+      const velocity = !cancelled && timeStamp - pointer.lastTime < 100 ? pointer.velocity : 0;
       const inertia = clamp((velocity * 110) / posterCarouselLayout(width).spacing, -1.2, 1.2);
       position.current = pointer.position;
       target.current = Math.round(pointer.position - inertia);
@@ -275,12 +277,19 @@ export function PosterCarousel({ styles, active, onOpen }: PosterCarouselProps) 
         `${styles[posterIndex(target.current, styles.length)]?.title}. ${posterIndex(target.current, styles.length) + 1} of ${styles.length}.`,
       );
     }
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    drag.current = null;
+    const node = stage.current;
+    if (node?.hasPointerCapture(pointer.pointerId)) node.releasePointerCapture(pointer.pointerId);
     setDragging(false);
     requestDraw.current();
   }
+
+  useEffect(() => {
+    const node = stage.current;
+    if (!node) return;
+    return observePosterPointerRelease(window, node, ({ pointerId, timeStamp, cancelled }) =>
+      finishPointer(pointerId, timeStamp, cancelled),
+    );
+  }, [hasStyles, width, catalog, reduced]);
 
   const selected = styles[posterIndex(current, styles.length)];
   const layout = posterCarouselLayout(width);
@@ -318,8 +327,6 @@ export function PosterCarousel({ styles, active, onOpen }: PosterCarouselProps) 
             onPointerLeave={() => setHovered(false)}
             onPointerDown={pointerDown}
             onPointerMove={pointerMove}
-            onPointerUp={(event) => finishPointer(event)}
-            onPointerCancel={(event) => finishPointer(event, true)}
             onClickCapture={(event) => {
               if (suppressClick.current) {
                 event.preventDefault();
