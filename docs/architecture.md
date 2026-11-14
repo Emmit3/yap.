@@ -3,6 +3,8 @@
 ```mermaid
 flowchart LR
   Inputs[Business photos and an idea] --> API[Workflow HTTP interface]
+  Research[Public social research] --> Context[Attributed creative context]
+  Context --> API
   API --> Engine[Refinement and verification]
   Engine --> Provider[Guided or OpenAI adapter]
   Engine --> Review[Creator review and approval]
@@ -39,6 +41,18 @@ The initial storage adapter uses an atomic JSON file and serialized mutations in
 The workflow provider has two adapters: guided templates and OpenAI Responses with strict structured output and supplied image inputs. The adapter proposes content; it cannot approve it. Provider secrets stay on the backend. Requests and responses are bounded, model refusals and timeouts have explicit errors, and disconnected requests cancel provider work. Tests use injected fetch and do not call a live model.
 
 The main product path uses `/prepare` to propose both script and scenes, followed by one explicit `/approve-all`. Detailed stage generation and approval endpoints support closer review. Structural verification checks completeness, duration totals, segment coverage, current source revisions, and valid photo references. Review warnings identify defaults, user supplied claims, and uncertain factual content. Passing structural checks is not factual verification or automatic creator approval.
+
+## Public research
+
+`/api/social` owns public collection/import, deterministic content and observed-network analysis, notes, queries, and cited handoffs through `@yap/contracts/social`. Investigations persist in a separate atomic JSON repository. Pollable research runs hold temporary activity and artifact previews: two searches can be active across legacy collection requests and runs, at most 50 runs are retained, and terminal runs expire after 30 minutes. Each run caps activity at 200 events and each artifact at 64 KiB, with a default 120-second deadline before the final atomic save.
+
+Execution modes describe actual work. `demo_replay` uses synthetic evidence and labeled simulated activity without external calls. `pipeline` uses configured public-data providers and deterministic analysis. `deepagents` adds real Deep Agents planning, delegation, tools, and shared virtual files; its SDK loads only when selected for live execution. Failed live providers do not silently become replay data. Model and provider credentials remain on the backend.
+
+The Deep Agents coordinator may delegate only to `source_researcher`, `network_analyst`, and `creative_strategist`. All share one cached collection batch, deadline, and model/tool-call budgets (24 model calls by default and 48 tool calls). A run-local `StateBackend` provides virtual files rather than access to the server filesystem or durable cross-session memory. The HTTP boundary exposes only five allowlisted artifact previews and validated public activity, excluding raw model state, prompts, and private reasoning.
+
+Shutdown rejects new searches, aborts legacy collections and pollable runs, and waits for tracked completion alongside render cleanup. Cancellation before the commit boundary prevents persistence. Once the final atomic save starts, cancellation becomes unavailable and shutdown waits for its actual outcome.
+
+Selected research enters a workflow as attributed creative context, separate from creator-supplied business facts and photos. Changing that context invalidates downstream proposals and approvals. A handoff never approves content or starts rendering; the creator still reviews the proposal and explicitly approves it. See [social analysis](social-analysis.md) and [Deep Agents execution](deepagents-demo.md) for detailed interfaces and configuration.
 
 ## Photos and rendering
 
