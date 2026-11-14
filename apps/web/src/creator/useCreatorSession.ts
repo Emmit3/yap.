@@ -76,6 +76,7 @@ const wait = (signal: AbortSignal) =>
 export function useCreatorSession(options: {
   id?: string;
   initialResearch?: SocialHandoff;
+  initialExternalReferences?: CreatorExternalReference[];
   onCreated(id: string): void;
   onDirty(value: boolean): void;
 }) {
@@ -89,7 +90,9 @@ export function useCreatorSession(options: {
   const [reply, setReply] = useState('');
   const [replyQuestion, setReplyQuestion] = useState<CreatorQuestion | null>(null);
   const [answerEdits, setAnswerEdits] = useState<Record<string, string>>({});
-  const [externalReferences, setExternalReferences] = useState<CreatorExternalReference[]>([]);
+  const [externalReferences, setExternalReferences] = useState<CreatorExternalReference[]>(() =>
+    structuredClone(options.initialExternalReferences ?? []),
+  );
   const [job, setJob] = useState<CreatorJob | null>(null);
   const [watching, setWatching] = useState(false);
   const [loading, setLoading] = useState(Boolean(options.id));
