@@ -250,6 +250,9 @@
   filter: drop-shadow(0 12px 16px #0002);
 }
 .poster-reference-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   position: absolute;
   left: 24px;
   bottom: 16px;

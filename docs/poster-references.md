@@ -6,6 +6,10 @@ The backend combines that style's private instructions with the customer's chang
 
 The preview remains the selected style reference. No poster image renderer or image generation provider is connected. Saving a direction does not generate a poster, make a paid provider request, or consume the existing production budget.
 
+Styles can come from static public posts as well as timestamped reels. The category filters also support campaigns, portraits, editorial work and cinema. Installed packs remain local; fresh clones do not include the reference images or their recipes.
+
+Saving now also compiles a private production plan when composition data is available. An optional structured brief keeps exact customer copy separate from creative instructions. See [the production foundation](poster-production.md) for its contracts, binary image-input preparation and current limits.
+
 ## Customer API
 
 | Route                                                      | Behavior                                                                                                      |
@@ -34,6 +38,7 @@ For each saved direction, the backend privately retains:
 - The customer's changes as a separate field.
 - The combined prompt, preserving the original style instructions and the customer's additions.
 - The selected crop's SHA-256 identity and source attribution.
+- The production plan, including any structured customer brief, private composition and unresolved input issues.
 
 In the full application, `createApp` defaults this private store to `poster-designs.json` beside the configured project data file. `AppOptions.posterDesignDataFile` can override it. A directly mounted `createPosterRouter` accepts a `dataFile` option and otherwise defaults to `data/poster-designs.json` under its working directory. Keep custom storage paths ignored and outside publicly served directories.
 

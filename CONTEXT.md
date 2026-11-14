@@ -55,3 +55,19 @@ _Avoid_: Automatic verification
 **Render**:
 The production of a downloadable video from approved scenes and actual supplied photos.
 _Avoid_: Planning export
+
+**Poster style**:
+A visual reference and design direction that a creator can adapt to their own subject and copy.
+_Avoid_: Generated poster, finished template
+
+**Poster direction**:
+A saved choice of poster style and the creator's requested changes. It is not a finished design.
+_Avoid_: Render, generated artwork
+
+**Approved copy**:
+The exact wording the creator supplies for a poster, separate from visual references and creative instructions.
+_Avoid_: Reference lettering, inferred event facts
+
+**Poster production plan**:
+A resolved description of the poster's canvas, artwork, text placement, and approved copy, including anything still needed before production.
+_Avoid_: Finished poster, approval
