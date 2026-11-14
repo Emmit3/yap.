@@ -7,6 +7,7 @@ import {
   filmReferenceRequest,
   filmCreationHref,
   FILM_REFERENCE_LIMIT,
+  filmPreviewSource,
 } from './film-references-core.js';
 
 const $ = (selector) => document.querySelector(selector);
@@ -95,6 +96,80 @@ function updateSaveButton(button, film) {
     `${saved ? 'Remove' : 'Add'} ${film.title} ${saved ? 'from' : 'to'} your shortlist`,
   );
 }
+
+const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+const previews = new Map();
+function clearPreview(holder) {
+  holder.querySelector('video')?.pause?.();
+  holder.replaceChildren(node('span', 'fr-preview-status', 'Video preview'));
+}
+function updatePreview(holder, record) {
+  const active = record.visible && !document.hidden;
+  if (!active) {
+    if (record.mounted) clearPreview(holder);
+    record.mounted = false;
+    return;
+  }
+  const autoplay = !reducedMotion?.matches;
+  if (record.mounted && record.autoplay === autoplay) return;
+  const source = filmPreviewSource(record.film, { autoplay });
+  const player = node(source.kind === 'video' ? 'video' : 'iframe');
+  player.title = `${record.film.title} / ${source.provider} film`;
+  player.setAttribute('aria-label', player.title);
+  if (source.kind === 'video') {
+    player.controls = true;
+    player.muted = true;
+    player.autoplay = autoplay;
+    player.loop = autoplay;
+    player.playsInline = true;
+    player.preload = 'metadata';
+  } else {
+    player.allow = 'autoplay; fullscreen; picture-in-picture; encrypted-media';
+    player.allowFullscreen = true;
+    player.loading = 'lazy';
+    player.referrerPolicy = 'strict-origin-when-cross-origin';
+  }
+  player.src = source.src;
+  clearPreview(holder);
+  holder.replaceChildren(player);
+  record.mounted = true;
+  record.autoplay = autoplay;
+}
+const previewObserver =
+  typeof IntersectionObserver === 'function'
+    ? new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            const record = previews.get(entry.target);
+            if (!record) continue;
+            record.visible = entry.isIntersecting && entry.intersectionRatio >= 0.15;
+            updatePreview(entry.target, record);
+          }
+        },
+        { threshold: 0.15 },
+      )
+    : null;
+function preview(film) {
+  const source = filmPreviewSource(film);
+  const wrapper = node('div', 'fr-film-preview');
+  if (!source) {
+    wrapper.className += ' fr-film-preview-unavailable';
+    wrapper.append(node('p', '', 'An inline player is not available for this film yet.'));
+    return wrapper;
+  }
+  wrapper.setAttribute('aria-label', `${film.title} video preview`);
+  const record = { film, visible: !previewObserver, mounted: false };
+  previews.set(wrapper, record);
+  clearPreview(wrapper);
+  if (previewObserver) previewObserver.observe(wrapper);
+  else updatePreview(wrapper, record);
+  return wrapper;
+}
+function refreshPreviews() {
+  for (const [holder, record] of previews) updatePreview(holder, record);
+}
+reducedMotion?.addEventListener?.('change', refreshPreviews);
+document.addEventListener?.('visibilitychange', refreshPreviews);
 function filmRow(film, index) {
   const item = node('li', 'fr-film');
   const number = node('span', 'fr-index', String(index + 1).padStart(3, '0'));
@@ -106,14 +181,8 @@ function filmRow(film, index) {
   if (film.kind === 'spec') meta.append(node('span', '', 'Spec film'));
   if (film.featured) meta.append(node('span', 'fr-featured', '↗ Highlight'));
   const heading = node('h3');
-  const title = externalLink('', film.watchUrl, 'fr-film-title');
-  title.append(node('span', '', film.title));
-  const titleArrow = node('span', 'fr-title-arrow', '↗');
-  titleArrow.setAttribute('aria-hidden', 'true');
-  title.append(titleArrow);
-  title.setAttribute('aria-label', `Watch ${film.title} on the original site, opens a new tab`);
-  heading.append(title);
-  body.append(meta, heading, node('p', 'fr-creator', `By ${film.creator}`));
+  heading.append(node('span', 'fr-film-title', film.title));
+  body.append(meta, heading, node('p', 'fr-creator', `By ${film.creator}`), preview(film));
   if (film.product) body.append(node('p', 'fr-creator', film.product));
   body.append(
     node(
@@ -132,11 +201,9 @@ function filmRow(film, index) {
   proof.append(externalLink('Read the creator’s case study ↗', film.url));
   body.append(proof);
   const actions = node('div', 'fr-film-actions');
-  const watch = externalLink('Watch original ↗', film.watchUrl, 'fr-button fr-button-secondary');
-  watch.setAttribute('aria-label', `Watch ${film.title} on the original site, opens a new tab`);
   const source = externalLink('Creator source ↗', film.url, 'fr-text-button fr-source');
   source.setAttribute('aria-label', `Read the case study for ${film.title}, opens a new tab`);
-  actions.append(useReferenceLink(film), watch, source, saveButton(film));
+  actions.append(useReferenceLink(film), source, saveButton(film));
   item.append(number, body, actions);
   return item;
 }
@@ -156,6 +223,9 @@ function renderResults() {
     featuredOnly: featured.checked,
   };
   const results = filterFilms(catalog.films, filters);
+  previewObserver?.disconnect();
+  for (const holder of previews.keys()) clearPreview(holder);
+  previews.clear();
   list.replaceChildren(...results.map(filmRow));
   $('#fr-state').hidden = true;
   $('#fr-result-count').textContent = `Showing ${results.length} of ${catalog.films.length} films`;
@@ -205,7 +275,7 @@ function renderShortlist() {
       remove.setAttribute('aria-label', `Remove ${film.title} from your shortlist`);
       const reference = node('div', 'fr-shortlist-reference');
       reference.append(
-        externalLink(film.title, film.watchUrl),
+        node('strong', '', film.title),
         node('p', '', `${film.brand} · ${film.creator}`),
       );
       const actions = node('div', 'fr-shortlist-row-actions');

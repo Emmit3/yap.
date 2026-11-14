@@ -31,7 +31,7 @@ export function ReferenceRoom({
     const controller = new AbortController();
     const readCatalog = createReferenceCatalogReader(() => loadFilmCatalog(controller.signal));
     // A click can arrive after the frame loads. Retain the failure for that click without an
-    // unhandled rejection, and keep the original external links usable inside the frame.
+    // unhandled rejection, and keep the inline film players usable inside the frame.
     void readCatalog().catch(() => undefined);
     const receive = (event: MessageEvent<unknown>) => {
       if (activeTab.current !== 'films') return;
@@ -136,7 +136,7 @@ export function ReferenceRoom({
           src="/showcase/film-references.html?embedded=1"
           title="Interactive film reference library"
           className="creation-reference-frame"
-          allow="fullscreen"
+          allow="autoplay; fullscreen; picture-in-picture"
         />
       </div>
       <div

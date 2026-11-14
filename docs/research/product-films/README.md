@@ -1,5 +1,9 @@
 # Product film references
 
+The Reference Room now displays inline film players rather than outbound watch/title links. Supported previews start muted as they enter the viewport and unload when they leave; reduced-motion preferences keep the player ready without autoplay. Source attribution and the reference/shortlist handoff remain separate from playback.
+
+The current catalogue resolves 90 of 103 films to a verified Vimeo, YouTube, Mux or creator-hosted media source. Entries without a verified inline source remain visible with an unavailable-player message; no unrelated film or arbitrary case-page iframe is substituted. Preview metadata supplements the original source evidence. Mux streams use its [documented iframe player](https://www.mux.com/docs/guides/player-mux-com-reference), without downloading or copying campaign media.
+
 103 distinct finished product-film references across 87 brand labels. These are linked creator campaigns and explicitly labeled spec work, rather than stock-footage items.
 
 Open the [local catalogue](http://127.0.0.1:5173/showcase/film-references.html), or consume [the public JSON](../../../public/film-references.json).
