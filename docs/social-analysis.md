@@ -8,6 +8,8 @@ Use the root `npm install` and `npm run dev` commands. The feature's frontend en
 
 Example mode needs no credentials and makes no network requests. It explicitly labels its accounts, posts, metrics, and relationships as illustrative. Live requests never fall back to the example.
 
+Research now starts through a pollable run so the interface can show tasks, provider calls, evidence counts, and actual research files while work proceeds. The example uses a clearly labeled, paced replay. An optional real LangChain Deep Agents coordinator delegates to three specialists through a shared virtual filesystem. See [the Deep Agents demo and setup](deepagents-demo.md). The SDK is loaded only when a live Deep Agents run is requested.
+
 Optional API-server environment variables:
 
 | Variable            | Purpose                                              |

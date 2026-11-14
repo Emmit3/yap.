@@ -15,6 +15,16 @@ import {
 } from '@yap/contracts/social';
 import { analyzeSocialDataset } from './social-analysis.js';
 import { ApiError } from './errors.js';
+import {
+  configFromEnv,
+  socialDeepAgentsAvailable,
+  type SocialDeepAgentsConfig,
+} from './social-agent-config.js';
+export {
+  configFromEnv,
+  socialDeepAgentsAvailable,
+  type SocialDeepAgentsConfig,
+} from './social-agent-config.js';
 
 export interface SocialDeepAgentsContext {
   input: SocialResearchRunInput;
@@ -22,13 +32,6 @@ export interface SocialDeepAgentsContext {
   emit: (event: SocialResearchEventInput) => void;
   writeArtifact: (path: SocialResearchArtifactPath, content: string) => void;
   collect: (input: SocialResearchInput, signal: AbortSignal) => Promise<SocialDataset>;
-}
-
-export interface SocialDeepAgentsConfig {
-  model?: string;
-  apiKey?: string;
-  timeoutMs?: number;
-  maxModelCalls?: number;
 }
 
 /** A real tool-calling chat model can be injected without making network calls in tests. */
@@ -47,41 +50,6 @@ const PATHS: SocialResearchArtifactPath[] = [
   '/research/insights.json',
   '/research/brief.md',
 ];
-
-function configFromEnv(): SocialDeepAgentsConfig {
-  return {
-    model: process.env.DEEPAGENTS_MODEL?.trim(),
-    apiKey: process.env.DEEPAGENTS_OPENAI_API_KEY?.trim() || process.env.OPENAI_API_KEY?.trim(),
-  };
-}
-
-export function socialDeepAgentsAvailable(config = configFromEnv()): {
-  configured: boolean;
-  reason: string;
-} {
-  if (!config.model?.trim())
-    return {
-      configured: false,
-      reason: 'Set DEEPAGENTS_MODEL on the API server to choose the research model.',
-    };
-  if (!config.apiKey?.trim())
-    return {
-      configured: false,
-      reason:
-        'Set OPENAI_API_KEY or DEEPAGENTS_OPENAI_API_KEY on the API server for agent research.',
-    };
-  if (config.model.includes(':') && !config.model.startsWith('openai:'))
-    return {
-      configured: false,
-      reason:
-        'This research adapter supports an OpenAI model. Use its model ID or an openai: model ID.',
-    };
-  return {
-    configured: true,
-    reason:
-      'The server has an OpenAI model and API key configured. Public search access is configured separately.',
-  };
-}
 
 function record(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value)

@@ -114,12 +114,35 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   const epoch = useRef(0);
   const noteEditor = useRef<HTMLTextAreaElement>(null);
   const inspector = useRef<HTMLElement>(null);
+  const submittedForm = useRef<string | null>(null);
   const originalNote = active?.notes.find((note) => note.id === editingNote);
   const noteDirty = originalNote
     ? noteText !== originalNote.text ||
       noteKind !== originalNote.kind ||
       JSON.stringify(noteEvidenceIds) !== JSON.stringify(originalNote.evidenceIds)
     : noteText.trim().length > 0;
+  const formSignature = JSON.stringify({
+    topic,
+    audience,
+    platforms: [...platforms].sort(),
+    days,
+    limit,
+    harness,
+    importJson,
+    publicOnly,
+  });
+  const researchFormDirty =
+    (!active || newResearch) &&
+    (!!topic.trim() ||
+      !!audience.trim() ||
+      !!importJson.trim() ||
+      publicOnly ||
+      days !== 7 ||
+      limit !== 60 ||
+      harness !== 'pipeline' ||
+      platforms.length !== 3 ||
+      !(['x', 'instagram', 'web'] as const).every((platform) => platforms.includes(platform)));
+  const workspaceDirty = noteDirty || researchFormDirty;
   const activity = useResearchRun({
     onBusy: (value) =>
       setBusy((current) => (value ? 'collect' : current === 'collect' ? '' : current)),
@@ -129,7 +152,12 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
         investigation,
         ...previous.filter((item) => item.id !== investigation.id),
       ]);
-      openInvestigation(investigation);
+      openInvestigation(
+        investigation,
+        false,
+        submittedForm.current === formSignature && !importJson.trim() && !publicOnly,
+      );
+      submittedForm.current = null;
       setStatus(
         run.execution === 'demo_replay'
           ? 'Example replay complete. All evidence and activity in this example are illustrative.'
@@ -139,8 +167,8 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   });
 
   useEffect(() => {
-    onDirty?.(noteDirty);
-  }, [noteDirty, onDirty]);
+    onDirty?.(workspaceDirty);
+  }, [workspaceDirty, onDirty]);
   useEffect(
     () => () => {
       onDirty?.(false);
@@ -174,11 +202,36 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
     };
   }, []);
 
-  function openInvestigation(investigation: SocialInvestigation, discard = false) {
-    if (noteDirty && !discard) {
+  function resetResearchForm() {
+    setTopic('');
+    setAudience('');
+    setPlatforms(['x', 'instagram', 'web']);
+    setDays(7);
+    setLimit(60);
+    setHarness('pipeline');
+    setImportJson('');
+    setPublicOnly(false);
+  }
+  function toggleResearchForm() {
+    if (newResearch && researchFormDirty) {
+      setPendingChange(() => () => {
+        resetResearchForm();
+        setNewResearch(false);
+      });
+      return;
+    }
+    setNewResearch((value) => !value);
+  }
+  function openInvestigation(
+    investigation: SocialInvestigation,
+    discard = false,
+    formSubmitted = false,
+  ) {
+    if ((noteDirty || (researchFormDirty && !formSubmitted)) && !discard) {
       setPendingChange(() => () => openInvestigation(investigation, true));
       return;
     }
+    resetResearchForm();
     epoch.current += 1;
     setActive(investigation);
     setNewResearch(false);
@@ -211,7 +264,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   }
   async function openSavedInvestigation(id: string, discard = false) {
     if (busy) return;
-    if (noteDirty && !discard) {
+    if (workspaceDirty && !discard) {
       setPendingChange(() => () => {
         void openSavedInvestigation(id, true);
       });
@@ -261,6 +314,13 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       setError('Enter a theme and choose at least one source.');
       return;
     }
+    if (discard) {
+      setEditingNote('');
+      setNoteText('');
+      setNoteKind('adopt');
+      setNoteEvidenceIds([]);
+    }
+    submittedForm.current = formSignature;
     setError('');
     setStatus('');
     await activity.start({
@@ -312,7 +372,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       );
       if (requestEpoch !== epoch.current) return;
       setInvestigations((previous) => [result.investigation, ...previous]);
-      openInvestigation(result.investigation);
+      openInvestigation(result.investigation, false, true);
       setImportJson('');
       setPublicOnly(false);
       setStatus('Public evidence imported. Imported data has not been independently verified.');
@@ -458,6 +518,12 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
   }
   async function useResearch() {
     if (!active || !handoff || !onUseResearch || busy) return;
+    if (workspaceDirty) {
+      setError(
+        'Finish or discard unsaved research changes before sending this direction to creation.',
+      );
+      return;
+    }
     setBusy('apply');
     setError('');
     try {
@@ -496,7 +562,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
       setHandoff(null);
       setUsed(false);
       setConfirmDelete(false);
-      onDirty?.(false);
+      onDirty?.(researchFormDirty);
       setStatus('Investigation and its local notes deleted.');
     } catch (caught) {
       if (requestEpoch === epoch.current) setError(researchError(caught));
@@ -583,7 +649,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
               className="social-button social-button-secondary"
               type="button"
               disabled={!!busy}
-              onClick={() => setNewResearch((value) => !value)}
+              onClick={toggleResearchForm}
             >
               <Plus size={18} />
               New research
@@ -632,7 +698,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
         <div className="social-notice social-unsaved-notice" role="alert">
           <NotePencil size={20} />
           <span>
-            Your note has unsaved changes. Keep editing or discard them before changing evidence.
+            You have unsaved research changes. Keep editing or discard them before switching.
           </span>
           <button
             type="button"
@@ -650,7 +716,7 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
               change();
             }}
           >
-            Discard note changes
+            Discard unsaved changes
           </button>
         </div>
       )}
@@ -1393,7 +1459,12 @@ export default function SocialWorkspace({ onUseResearch, onDirty }: SocialWorksp
                   <button
                     type="button"
                     className="social-button social-button-primary"
-                    disabled={!!busy || !onUseResearch || used}
+                    disabled={!!busy || !onUseResearch || used || workspaceDirty}
+                    title={
+                      workspaceDirty
+                        ? 'Finish or discard your unsaved research changes first.'
+                        : undefined
+                    }
                     onClick={() => void useResearch()}
                   >
                     {busy === 'apply'

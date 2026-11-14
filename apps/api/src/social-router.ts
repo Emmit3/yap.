@@ -35,7 +35,7 @@ import {
   type SocialDeepAgentsRunner,
   type SocialResearchRunContext,
 } from './social-runs.js';
-import { runSocialDeepAgents, socialDeepAgentsAvailable } from './social-deepagents.js';
+import { socialDeepAgentsAvailable } from './social-agent-config.js';
 
 export interface SocialRouterOptions {
   dataFile: string;
@@ -215,7 +215,12 @@ export async function createSocialRouter(
       'SOCIAL_RUN_CONFIGURATION',
       'Set the demo step delay between 0 and 2000 milliseconds.',
     );
-  const deepAgents = options.deepAgentsRunner ?? runSocialDeepAgents;
+  const deepAgents: SocialDeepAgentsRunner =
+    options.deepAgentsRunner ??
+    (async (context) => {
+      const { runSocialDeepAgents } = await import('./social-deepagents.js');
+      return runSocialDeepAgents(context);
+    });
   const deepAvailability = options.deepAgentsAvailable ?? socialDeepAgentsAvailable;
   let collecting = 0;
 
