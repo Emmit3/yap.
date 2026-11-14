@@ -13,13 +13,14 @@ import { ApiError } from './errors.js';
 import { CreatorRepository } from './creator-repository.js';
 import type { WorkflowRepository } from './workflow-repository.js';
 import type { WorkflowAssetStore } from './workflow-assets.js';
-import { creatorVideoPrompt, type CreatorVideoProvider } from './creator-video-provider.js';
+import { type CreatorVideoProvider } from './creator-video-provider.js';
 import {
   inspectCreatorClip,
   assembleCreatorClips,
   type CreatorVisionAuditor,
 } from './creator-media.js';
 import { verifyWorkflow } from './workflow-engine.js';
+import { productionProfile, quoteFingerprint } from './creator-budget.js';
 
 export type CreatorAnalyzer = (
   input: CreatorInput,
@@ -135,7 +136,11 @@ export class CreatorJobs {
       (job) => job.requestId === requestId,
     );
     if (existing) {
-      if (existing.kind !== 'production' || existing.approvalId !== session.approval?.id)
+      if (
+        existing.kind !== 'production' ||
+        existing.approvalId !== session.approval?.id ||
+        existing.quoteId !== session.approval?.quoteId
+      )
         throw new ApiError(
           409,
           'CREATOR_REQUEST_CONFLICT',
@@ -144,11 +149,21 @@ export class CreatorJobs {
       return existing;
     }
     this.assertApproved(session, workflow);
+    const quote = await this.options.repository.quote(session.approval!.quoteId!);
+    if (
+      quote.fingerprint !==
+      quoteFingerprint(session, workflow, productionProfile(this.options.video))
+    )
+      throw new ApiError(
+        409,
+        'CREATOR_QUOTE_STALE',
+        'The plan, reference assets or provider changed. Review a new quote.',
+      );
     if (!this.options.video.configured || !this.options.auditor.configured)
       throw new ApiError(
         503,
         'CREATOR_PRODUCTION_NOT_CONFIGURED',
-        'Configure RUNWAYML_API_SECRET and OPENAI_API_KEY before starting paid clips.',
+        'Configure the selected video provider and required frame review before starting paid clips.',
       );
     const key = `${session.id}:${requestId}`,
       pending = this.startingRequests.get(key);
@@ -188,6 +203,9 @@ export class CreatorJobs {
       sourceVersion: session.version,
       workflowVersion: workflow.version,
       approvalId: kind === 'production' ? (session.approval?.id ?? null) : null,
+      ...(kind === 'production'
+        ? { quoteId: session.approval!.quoteId!, planId: session.plan!.id }
+        : {}),
       clips: [],
       events: [],
       output: null,
@@ -203,15 +221,22 @@ export class CreatorJobs {
       }
       if (this.closed) {
         if (kind === 'production') this.productionReserved = false;
-        return this.options.repository.updateJob(saved.sessionId, saved.id, (current) => ({
-          ...current,
-          status: 'canceled',
-          error: {
-            code: 'CREATOR_CANCELED',
-            message:
-              'The server shut down before this job started. No provider request was submitted.',
-          },
-        }));
+        const canceled = await this.options.repository.updateJob(
+          saved.sessionId,
+          saved.id,
+          (current) => ({
+            ...current,
+            status: 'canceled',
+            error: {
+              code: 'CREATOR_CANCELED',
+              message:
+                'The server shut down before this job started. No provider request was submitted.',
+            },
+          }),
+        );
+        if (kind === 'production')
+          await this.options.repository.releaseUnusedReservations(saved.sessionId, saved.id);
+        return canceled;
       }
       const controller = new AbortController();
       const done = Promise.resolve()
@@ -262,6 +287,7 @@ export class CreatorJobs {
     if (
       !session.plan ||
       !session.approval ||
+      !session.approval.quoteId ||
       session.approval.planId !== session.plan.id ||
       session.approval.workflowVersion !== workflow.version ||
       session.plan.workflowVersion !== workflow.version ||
@@ -376,152 +402,149 @@ export class CreatorJobs {
         const directory = this.work(job.id);
         await mkdir(directory, { recursive: true });
         const accepted: string[] = [];
-        const history = (await this.options.repository.jobs(session.id)).filter(
-          (item) => item.approvalId === job.approvalId && item.id !== job.id,
-        );
+        const quote = await this.options.repository.quote(job.quoteId!);
+        const paidClips = quote.clips.filter((item) => item.costCents > 0);
         for (const clip of plan.clips) {
           signal.throwIfAborted();
           await this.current(session, workflow);
-          const previous = history.flatMap((item) =>
-            item.clips
-              .filter((receipt) => receipt.clipId === clip.id)
-              .map((receipt) => ({ job: item, receipt })),
-          );
-          const passed = previous.find((item) => item.receipt.status === 'passed');
-          if (passed) {
-            const oldPath = await this.verifyClip(passed.job, clip.id, passed.receipt.attempt),
-              path = this.clipPath(job.id, clip.id, passed.receipt.attempt);
-            await copyFile(oldPath, path);
+          const item = quote.clips.find((value) => value.clipId === clip.id);
+          if (!item)
+            throw new ApiError(
+              409,
+              'CREATOR_QUOTE_STALE',
+              'This clip is not in the approved quote.',
+            );
+          if (item.reuse) {
+            const oldJob = await this.options.repository.job(session.id, item.reuse.jobId);
+            const receipt = oldJob.clips.find(
+              (value) =>
+                value.clipId === clip.id &&
+                value.attempt === item.reuse!.attempt &&
+                value.status === 'passed',
+            );
+            if (!receipt?.output || receipt.output.sha256 !== item.reuse.sha256)
+              throw new ApiError(
+                409,
+                'CREATOR_REUSE_STALE',
+                'A previously reviewed clip changed. Request a new quote.',
+              );
+            const path = this.clipPath(job.id, clip.id, item.reuse.attempt);
+            await copyFile(await this.verifyClip(oldJob, clip.id, item.reuse.attempt), path);
             accepted.push(path);
             await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
               ...current,
-              clips: [...current.clips, passed.receipt],
+              clips: [...current.clips, receipt],
             }));
             continue;
           }
-          let attempt = previous.reduce((max, item) => Math.max(max, item.receipt.attempt), 0),
-            success = false;
-          const asset = workflow.assets.find((item) => item.id === clip.assetId),
-            image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
-          let correction = '';
-          while (attempt < plan.maxAttemptsPerClip) {
-            const available = 1000 - creatorVideoPrompt({ ...clip, prompt: '' }).length;
-            if (correction && available < 80)
-              throw new ApiError(
-                400,
-                'CREATOR_CORRECTION_LIMIT',
-                'The approved camera and lighting text leaves too little room for an audit correction. Shorten those parameters and review a new plan. No correction attempt was submitted.',
-              );
-            const generatedClip = correction
-              ? {
-                  ...clip,
-                  prompt:
-                    `${clip.prompt.slice(0, Math.floor(available * 0.55))} Correct these visible issues: ${correction.slice(0, Math.max(1, available - Math.floor(available * 0.55) - 30))}`.slice(
-                      0,
-                      available,
-                    ),
-                }
-              : clip;
-            if (creatorVideoPrompt(generatedClip).length > 1000)
-              throw new ApiError(
-                400,
-                'CREATOR_PROMPT_TOO_LONG',
-                'The corrected shot exceeds the provider prompt limit. No correction attempt was submitted.',
-              );
-            await this.current(session, workflow);
-            signal.throwIfAborted();
-            attempt++;
-            const number = attempt;
-            // Persist a paid-attempt reservation before the provider POST, including unknown outcomes.
+          const number = item.attempt;
+          const reservationId =
+            job.reservationIds?.[paidClips.findIndex((value) => value.clipId === clip.id)];
+          if (!reservationId)
+            throw new ApiError(
+              409,
+              'CREATOR_RESERVATION_REQUIRED',
+              'No spending reservation exists for this clip.',
+            );
+          const asset = workflow.assets.find((value) => value.id === clip.assetId);
+          const image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
+          await this.current(session, workflow);
+          signal.throwIfAborted();
+          await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
+            ...current,
+            phase: 'generating',
+            clips: [
+              ...current.clips,
+              {
+                clipId: clip.id,
+                attempt: number,
+                providerTaskId: null,
+                status: 'generating',
+                audit: null,
+                prompt: clip.prompt,
+                reservationId,
+              },
+            ],
+          }));
+          const update = async (
+            change: (receipt: CreatorJob['clips'][number]) => CreatorJob['clips'][number],
+          ) => {
             await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
               ...current,
-              phase: 'generating',
-              clips: [
-                ...current.clips,
-                {
-                  clipId: clip.id,
-                  attempt: number,
-                  providerTaskId: null,
-                  status: 'generating',
-                  audit: null,
-                  prompt: generatedClip.prompt,
-                },
-              ],
+              clips: current.clips.map((receipt) =>
+                receipt.clipId === clip.id && receipt.attempt === number
+                  ? change(receipt)
+                  : receipt,
+              ),
             }));
-            await this.event(
-              job,
-              `Started clip ${plan.clips.indexOf(clip) + 1}/${plan.clips.length}, paid attempt ${number}/${plan.maxAttemptsPerClip}.`,
-              'generating',
-            );
-            const update = async (
-              change: (receipt: CreatorJob['clips'][number]) => CreatorJob['clips'][number],
-            ) => {
-              await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
-                ...current,
-                clips: current.clips.map((receipt) =>
-                  receipt.clipId === clip.id && receipt.attempt === number
-                    ? change(receipt)
-                    : receipt,
-                ),
-              }));
-            };
-            const bytes = await abortable(
-              this.options.video.generate({
-                clip: generatedClip,
-                ...(image ? { image } : {}),
-                signal,
-                onSubmitted: async (id) => {
-                  signal.throwIfAborted();
-                  await update((receipt) => ({ ...receipt, providerTaskId: id }));
-                },
-              }),
-              signal,
-            );
-            const path = this.clipPath(job.id, clip.id, number);
-            await writeFile(path, bytes);
-            await update((receipt) => ({ ...receipt, status: 'auditing' }));
-            await this.event(
-              job,
-              `Inspecting decoded video and generated frames for clip ${plan.clips.indexOf(clip) + 1}.`,
-              'auditing',
-            );
-            const technical = await inspectCreatorClip(path, clip, signal);
-            const audit = technical.audit.technicalPassed
-              ? await abortable(
-                  this.options.auditor.audit(clip, technical.frames, image, signal),
-                  signal,
-                )
-              : technical.audit;
-            const passedAudit = audit.technicalPassed && audit.visionPassed === true;
-            await update((receipt) => ({
-              ...receipt,
-              status: passedAudit ? 'passed' : 'failed',
-              audit,
-              output: {
-                bytes: bytes.length,
-                sha256: createHash('sha256').update(bytes).digest('hex'),
-              },
-            }));
-            if (passedAudit) {
-              accepted.push(path);
-              success = true;
-              break;
-            }
-            await this.event(
-              job,
-              `Clip ${plan.clips.indexOf(clip) + 1} failed review: ${audit.summary}`,
-              'auditing',
-            );
-            correction = audit.issues.join('; ') || audit.summary;
-            signal.throwIfAborted();
+          };
+          await this.event(
+            job,
+            'Started clip ' +
+              (plan.clips.indexOf(clip) + 1) +
+              '/' +
+              plan.clips.length +
+              ', approved paid attempt ' +
+              number +
+              '/2.',
+            'generating',
+          );
+          await this.current(session, workflow);
+          signal.throwIfAborted();
+          const bytes = await this.options.video.generate({
+            clip,
+            ...(image ? { image } : {}),
+            signal,
+            beforeSubmit: async () => {
+              await this.current(session, workflow);
+              signal.throwIfAborted();
+            },
+            onSubmitted: async (id) => {
+              await update((receipt) => ({ ...receipt, providerTaskId: id }));
+            },
+          });
+          signal.throwIfAborted();
+          const path = this.clipPath(job.id, clip.id, number);
+          await writeFile(path, bytes);
+          await update((receipt) => ({ ...receipt, status: 'auditing' }));
+          await this.event(
+            job,
+            'Inspecting decoded video and frames for clip ' + (plan.clips.indexOf(clip) + 1) + '.',
+            'auditing',
+          );
+          const technical = await inspectCreatorClip(path, clip, signal);
+          let audit = technical.audit;
+          if (technical.audit.technicalPassed) {
             await this.current(session, workflow);
+            signal.throwIfAborted();
+            audit = await this.options.auditor.audit(
+              clip,
+              technical.frames,
+              image,
+              signal,
+              async () => {
+                await this.current(session, workflow);
+                signal.throwIfAborted();
+              },
+            );
           }
-          if (!success)
+          const passed = audit.technicalPassed && audit.visionPassed === true;
+          await update((receipt) => ({
+            ...receipt,
+            status: passed ? 'passed' : 'failed',
+            audit,
+            output: {
+              bytes: bytes.length,
+              sha256: createHash('sha256').update(bytes).digest('hex'),
+            },
+          }));
+          if (!passed)
             throw new ApiError(
               422,
               'CREATOR_CLIP_AUDIT_FAILED',
-              'A clip failed the allowed technical/visual review attempts. No unchecked final video was published.',
+              'A clip failed review. No automatic paid retry was made. Request a new quote and explicitly approve another attempt.',
             );
+          accepted.push(path);
         }
         signal.throwIfAborted();
         await this.current(session, workflow);
@@ -582,6 +605,11 @@ export class CreatorJobs {
       if (job.kind === 'production')
         await rm(this.path(job.id), { force: true }).catch(() => undefined);
       if (!known && !signal.aborted) this.options.onError?.(error);
+    } finally {
+      if (job.kind === 'production')
+        await this.options.repository
+          .releaseUnusedReservations(job.sessionId, job.id)
+          .catch((error) => this.options.onError?.(error));
     }
   }
   async cancel(sessionId: string, id: string): Promise<CreatorJob> {

@@ -18,13 +18,23 @@ import {
 import { workflowBriefSchema, type Workflow, type WorkflowBrief } from '@yap/contracts/workflow';
 import { ApiError } from './errors.js';
 import { CreatorRepository } from './creator-repository.js';
+import {
+  productionProfile,
+  buildCreatorQuote,
+  quoteFingerprint,
+  type CreatorBudgetLedger,
+  type CreatorProductionProfile,
+} from './creator-budget.js';
 import { CreatorJobs, type CreatorAnalyzer } from './creator-jobs.js';
 import {
-  createCreatorVideoProvider,
   creatorVideoPrompt,
   type CreatorVideoConfig,
   type CreatorVideoProvider,
 } from './creator-video-provider.js';
+import {
+  createConfiguredCreatorVideoProvider,
+  creatorVideoConfigFromEnv,
+} from './creator-video-factory.js';
 import { createCreatorVisionAuditor, type CreatorVisionAuditor } from './creator-media.js';
 import { analyzeCreator } from './creator-research.js';
 import type { WorkflowRepository } from './workflow-repository.js';
@@ -52,6 +62,11 @@ export interface CreatorRouterOptions {
   analyze?: CreatorAnalyzer;
   fetch?: typeof globalThis.fetch;
   onError?: (error: unknown) => void;
+  budgetLimitCents?: number;
+  withBudget?: (ledger: CreatorBudgetLedger) => {
+    analyze?: CreatorAnalyzer;
+    provider?: VideoWorkflowProvider;
+  };
 }
 function validate<T>(schema: z.ZodType<T>, value: unknown): T {
   const result = schema.safeParse(value);
@@ -112,19 +127,23 @@ function validateClips(clips: CreatorClip[], workflow: Workflow): void {
       );
   }
 }
-function makePlan(session: CreatorSession, workflow: Workflow): CreatorPlan {
+function makePlan(
+  session: CreatorSession,
+  workflow: Workflow,
+  profile: CreatorProductionProfile,
+): CreatorPlan {
   if (!workflow.script || !workflow.scenes)
     throw new ApiError(409, 'CREATOR_SCRIPT_REQUIRED', 'Prepare a script and scene plan first.');
   const scenes = workflow.scenes.scenes,
     total = workflow.brief.duration!;
   const parts = scenes.flatMap((scene) => {
-    if (scene.seconds < 2)
+    if (scene.seconds < profile.minSeconds)
       throw new ApiError(
         400,
         'CREATOR_SCENE_TOO_SHORT',
-        'Generated shots need at least two seconds. Combine this short scene or adjust its timing before preparing clips.',
+        'This provider cannot generate such a short scene. Combine it or adjust its timing before preparing clips.',
       );
-    const count = Math.ceil(scene.seconds / 10),
+    const count = Math.ceil(scene.seconds / profile.maxSeconds),
       base = Math.floor(scene.seconds / count);
     return Array.from({ length: count }, (_, index) => ({
       scene,
@@ -198,7 +217,8 @@ function makePlan(session: CreatorSession, workflow: Workflow): CreatorPlan {
     sourceScenesId: workflow.scenes.id,
     caption: workflow.script.caption,
     clips,
-    model: 'gen4.5',
+    provider: profile.provider,
+    model: profile.model,
     ratio: '720:1280',
     hasAudio: false,
     maxAttemptsPerClip: 2,
@@ -207,11 +227,15 @@ function makePlan(session: CreatorSession, workflow: Workflow): CreatorPlan {
   });
 }
 export async function createCreatorRouter(options: CreatorRouterOptions) {
-  const repository = await CreatorRepository.open(resolve(options.dataFile));
+  const repository = await CreatorRepository.open(resolve(options.dataFile), {
+    limitCents: options.budgetLimitCents,
+  });
+  const budgeted = options.withBudget?.(repository);
+  const draftingProvider = budgeted?.provider ?? options.provider;
   const video =
     options.video ??
-    createCreatorVideoProvider(
-      options.videoConfig ?? { apiKey: process.env.RUNWAYML_API_SECRET },
+    createConfiguredCreatorVideoProvider(
+      { ...creatorVideoConfigFromEnv(), ...options.videoConfig },
       options.fetch,
     );
   const auditor =
@@ -227,7 +251,18 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     directory: resolve(options.directory),
     video,
     auditor,
-    analyze: options.analyze ?? analyzeCreator,
+    analyze:
+      budgeted?.analyze ??
+      options.analyze ??
+      (async (...args) => {
+        if (process.env.FIRECRAWL_API_KEY?.trim())
+          throw new ApiError(
+            503,
+            'CREATOR_BUDGET_CONFIGURATION',
+            'Live creator research requires the shared spending ledger.',
+          );
+        return analyzeCreator(...args);
+      }),
     onError: options.onError,
   });
   const router = express.Router();
@@ -253,13 +288,13 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       configured: video.configured,
       researchConfigured: Boolean(options.analyze || process.env.FIRECRAWL_API_KEY?.trim()),
       visionConfigured: auditor.configured,
-      provider: 'runway',
-      model: 'gen4.5',
+      provider: productionProfile(video).provider,
+      model: productionProfile(video).model,
       hasAudio: false,
       maxAttemptsPerClip: 2,
       maxGeneratedSeconds: 120,
       reason: !video.configured
-        ? 'Configure RUNWAYML_API_SECRET for real paid video generation.'
+        ? `Configure ${productionProfile(video).provider === 'fal' ? 'FAL_KEY' : 'RUNWAYML_API_SECRET'} for real paid video generation.`
         : !auditor.configured
           ? 'Configure OPENAI_API_KEY for the required generated-frame review.'
           : 'Paid generation and sampled-frame review are configured. Cancellation is best effort; submitted provider tasks may continue and be billed.',
@@ -433,10 +468,16 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           2000,
         );
       const signal = response.locals.creatorSignal as AbortSignal;
+      if (draftingProvider.name === 'openai' && !budgeted?.provider)
+        throw new ApiError(
+          503,
+          'CREATOR_BUDGET_CONFIGURATION',
+          'Creator drafting requires the shared spending ledger.',
+        );
       if (!candidate.script)
         candidate = setWorkflowScript(
           candidate,
-          await options.provider.script(
+          await draftingProvider.script(
             { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
             signal,
           ),
@@ -445,7 +486,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       if (!candidate.scenes)
         candidate = setWorkflowScenes(
           candidate,
-          await options.provider.scenes(
+          await draftingProvider.scenes(
             { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
             signal,
           ),
@@ -462,7 +503,11 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         }));
       signal.throwIfAborted();
       repository.checkVersion(await repository.get(session.id), input.expectedVersion);
-      const plan = makePlan(session, { ...candidate, version: previous.version + 1 });
+      const plan = makePlan(
+        session,
+        { ...candidate, version: previous.version + 1 },
+        productionProfile(video),
+      );
       const workflow = await options.workflows.update(
         previous.id,
         previous.version,
@@ -548,37 +593,92 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       response.json({ session: saved, workflow });
     }),
   );
+  router.get('/budget', async (_request, response) =>
+    response.json({ budget: await repository.budget() }),
+  );
+  router.post(
+    '/sessions/:id/quote',
+    locked(async (request, response) => {
+      const input = validate(creatorPrepareSchema, request.body);
+      const session = await repository.get(idOf(request));
+      repository.checkVersion(session, input.expectedVersion);
+      const workflow = await options.workflows.get(session.workflowId);
+      options.workflows.checkVersion(workflow, input.expectedWorkflowVersion);
+      ensurePlan(session, workflow);
+      validateClips(session.plan!.clips, workflow);
+      const history = await repository.jobs(session.id);
+      if (history.some((job) => job.status === 'queued' || job.status === 'running'))
+        throw new ApiError(
+          409,
+          'CREATOR_JOB_ACTIVE',
+          'Wait for the current job before reviewing another paid quote.',
+        );
+      const quote = buildCreatorQuote(session, workflow, productionProfile(video), history);
+      for (const item of quote.clips)
+        if (item.reuse) {
+          const oldJob = await repository.job(session.id, item.reuse.jobId);
+          await jobs.verifyClip(oldJob, item.clipId, item.reuse.attempt);
+        }
+      response.json({ quote: await repository.addQuote(quote), budget: await repository.budget() });
+    }),
+  );
   router.post(
     '/sessions/:id/approve',
     locked(async (request, response) => {
-      const input = validate(creatorApproveSchema, request.body),
-        session = await repository.get(idOf(request));
+      const input = validate(creatorApproveSchema, request.body);
+      const session = await repository.get(idOf(request));
       repository.checkVersion(session, input.expectedVersion);
       let workflow = await options.workflows.get(session.workflowId);
       options.workflows.checkVersion(workflow, input.expectedWorkflowVersion);
       const plan = ensurePlan(session, workflow);
-      if (plan.id !== input.planId)
-        throw new ApiError(409, 'CREATOR_PLAN_STALE', 'Review the latest clip plan.');
-      validateClips(plan.clips, workflow);
+      const quote = await repository.quote(input.quoteId);
       if (
-        session.approval?.planId === plan.id &&
-        session.approval.workflowVersion === workflow.version &&
-        Object.values(verifyWorkflow(workflow)).every((report) => report.state === 'approved')
-      ) {
-        response.json({ session, workflow });
-        return;
-      }
-      workflow = await options.workflows.update(workflow.id, workflow.version, approveAllWorkflow);
-      const saved = await repository.update(session.id, session.version, (current) => ({
-        ...current,
-        plan: { ...plan, workflowVersion: workflow.version },
-        approval: {
-          id: randomUUID(),
-          planId: plan.id,
-          workflowVersion: workflow.version,
-          approvedAt: new Date().toISOString(),
+        quote.sessionId !== session.id ||
+        quote.sessionVersion !== session.version ||
+        quote.workflowVersion !== workflow.version ||
+        quote.planId !== input.planId ||
+        quote.planId !== plan.id ||
+        quote.fingerprint !== quoteFingerprint(session, workflow, productionProfile(video))
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_QUOTE_STALE',
+          'The plan, references or provider changed. Review a new cost quote.',
+        );
+      if (
+        quote.consumedByJobId ||
+        quote.approvedApprovalId ||
+        Date.parse(quote.expiresAt) <= Date.now()
+      )
+        throw new ApiError(409, 'CREATOR_QUOTE_EXPIRED', 'Request and review a fresh cost quote.');
+      validateClips(plan.clips, workflow);
+      if (quote.maxCostCents > (await repository.budget()).availableCents)
+        throw new ApiError(
+          409,
+          'CREATOR_BUDGET_EXCEEDED',
+          'This quote exceeds the remaining creator budget.',
+        );
+      if (Object.values(verifyWorkflow(workflow)).some((report) => report.state !== 'approved'))
+        workflow = await options.workflows.update(
+          workflow.id,
+          workflow.version,
+          approveAllWorkflow,
+        );
+      const saved = await repository.approveQuote(
+        {
+          ...session,
+          plan: { ...plan, workflowVersion: workflow.version },
+          approval: {
+            id: randomUUID(),
+            planId: plan.id,
+            workflowVersion: workflow.version,
+            quoteId: quote.id,
+            approvedAt: new Date().toISOString(),
+          },
         },
-      }));
+        session.version,
+        quote.id,
+      );
       response.json({ session: saved, workflow });
     }),
   );
@@ -589,7 +689,11 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       (job) => job.requestId === input.requestId,
     );
     if (existing) {
-      if (existing.kind !== 'production' || existing.approvalId !== input.approvalId)
+      if (
+        existing.kind !== 'production' ||
+        existing.approvalId !== input.approvalId ||
+        existing.quoteId !== input.quoteId
+      )
         throw new ApiError(
           409,
           'CREATOR_REQUEST_CONFLICT',
@@ -599,7 +703,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       return;
     }
     repository.checkVersion(session, input.expectedVersion);
-    if (session.approval?.id !== input.approvalId)
+    if (session.approval?.id !== input.approvalId || session.approval.quoteId !== input.quoteId)
       throw new ApiError(
         409,
         'CREATOR_APPROVAL_REQUIRED',
@@ -662,5 +766,11 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       if (error) next(error);
     });
   });
-  return { router, repository, jobs, close: () => jobs.close() };
+  return {
+    router,
+    repository,
+    budget: repository as CreatorBudgetLedger,
+    jobs,
+    close: () => jobs.close(),
+  };
 }

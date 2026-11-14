@@ -9,6 +9,7 @@ import test, { type TestContext } from 'node:test';
 import {
   creatorSessionResponseSchema,
   creatorJobResponseSchema,
+  creatorQuoteResponseSchema,
   type CreatorResearch,
   type CreatorSessionResponse,
 } from '@yap/contracts/creator';
@@ -212,6 +213,15 @@ test('creator session persists explicit interview/references, prepares bounded e
     }),
   );
   assert.equal(response.status, 400);
+  const quoteResponse = await f.request(
+    '/creator/sessions/' + id + '/quote',
+    json('POST', {
+      expectedVersion: current.session.version,
+      expectedWorkflowVersion: current.workflow.version,
+    }),
+  );
+  assert.equal(quoteResponse.status, 200, await quoteResponse.clone().text());
+  const { quote } = creatorQuoteResponseSchema.parse(await quoteResponse.json());
   current = await session(
     await f.request(
       `/creator/sessions/${id}/approve`,
@@ -220,6 +230,8 @@ test('creator session persists explicit interview/references, prepares bounded e
         expectedWorkflowVersion: current.workflow.version,
         planId: current.session.plan!.id,
         reviewed: true,
+        costReviewed: true,
+        quoteId: quote.id,
       }),
     ),
   );
@@ -230,6 +242,7 @@ test('creator session persists explicit interview/references, prepares bounded e
     json('POST', {
       expectedVersion: current.session.version,
       approvalId: current.session.approval!.id,
+      quoteId: current.session.approval!.quoteId!,
       requestId: randomUUID(),
     }),
   );

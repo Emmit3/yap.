@@ -699,6 +699,7 @@ export function createCreatorResearch(
             collect: async () => dataset,
           },
           {
+            fetch: fetcher,
             config: {
               model: config.deepAgentsModel.trim(),
               apiKey: config.deepAgentsApiKey.trim(),

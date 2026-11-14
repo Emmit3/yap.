@@ -47,6 +47,7 @@ export interface WorkflowRouterOptions {
   rendersDirectory: string;
   providerConfig?: WorkflowProviderConfig;
   provider?: VideoWorkflowProvider;
+  fetch?: typeof globalThis.fetch;
   renderer?: PromoRenderer;
   onError?: (error: unknown) => void;
 }
@@ -112,6 +113,7 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
   const provider =
     options.provider ??
     createWorkflowProvider(options.providerConfig ?? { provider: 'guided' }, {
+      fetch: options.fetch,
       loadAsset: async (workflowId, asset) => ({
         mimeType: asset.mimeType,
         data: await assets.load(workflowId, asset),
