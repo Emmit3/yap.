@@ -21,6 +21,16 @@ The API runs at **http://127.0.0.1:3001**. When `apps/web` is present, the devel
 
 No API key or database service is required for guided preparation and photo rendering. Set `WORKFLOW_PROVIDER=openai` and a server-only `OPENAI_API_KEY` in `apps/api/.env` to enable the model adapter. Runtime data and `.env` files are ignored by Git.
 
+The configuration format is published in the root [`.env.example`](.env.example). For a fresh checkout, copy it to `apps/api/.env` and copy `apps/web/.env.example` to `apps/web/.env`. The API loads its own environment file; the frontend uses only public `VITE_` settings. Fill actual keys only in the ignored `.env` files. Dependencies are managed by npm through `package.json` and `package-lock.json`; [requirements.txt](requirements.txt) records the runtime setup and requires no Python packages.
+
+See the [API provider setup](docs/api-providers.md) for OpenAI, Deep Agents, Firecrawl, X, and xAI configuration. The optional [AWS S3 example](docs/aws-s3.md) uploads a rendered MP4 to a private bucket and returns a temporary download link:
+
+```sh
+npm run aws:upload -- ./data/videos/RENDER_ID.mp4
+```
+
+This upload path resolves from `apps/api`, where the default render directory lives. Set the AWS variables in `apps/api/.env` and configure credentials before running the command.
+
 Video output is a real **1080×1920 H264 MP4 at 24 fps**, using the supplied photos, branded text overlays, and the approved scene timing. Videos are silent. The publish kit includes the caption and video download; automatic social posting is not connected. This remains a local single-workspace service without user accounts.
 
 ## Separate frontend and backend work

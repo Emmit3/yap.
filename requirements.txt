@@ -1,0 +1,17 @@
+# Yap runtime requirements
+# This is a Node.js/TypeScript project. There are no Python dependencies.
+# pip install -r requirements.txt intentionally installs nothing.
+#
+# Required: Node.js >=22.12.0 (Node 24 is used in CI) and npm.
+# Install all application dependencies from the repository root: npm ci
+# The authoritative dependency manifests are package.json and package-lock.json,
+# including the apps/api, apps/web, and packages/contracts workspaces.
+# Start the application: npm run dev
+#
+# Configuration: copy .env.example to apps/api/.env, and
+# apps/web/.env.example to apps/web/.env. Templates are published on GitHub.
+# Guided promo preparation, photo rendering, and example research need no keys.
+# Optional provider setup: docs/api-providers.md
+# Optional AWS S3 export: docs/aws-s3.md
+# AWS packages are already included in the API workspace's npm dependencies.
+# FFmpeg and image processing are provided by ffmpeg-static and sharp via npm.

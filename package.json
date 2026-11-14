@@ -15,6 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "dev:web": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/web",
     "dev:api": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/api",
+    "aws:upload": "npm run aws:upload --workspace=@yap/api --",
     "build": "node scripts/build.mjs",
     "build:api": "npm run build --workspace=@yap/contracts && npm run build --workspace=@yap/api",
     "typecheck:api": "npm run typecheck --workspace=@yap/contracts && npm run typecheck --workspace=@yap/api",
