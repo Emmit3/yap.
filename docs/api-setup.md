@@ -35,6 +35,8 @@ Set `DEEPAGENTS_MODEL=gpt-6-luna` to enable the optional real evidence-review ha
 
 `GET /api/creator/capabilities`, `/api/social/providers`, and `/api/social/research-runs/capabilities` report configuration presence without exposing secrets. Presence is not proof of a valid key, sufficient balance, or successful live generation. `GET /api/creator/budget` reports the durable app budget.
 
+After starting the app, run `npm run check:connections` for a read-only readiness report. Use `npm run check:connections -- --url=http://127.0.0.1:3002 --json` for another API port and structured output. The command never starts paid work or reads provider secrets.
+
 Without external keys, guided preparation, the existing photo renderer, and labeled synthetic research replay remain available. Missing or failed live providers do not become fabricated research or generated footage.
 
 ## Keeping the experiment below USD 35
