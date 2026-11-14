@@ -1,0 +1,8 @@
+node_modules/
+**/dist/
+data/
+artifacts/
+coverage/
+package-lock.json
+.env
+.env.*
