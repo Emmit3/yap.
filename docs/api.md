@@ -1,5 +1,7 @@
 # API and collaboration contract
 
+The additive `/api/social` research endpoints and optional `research` context on projects and promo workflows are documented in [Public social research](social-analysis.md). The main project and workflow routes remain compatible.
+
 Source of truth: [`packages/contracts/src/index.ts`](../packages/contracts/src/index.ts) and [`apps/api/src/app.ts`](../apps/api/src/app.ts). This document describes the first local implementation, not a hosted or authenticated service.
 
 For the new business photo-to-promo flow, use the additive [`/api/workflows` integration guide](promo-backend.md) and the `@yap/contracts/workflow` / `@yap/contracts/render` exports. The `/api/projects` endpoints documented here remain compatible.

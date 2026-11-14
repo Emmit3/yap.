@@ -226,15 +226,25 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
     const previous = await repository.get(idOf(request));
     repository.checkVersion(previous, input.expectedVersion);
     let candidate = refineWorkflow(previous, input);
-    const result = await provider.refine(candidate, input, response.locals.workflowSignal);
-    if (Object.keys(result.brief).length) {
-      // Explicit form answers remain authoritative over a model's suggested patch.
-      const suggestions = { ...result.brief };
-      for (const field of Object.keys(input.answers ?? {}))
-        delete suggestions[field as keyof typeof suggestions];
-      candidate = refineWorkflow(previous, { ...input, brief: { ...suggestions, ...input.brief } });
+    const researchOnly =
+      input.research !== undefined &&
+      input.message === undefined &&
+      input.answers === undefined &&
+      input.brief === undefined;
+    if (!researchOnly) {
+      const result = await provider.refine(candidate, input, response.locals.workflowSignal);
+      if (Object.keys(result.brief).length) {
+        // Explicit form answers remain authoritative over a model's suggested patch.
+        const suggestions = { ...result.brief };
+        for (const field of Object.keys(input.answers ?? {}))
+          delete suggestions[field as keyof typeof suggestions];
+        candidate = refineWorkflow(previous, {
+          ...input,
+          brief: { ...suggestions, ...input.brief },
+        });
+      }
+      candidate = assistantMessage(candidate, result.message);
     }
-    candidate = assistantMessage(candidate, result.message);
     response.json(
       envelope(await repository.update(previous.id, input.expectedVersion, () => candidate)),
     );

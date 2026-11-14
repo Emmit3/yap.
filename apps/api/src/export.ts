@@ -15,6 +15,20 @@ export function exportMarkdown(project: Project): string {
     `Goal: ${project.goal}`,
     '',
   ];
+  if (project.research) {
+    lines.push(
+      '## Research direction',
+      '',
+      project.research.creativeDirection,
+      '',
+      'Research is creative inspiration. Confirm product claims using your own information.',
+      '',
+      ...project.research.sourceUrls.map((url) => `Source: ${url}`),
+      '',
+      ...project.research.cautions.map((caution) => `Caution: ${caution}`),
+      '',
+    );
+  }
   if (project.draft) {
     lines.push(
       '## Hook',

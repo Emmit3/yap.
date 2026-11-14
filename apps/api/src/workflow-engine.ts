@@ -22,6 +22,7 @@ import {
   type WorkflowVerification,
 } from '@yap/contracts/workflow';
 import { ApiError } from './errors.js';
+import { researchHook, researchVisualDirection } from './research-direction.js';
 
 const questionDefinitions = [
   ['productName', 'What is the product or idea called?'],
@@ -102,6 +103,7 @@ export function createWorkflow(input: CreateWorkflowInput): Workflow {
     contentRevision: 1,
     title: input.title ?? input.brief?.productName ?? input.input.slice(0, 120),
     input: input.input,
+    ...(input.research ? { research: input.research } : {}),
     brief: {
       productName: input.title ?? 'Your business',
       productDescription: input.input.slice(0, 4000),
@@ -176,12 +178,20 @@ export function refineWorkflow(workflow: Workflow, input: RefineWorkflowInput): 
       })),
     );
   }
-  const next = invalidateWorkflowContent({ ...workflow, brief: parsed.data });
+  const next = invalidateWorkflowContent({
+    ...workflow,
+    brief: parsed.data,
+    ...(input.research ? { research: input.research } : {}),
+  });
   const fields = [
     ...new Set([...Object.keys(input.answers ?? {}), ...Object.keys(input.brief ?? {})]),
   ];
   markExplicitAnswers(next, fields);
-  const text = input.message ?? `Updated the following brief fields: ${fields.join(', ')}.`;
+  const text =
+    input.message ??
+    (input.research
+      ? `Updated creative research direction for ${input.research.topic}. Product facts are unchanged.`
+      : `Updated the following brief fields: ${fields.join(', ')}.`);
   next.messages.push(
     message(text, 'user', 'refinement'),
     message(refinementReply(next), 'assistant', 'refinement'),
@@ -605,7 +615,8 @@ export function buildGuidedScript(
     (_, index) => baseSeconds + (index < duration % count ? 1 : 0),
   );
   const hook = excerpt(
-    `${brief.productName}: ${brief.productDescription}`,
+    researchHook(brief.productName!, workflow.research) ??
+      `${brief.productName}: ${brief.productDescription}`,
     Math.max(4, seconds[0]! * 2),
     1000,
   );
@@ -665,7 +676,7 @@ export function buildGuidedScenes(
         id: randomUUID(),
         scriptSegmentId: segment.id,
         seconds: segment.seconds,
-        visual,
+        visual: visual + (index === 0 ? researchVisualDirection(workflow.research) : ''),
         onScreenText: excerpt(segment.text, 8, 500),
         assetIds: asset ? [asset.id] : [],
       };
