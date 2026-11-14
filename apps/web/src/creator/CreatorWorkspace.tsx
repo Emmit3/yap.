@@ -23,7 +23,12 @@ import {
   X,
 } from '@phosphor-icons/react';
 import type { SocialHandoff } from '@yap/contracts/social';
-import type { CreatorClip, CreatorJob, CreatorSource } from '@yap/contracts/creator';
+import type {
+  CreatorClip,
+  CreatorExternalReference,
+  CreatorJob,
+  CreatorSource,
+} from '@yap/contracts/creator';
 import { LoadingState } from '../components';
 import { promoApi } from '../promo/api';
 import { creatorApi } from './api';
@@ -47,6 +52,8 @@ export interface CreatorWorkspaceProps {
   onCreated(id: string): void;
   onDirty(dirty: boolean): void;
   initialResearch?: SocialHandoff;
+  initialExternalReferences?: CreatorExternalReference[];
+  onContextChange?(context: { topic: string; audience?: string; research?: SocialHandoff }): void;
   onOpenPromo(workflowId: string): void;
 }
 type View = 'guided' | 'director';
@@ -84,6 +91,17 @@ function moveTab(
 
 export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const c = useCreatorSession(props);
+  const contextCallback = useRef(props.onContextChange);
+  contextCallback.current = props.onContextChange;
+  const context = {
+    topic: c.source.prompt,
+    audience: c.state?.workflow.brief.audience,
+    research: c.state?.workflow.research ?? props.initialResearch,
+  };
+  const contextRef = useRef(context);
+  contextRef.current = context;
+  const contextKey = JSON.stringify(context);
+  useEffect(() => contextCallback.current?.(contextRef.current), [contextKey]);
   const [view, setView] = useState<View>(initialView);
   const [selectedShot, setSelectedShot] = useState(0);
   const [inspector, setInspector] = useState<'shots' | 'script'>('shots');
