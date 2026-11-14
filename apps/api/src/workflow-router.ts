@@ -536,5 +536,5 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
       if (result.status === 'rejected') options.onError?.(result.reason);
     response.status(204).end();
   });
-  return { router, close: () => renders.close() };
+  return { router, repository, assets, provider, close: () => renders.close() };
 }

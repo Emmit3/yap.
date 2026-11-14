@@ -1,0 +1,268 @@
+import { z } from 'zod';
+import { workflowSchema } from './workflow.js';
+import { socialHandoffSchema } from './social.js';
+import { durationSchema, platformSchema, toneSchema } from './index.js';
+
+const version = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const text = (max: number) => z.string().trim().min(1).max(max);
+const httpsUrl = z
+  .url()
+  .max(2048)
+  .refine((value) => new URL(value).protocol === 'https:', 'Use a public HTTPS URL.');
+export const creatorInputSchema = z
+  .object({
+    mode: z.enum(['media', 'text']),
+    prompt: text(8000),
+    location: text(200).optional(),
+    urls: z.array(httpsUrl).max(5).default([]),
+    platform: platformSchema.optional(),
+    duration: durationSchema.optional(),
+    tone: toneSchema.optional(),
+  })
+  .strict();
+export const creatorAnswerSchema = z.object({ questionId: text(80), answer: text(2000) }).strict();
+export const creatorQuestionSchema = z
+  .object({ id: text(80), question: text(500), why: text(500) })
+  .strict();
+export const creatorSourceSchema = z
+  .object({
+    id: text(80),
+    url: httpsUrl,
+    title: text(200),
+    kind: z.enum(['cinematography', 'social', 'product', 'github', 'location']),
+    excerpt: text(1500),
+    platform: z.enum(['x', 'tiktok', 'instagram', 'web']).optional(),
+    provider: z.enum(['firecrawl', 'github', 'creator']).optional(),
+    collectedAt: z.iso.datetime().optional(),
+    publishedAt: z.iso.datetime().nullable().optional(),
+    contentKind: z.enum(['search_result', 'page', 'repository']).optional(),
+  })
+  .strict();
+export const creatorReferenceSchema = z
+  .object({
+    id: text(80),
+    sourceIds: z.array(text(80)).min(1).max(8),
+    title: text(200),
+    hook: text(1000),
+    visualDirection: text(2000),
+    rationale: text(1000),
+  })
+  .strict();
+export const creatorResearchSchema = z
+  .object({
+    summary: text(3000),
+    productFacts: z.array(text(1000)).max(20),
+    cinematography: z.string().max(6000),
+    sources: z.array(creatorSourceSchema).max(40),
+    references: z.array(creatorReferenceSchema).max(12),
+    questions: z.array(creatorQuestionSchema).max(8),
+    limitations: z.array(text(1000)).max(20),
+    coverage: z
+      .array(
+        z
+          .object({
+            branch: z.enum(['cinematography', 'x', 'tiktok', 'instagram', 'context']),
+            status: z.enum(['available', 'empty', 'unavailable', 'failed', 'partial']),
+            message: text(1000),
+          })
+          .strict(),
+      )
+      .max(5)
+      .optional(),
+  })
+  .strict();
+export const creatorExternalReferenceSchema = z
+  .object({
+    id: text(120),
+    title: text(200),
+    brand: text(200).optional(),
+    creator: text(200).optional(),
+    url: httpsUrl,
+    watchUrl: httpsUrl,
+    techniques: z.array(text(500)).max(12),
+    whyItFits: text(2000),
+    evidence: text(2000),
+    usage: z.literal('external_reference'),
+    verifiedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+export const creatorClipSchema = z
+  .object({
+    id: z.uuid(),
+    sceneId: z.uuid(),
+    seconds: z.number().int().min(2).max(10),
+    prompt: text(1000),
+    camera: text(1000),
+    lighting: text(1000),
+    assetId: z.uuid().optional(),
+    referenceIds: z.array(text(120)).max(12).optional(),
+  })
+  .strict();
+export const creatorPlanSchema = z
+  .object({
+    id: z.uuid(),
+    workflowVersion: version,
+    scriptId: z.uuid(),
+    sourceScenesId: z.uuid(),
+    caption: z.string().max(3000),
+    clips: z.array(creatorClipSchema).min(1).max(12),
+    model: z.literal('gen4.5'),
+    ratio: z.literal('720:1280'),
+    hasAudio: z.literal(false),
+    maxAttemptsPerClip: z.literal(2),
+    maxGeneratedSeconds: z.number().int().positive().max(120),
+    createdAt: z.iso.datetime(),
+  })
+  .strict();
+export const creatorApprovalSchema = z
+  .object({
+    id: z.uuid(),
+    planId: z.uuid(),
+    workflowVersion: version,
+    approvedAt: z.iso.datetime(),
+  })
+  .strict();
+export const creatorSessionSchema = z
+  .object({
+    id: z.uuid(),
+    version,
+    workflowId: z.uuid(),
+    input: creatorInputSchema,
+    answers: z.array(creatorAnswerSchema).max(20),
+    research: creatorResearchSchema.nullable(),
+    selectedReferenceIds: z.array(text(80)).max(12),
+    externalReferences: z.array(creatorExternalReferenceSchema).max(12).default([]),
+    plan: creatorPlanSchema.nullable(),
+    approval: creatorApprovalSchema.nullable(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export const creatorAuditSchema = z
+  .object({
+    technicalPassed: z.boolean(),
+    visionPassed: z.boolean().nullable(),
+    summary: text(3000),
+    issues: z.array(text(1000)).max(12),
+  })
+  .strict();
+export const creatorClipReceiptSchema = z
+  .object({
+    clipId: z.uuid(),
+    attempt: z.number().int().min(1).max(2),
+    providerTaskId: z.string().max(200).nullable(),
+    status: z.enum(['queued', 'generating', 'auditing', 'passed', 'failed']),
+    audit: creatorAuditSchema.nullable(),
+    prompt: z.string().max(1000).optional(),
+    output: z
+      .object({ bytes: version, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
+      .strict()
+      .optional(),
+  })
+  .strict();
+export const creatorJobSchema = z
+  .object({
+    id: z.uuid(),
+    requestId: z.uuid(),
+    sessionId: z.uuid(),
+    kind: z.enum(['analysis', 'production']),
+    status: z.enum(['queued', 'running', 'succeeded', 'failed', 'canceled']),
+    phase: z.enum(['queued', 'research', 'generating', 'auditing', 'assembling', 'complete']),
+    sourceVersion: version,
+    workflowVersion: version,
+    approvalId: z.uuid().nullable(),
+    clips: z.array(creatorClipReceiptSchema).max(24),
+    events: z.array(z.object({ at: z.iso.datetime(), message: text(1000) }).strict()).max(100),
+    output: z
+      .object({
+        bytes: version,
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        duration: z.number().positive(),
+        width: z.literal(1080),
+        height: z.literal(1920),
+        hasAudio: z.literal(false),
+      })
+      .strict()
+      .nullable(),
+    error: z
+      .object({ code: text(120), message: text(2000) })
+      .strict()
+      .nullable(),
+    createdAt: z.iso.datetime(),
+    updatedAt: z.iso.datetime(),
+  })
+  .strict();
+export const createCreatorSessionSchema = z
+  .object({
+    input: creatorInputSchema,
+    workflowId: z.uuid().optional(),
+    research: socialHandoffSchema.optional(),
+    externalReferences: z.array(creatorExternalReferenceSchema).max(12).optional(),
+  })
+  .strict();
+export const patchCreatorSessionSchema = z
+  .object({
+    expectedVersion: version,
+    input: creatorInputSchema.optional(),
+    answers: z.array(creatorAnswerSchema).max(20).optional(),
+    selectedReferenceIds: z.array(text(80)).max(12).optional(),
+    externalReferences: z.array(creatorExternalReferenceSchema).max(12).optional(),
+  })
+  .strict();
+export const creatorVersionRequestSchema = z.object({ expectedVersion: version }).strict();
+export const creatorPrepareSchema = z
+  .object({ expectedVersion: version, expectedWorkflowVersion: version })
+  .strict();
+export const creatorUpdatePlanSchema = creatorPrepareSchema.extend({
+  clips: z.array(creatorClipSchema).min(1).max(12),
+  caption: z.string().max(3000),
+});
+export const creatorApproveSchema = creatorPrepareSchema.extend({
+  planId: z.uuid(),
+  reviewed: z.literal(true),
+});
+export const creatorProduceSchema = z
+  .object({ expectedVersion: version, approvalId: z.uuid(), requestId: z.uuid() })
+  .strict();
+export const creatorSessionResponseSchema = z
+  .object({ session: creatorSessionSchema, workflow: workflowSchema })
+  .strict();
+export const creatorJobResponseSchema = z
+  .object({ job: creatorJobSchema, session: creatorSessionSchema })
+  .strict();
+export const creatorCapabilitiesSchema = z
+  .object({
+    configured: z.boolean(),
+    researchConfigured: z.boolean(),
+    visionConfigured: z.boolean(),
+    provider: z.literal('runway'),
+    model: z.literal('gen4.5'),
+    hasAudio: z.literal(false),
+    maxAttemptsPerClip: z.literal(2),
+    maxGeneratedSeconds: z.literal(120),
+    reason: z.string().max(1000),
+  })
+  .strict();
+
+export type CreatorInput = z.infer<typeof creatorInputSchema>;
+export type CreatorAnswer = z.infer<typeof creatorAnswerSchema>;
+export type CreatorQuestion = z.infer<typeof creatorQuestionSchema>;
+export type CreatorSource = z.infer<typeof creatorSourceSchema>;
+export type CreatorReference = z.infer<typeof creatorReferenceSchema>;
+export type CreatorExternalReference = z.infer<typeof creatorExternalReferenceSchema>;
+export type CreatorResearch = z.infer<typeof creatorResearchSchema>;
+export type CreatorClip = z.infer<typeof creatorClipSchema>;
+export type CreatorPlan = z.infer<typeof creatorPlanSchema>;
+export type CreatorApproval = z.infer<typeof creatorApprovalSchema>;
+export type CreatorSession = z.infer<typeof creatorSessionSchema>;
+export type CreatorAudit = z.infer<typeof creatorAuditSchema>;
+export type CreatorJob = z.infer<typeof creatorJobSchema>;
+export type CreatorSessionResponse = z.infer<typeof creatorSessionResponseSchema>;
+export type CreatorJobResponse = z.infer<typeof creatorJobResponseSchema>;
+export type CreatorCapabilities = z.infer<typeof creatorCapabilitiesSchema>;
+export type CreateCreatorSessionInput = z.input<typeof createCreatorSessionSchema>;
+export type PatchCreatorSessionInput = z.infer<typeof patchCreatorSessionSchema>;
+export type CreatorPrepareInput = z.infer<typeof creatorPrepareSchema>;
+export type CreatorUpdatePlanInput = z.infer<typeof creatorUpdatePlanSchema>;
+export type CreatorApproveInput = z.infer<typeof creatorApproveSchema>;
+export type CreatorProduceInput = z.infer<typeof creatorProduceSchema>;

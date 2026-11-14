@@ -667,6 +667,9 @@ $('#share-reel').addEventListener('click', async () => {
   }
 });
 
+$$('[data-create-entry]').forEach((button) => {
+  button.hidden = !embedded;
+});
 $$('[data-studio]').forEach((button) =>
   button.addEventListener('click', () => {
     if (requestWorkspace('yap:enter-studio')) return;
