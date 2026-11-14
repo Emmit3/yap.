@@ -6,10 +6,16 @@ import './landing.css';
 export interface LandingPageProps {
   onEnterStudio: () => void;
   onOpenSocial: () => void;
+  onOpenInspiration?: () => void;
   onUseReferences?: (ids: string[]) => void;
 }
 
-export function LandingPage({ onEnterStudio, onOpenSocial, onUseReferences }: LandingPageProps) {
+export function LandingPage({
+  onEnterStudio,
+  onOpenSocial,
+  onUseReferences,
+  onOpenInspiration,
+}: LandingPageProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
@@ -31,11 +37,12 @@ export function LandingPage({ onEnterStudio, onOpenSocial, onUseReferences }: La
 
       if (destination === 'studio') onEnterStudio();
       if (destination === 'social') onOpenSocial();
+      if (destination === 'inspiration') onOpenInspiration?.();
     };
 
     window.addEventListener('message', navigate);
     return () => window.removeEventListener('message', navigate);
-  }, [onEnterStudio, onOpenSocial, onUseReferences]);
+  }, [onEnterStudio, onOpenSocial, onUseReferences, onOpenInspiration]);
 
   return (
     <main className="landing-page" aria-label="Yap cinematic homepage">
