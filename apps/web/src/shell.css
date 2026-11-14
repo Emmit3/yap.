@@ -21,6 +21,14 @@
   background: #fafafa;
 }
 
+.sidebar {
+  overflow-y: auto;
+}
+
+.side-nav {
+  flex-shrink: 0;
+}
+
 input:focus,
 textarea:focus,
 select:focus {
@@ -70,5 +78,27 @@ summary:focus-visible {
   .research-context-notice {
     padding: 16px;
     gap: 12px;
+  }
+}
+
+@media (max-width: 767px) {
+  .sidebar .side-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    margin: 0;
+    gap: 8px;
+  }
+
+  .sidebar .nav-item {
+    min-width: 0;
+    padding: 8px;
+    gap: 6px;
+    text-align: left;
+    white-space: normal;
+  }
+
+  .sidebar .nav-item svg {
+    flex-shrink: 0;
   }
 }

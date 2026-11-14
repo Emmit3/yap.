@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { destinationForShowcaseMessage } from './messages';
 import './landing.css';
 
 export interface LandingPageProps {
@@ -11,20 +12,14 @@ export function LandingPage({ onEnterStudio, onOpenSocial }: LandingPageProps) {
 
   useEffect(() => {
     const navigate = (event: MessageEvent<unknown>) => {
-      const source = frameRef.current?.contentWindow;
-      if (
-        !source ||
-        event.origin !== window.location.origin ||
-        event.source !== source ||
-        typeof event.data !== 'object' ||
-        event.data === null ||
-        !('type' in event.data)
-      ) {
-        return;
-      }
+      const destination = destinationForShowcaseMessage(
+        event,
+        window.location.origin,
+        frameRef.current?.contentWindow ?? null,
+      );
 
-      if (event.data.type === 'yap:enter-studio') onEnterStudio();
-      if (event.data.type === 'yap:open-social') onOpenSocial();
+      if (destination === 'studio') onEnterStudio();
+      if (destination === 'social') onOpenSocial();
     };
 
     window.addEventListener('message', navigate);
