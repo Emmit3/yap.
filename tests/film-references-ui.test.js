@@ -2,6 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   safeFilmUrl,
+  filmEmbedSource,
+  filmPreviewSource,
   normalizeFilmCatalog,
   filterFilms,
   filmFilterOptions,
@@ -124,4 +126,65 @@ test('filter options describe actual available sources and export ignores visibl
   assert.equal(exported.films[0].sourceUrl, 'https://creator.example/work/one');
   assert.equal(exported.films[0].watchUrl, 'https://vimeo.com/one');
   assert.equal(exported.exportedAt, '2026-11-14T10:00:00Z');
+});
+
+test('inline players use fixed provider hosts, muted playback and preserve Vimeo privacy hashes', () => {
+  const youtube = filmEmbedSource('https://www.youtube.com/watch?v=dQw4w9WgXcQ&autoplay=0');
+  const yt = new URL(youtube.src);
+  assert.equal(yt.origin, 'https://www.youtube-nocookie.com');
+  assert.equal(yt.searchParams.get('playlist'), 'dQw4w9WgXcQ');
+  assert.equal(yt.searchParams.get('mute'), '1');
+  assert.equal(yt.searchParams.get('controls'), '1');
+  const vimeo = new URL(filmEmbedSource('https://vimeo.com/123456789/abcdef1234').src);
+  assert.equal(vimeo.searchParams.get('h'), 'abcdef1234');
+  assert.equal(vimeo.searchParams.get('muted'), '1');
+  assert.equal(vimeo.searchParams.get('autopause'), '0');
+  assert.equal(vimeo.searchParams.get('loop'), '1');
+  const paused = new URL(
+    filmEmbedSource('https://player.vimeo.com/video/123456789?h=abcdef1234', { autoplay: false })
+      .src,
+  );
+  assert.equal(paused.searchParams.get('autoplay'), '0');
+  assert.equal(paused.searchParams.get('loop'), '0');
+  for (const url of [
+    'https://vimeo.com.evil.example/123456789',
+    'https://user:secret@vimeo.com/123456789',
+    'https://player.vimeo.com:8443/video/123456789',
+    'https://player.vimeo.com/video/123456789?h=invalid',
+    'https://creator.example/work/film',
+    'javascript:alert(1)',
+  ])
+    assert.equal(filmEmbedSource(url), null, url);
+});
+
+test('verified evidence supplies a player without guessing between different films', () => {
+  const record = film('case', {
+    watchUrl: 'https://creator.example/case',
+    videoEvidence: 'The case-page player is https://player.vimeo.com/video/123456789?h=abcdef1234.',
+  });
+  const player = filmPreviewSource(record);
+  assert.equal(new URL(player.src).searchParams.get('h'), 'abcdef1234');
+  assert.equal(
+    filmPreviewSource({
+      ...record,
+      videoEvidence: record.videoEvidence + ' Alternate https://vimeo.com/987654321',
+    }),
+    null,
+  );
+  assert.ok(
+    filmPreviewSource({ ...record, previewUrl: 'https://vimeo.com/987654321' }).src.includes(
+      '987654321',
+    ),
+  );
+});
+
+test('Mux streams use the documented iframe player and explicit creator files use native video', () => {
+  const id = 'j1ppGEgL3KUlOWbx02UzLWDt7zL4M2QiI4KAJ4o700Y100';
+  const mux = filmEmbedSource(`https://stream.mux.com/${id}.m3u8?redundant_streams=true`);
+  assert.equal(mux.kind, 'iframe');
+  assert.equal(new URL(mux.src).origin, 'https://player.mux.com');
+  assert.equal(new URL(mux.src).searchParams.get('muted'), 'true');
+  assert.equal(filmEmbedSource(`https://stream.mux.com/${id}/1080p.mp4`).kind, 'video');
+  assert.equal(filmEmbedSource('https://panoply.co.uk/api/media/file/film.webm').kind, 'video');
+  assert.equal(filmEmbedSource('https://evil.example/film.mp4'), null);
 });
