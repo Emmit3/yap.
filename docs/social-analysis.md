@@ -4,7 +4,7 @@ Yap's social module turns a theme into a bounded public-evidence investigation, 
 
 ## Run and configure
 
-Use the root `npm install` and `npm run dev` commands. The feature's frontend entry is the default export in `apps/web/src/social/SocialWorkspace.tsx`; the frontend owner mounts it in the connected promo UI. The baseline application shell is deliberately unchanged by the final social feature diff.
+Use the root `npm install` and `npm run dev` commands. The feature's frontend entry is the default export in `apps/web/src/social/SocialWorkspace.tsx`, mounted by the connected application shell at `#/social` (Social research).
 
 Example mode needs no credentials and makes no network requests. It explicitly labels its accounts, posts, metrics, and relationships as illustrative. Live requests never fall back to the example.
 
@@ -62,7 +62,7 @@ import type { SocialHandoff, SocialInvestigation } from '@yap/contracts/social';
 />;
 ```
 
-`onUseResearch` runs after the creator selects notes/insights and reviews the generated handoff. `onDirty` reports unsaved note changes so the owning shell can guard navigation. The module handles investigation switching, note edits, source inspection, filters, mobile list mode, and graph navigation internally.
+`onUseResearch` runs after the creator selects notes/insights and reviews the generated handoff. `onDirty` reports unsaved note changes and new-research form changes so the owning shell can guard navigation. The module handles investigation switching, note edits, source inspection, filters, mobile list mode, and graph navigation internally.
 
 The handoff includes `investigationId`, `topic`, `audience`, `creativeDirection`, selected note/insight IDs, `evidence`, `sourceUrls`, and `cautions`. Evidence retains excerpts, collection/publication dates when known, provider, and content kind. A handoff fits 48 KB of serialized UTF-8 JSON. Shortening or omitted citations produce explicit cautions.
 
@@ -118,6 +118,6 @@ The legacy `/api/projects` API also accepts optional `research: SocialHandoff` o
 
 Automated coverage includes provider request/response wiring with injected responses, malformed sources, timeouts and byte limits, public imports, combined analysis, unknown metadata, note CRUD/persistence, citation integrity, bounded Unicode handoffs, and actual HTTP research-to-project/workflow generation with restart and approval invalidation.
 
-Live provider access requires configured credentials and has not been claimed as verified. No computer-use or browser automation was performed. The frontend owner's connected shell will mount and visually validate the module after social is merged into main.
+Live provider access requires configured credentials and has not been claimed as verified. The module is mounted in the connected application shell; source and HTTP integration checks do not establish a live provider account or a visual browser review.
 
 Future work: official Instagram professional-account authorization, durable collection jobs, recurring monitoring, cached embeddings, generative cited answers, supported media/transcript analysis, large-network rendering, and experiments tied to actual published results. See [the full development plan](social-analysis-plan.md).

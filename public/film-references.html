@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <title>Product film references — yap.</title>
+    <meta
+      name="description"
+      content="A curated library of finished product films. Explore the craft, find the original creators, and build a shortlist for your next idea."
+    />
+    <meta property="og:title" content="The reference room — yap." />
+    <meta
+      property="og:description"
+      content="Good products. Great films. A curated library of original product campaigns."
+    />
+    <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./film-references.css" />
+    <script type="module" src="./film-references.js"></script>
+  </head>
+  <body class="film-library">
+    <a class="fr-skip" href="#film-main">Skip to film library</a>
+    <header class="fr-header">
+      <a class="wordmark" href="./index.html" data-yap-home aria-label="Yap home"
+        >yap<span>.</span></a
+      >
+      <nav class="fr-nav" aria-label="Reference navigation">
+        <a href="./index.html" data-yap-home>Back to Yap <span aria-hidden="true">↗</span></a>
+        <a href="#shortlist">Shortlist <span id="fr-nav-count" class="fr-count">0</span></a>
+      </nav>
+    </header>
+    <main id="film-main" class="fr-main" tabindex="-1">
+      <section class="fr-intro" aria-labelledby="fr-title">
+        <p class="fr-eyebrow">The reference room</p>
+        <h1 id="fr-title">Good products.<br />Great films.</h1>
+        <p class="fr-deck">
+          Finished product films from the people who made them. Find a direction, follow the source,
+          save the ones that stay with you.
+        </p>
+        <div class="fr-intro-bottom">
+          <p class="fr-total"><strong id="fr-total">—</strong> original film references</p>
+          <p class="fr-credit">
+            Original work by creators and brands. Film and player sources checked. Watch on their
+            sites; editorial notes suggest what to study.
+          </p>
+        </div>
+      </section>
+      <section class="fr-browser" aria-labelledby="fr-results-title">
+        <form id="fr-filters" class="fr-filters" role="search" aria-label="Filter film references">
+          <fieldset id="fr-filter-fields" disabled>
+            <legend class="fr-visually-hidden">Find a film</legend>
+            <div class="fr-filter-grid">
+              <div class="fr-field fr-search-field">
+                <label for="fr-search">Search the collection</label>
+                <input
+                  id="fr-search"
+                  type="search"
+                  name="query"
+                  placeholder="Brand, film, product or technique"
+                  maxlength="200"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="fr-field">
+                <label for="fr-category">Category</label>
+                <select id="fr-category" name="category">
+                  <option value="">All categories</option>
+                </select>
+              </div>
+              <div class="fr-field">
+                <label for="fr-creator">Creator</label>
+                <select id="fr-creator" name="creator">
+                  <option value="">All creators</option>
+                </select>
+              </div>
+            </div>
+            <div class="fr-filter-bottom">
+              <label class="fr-check"
+                ><input id="fr-featured" type="checkbox" name="featured" /> Start with the
+                highlights</label
+              >
+              <button class="fr-text-button" id="fr-reset" type="reset">Clear filters</button>
+            </div>
+          </fieldset>
+        </form>
+        <div class="fr-result-heading">
+          <h2 id="fr-results-title" tabindex="-1">The collection</h2>
+          <p id="fr-result-count" role="status" aria-live="polite" aria-atomic="true">
+            Loading film references…
+          </p>
+        </div>
+        <div id="fr-loading" class="fr-loading" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div id="fr-state" class="fr-state" hidden>
+          <h3 id="fr-state-title"></h3>
+          <p id="fr-state-copy"></p>
+          <button class="fr-button" id="fr-retry" type="button" hidden>
+            Try loading again <span aria-hidden="true">↻</span>
+          </button>
+          <button class="fr-button" id="fr-empty-reset" type="button" hidden>Clear filters</button>
+        </div>
+        <ol id="fr-films" class="fr-films" aria-label="Product films" aria-busy="true"></ol>
+        <p class="fr-data-note" id="fr-data-note" hidden></p>
+      </section>
+      <aside class="fr-shortlist" id="shortlist" aria-labelledby="fr-shortlist-title">
+        <div class="fr-shortlist-heading">
+          <div>
+            <p class="fr-eyebrow">Keep the good ones</p>
+            <h2 id="fr-shortlist-title" tabindex="-1">Your shortlist.</h2>
+          </div>
+          <p id="fr-shortlist-summary">Save films as you browse, then take the sources with you.</p>
+        </div>
+        <ol id="fr-shortlist-items" class="fr-shortlist-items" aria-label="Shortlisted films"></ol>
+        <div class="fr-shortlist-actions">
+          <button class="fr-button" id="fr-copy" type="button" disabled>Copy shortlist</button>
+          <button class="fr-button fr-button-secondary" id="fr-download" type="button" disabled>
+            Download JSON <span aria-hidden="true">↓</span>
+          </button>
+          <button class="fr-text-button" id="fr-clear-shortlist" type="button" disabled>
+            Clear shortlist
+          </button>
+        </div>
+        <p
+          class="fr-action-status"
+          id="fr-action-status"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        ></p>
+      </aside>
+    </main>
+    <footer class="fr-footer">
+      <a href="./index.html" data-yap-home>yap. — good ideas, made REEL</a>
+      <p id="fr-checked-date">A collection for studying the craft.</p>
+    </footer>
+    <noscript
+      ><p class="fr-noscript">
+        JavaScript is needed to search this library.
+        <a href="./film-references.json">Download the original film list</a>.
+      </p></noscript
+    >
+  </body>
+</html>

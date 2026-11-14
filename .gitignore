@@ -12,3 +12,6 @@ artifacts/
 test-results/
 .openai-local/
 /apps/web/public/showcase/
+
+# Workspace-only reference material and development notes
+/local-context/
