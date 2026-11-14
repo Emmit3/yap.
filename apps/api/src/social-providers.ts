@@ -9,6 +9,7 @@ import {
   type SocialResearchInput,
 } from '@yap/contracts/social';
 import { ApiError } from './errors.js';
+import { removeSocialTracking } from './social-urls.js';
 
 export interface SocialProviderConfig {
   firecrawlApiKey?: string;
@@ -115,8 +116,7 @@ function canonicalUrl(value: unknown): string | null {
       url.hostname.endsWith('.internal')
     )
       return null;
-    url.search = '';
-    url.hash = '';
+    removeSocialTracking(url);
     url.pathname = url.pathname.replace(/\/+$/, '') || '/';
     return url.href.length <= 2048 ? url.href : null;
   } catch {
@@ -404,18 +404,29 @@ export function createSocialProviders(
       users.set(id, actor);
       result.actors.push(actor);
     }
-    const sourceRows = list(payload.data).slice(0, input.limit).map(record);
+    const sourceRows = list(payload.data)
+      .map(record)
+      .filter((row) => /^\d+$/.test(string(row.id, 100)) && string(row.text))
+      .slice(0, input.limit);
     const sourceIds = new Set(sourceRows.map((row) => string(row.id, 100)));
-    const expandedPosts = new Map(list(record(payload.includes).tweets).map((item) => {
-      const row = record(item);
-      return [string(row.id, 100), row];
-    }));
+    const expandedPosts = new Map(
+      list(record(payload.includes).tweets).map((item) => {
+        const row = record(item);
+        return [string(row.id, 100), row];
+      }),
+    );
     const observedActor = (value: unknown): SocialActor | null => {
       const id = string(value, 100);
       if (!/^\d+$/.test(id)) return null;
       const known = users.get(id);
       if (known) return known;
-      const actor: SocialActor = { id: `x:actor-id:${id}`, platform: 'x', name: `Public X account ${id}`, handle: '', url: null };
+      const actor: SocialActor = {
+        id: `x:actor-id:${id}`,
+        platform: 'x',
+        name: `Public X account ${id}`,
+        handle: '',
+        url: null,
+      };
       users.set(id, actor);
       result.actors.push(actor);
       return actor;
@@ -424,13 +435,13 @@ export function createSocialProviders(
       const id = string(row.id, 100);
       const text = string(row.text);
       if (!/^\d+$/.test(id) || !text) continue;
-      const actor = users.get(string(row.author_id, 100));
+      const actor = observedActor(row.author_id);
       const postId = `x:post:${id}`;
       const metrics = record(row.public_metrics);
       result.posts.push({
         id: postId,
         platform: 'x',
-        url: actor
+        url: actor?.handle
           ? `https://x.com/${actor.handle.slice(1)}/status/${id}`
           : `https://x.com/i/status/${id}`,
         text,
@@ -454,9 +465,15 @@ export function createSocialProviders(
           continue;
         const targetInSample = sourceIds.has(target);
         const expanded = expandedPosts.get(target);
-        const targetActor = !targetInSample ? observedActor(expanded?.author_id ?? (type === 'replied_to' ? row.in_reply_to_user_id : undefined)) : null;
+        const targetActor = !targetInSample
+          ? observedActor(
+              expanded?.author_id ?? (type === 'replied_to' ? row.in_reply_to_user_id : undefined),
+            )
+          : null;
         if (!targetInSample && targetActor)
-          result.warnings.push('Some referenced X posts lie outside the collected sample. Returned author IDs preserve their observed account links; unavailable post text and metrics were not invented.');
+          result.warnings.push(
+            'Some referenced X posts lie outside the collected sample. Returned author IDs preserve their observed account links; unavailable post text and metrics were not invented.',
+          );
         result.relationships.push({
           id: `${postId}:${String(type)}:${target}`,
           sourcePostId: postId,
@@ -469,8 +486,17 @@ export function createSocialProviders(
       if (!list(row.referenced_tweets).some((item) => record(item).type === 'replied_to')) {
         const replyActor = observedActor(row.in_reply_to_user_id);
         if (replyActor) {
-          result.relationships.push({ id: `${postId}:reply-actor:${replyActor.id}`, sourcePostId: postId, targetPostId: null, targetActorId: replyActor.id, kind: 'reply', observedAt: timestamp(row.created_at) });
-          result.warnings.push('Some X replies identify a public target account without returning the target post. Those links are shown as account references only.');
+          result.relationships.push({
+            id: `${postId}:reply-actor:${replyActor.id}`,
+            sourcePostId: postId,
+            targetPostId: null,
+            targetActorId: replyActor.id,
+            kind: 'reply',
+            observedAt: timestamp(row.created_at),
+          });
+          result.warnings.push(
+            'Some X replies identify a public target account without returning the target post. Those links are shown as account references only.',
+          );
         }
       }
       for (const entry of list(record(row.entities).mentions)) {

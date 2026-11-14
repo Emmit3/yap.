@@ -178,16 +178,20 @@ export function refineWorkflow(workflow: Workflow, input: RefineWorkflowInput): 
       })),
     );
   }
-  const next = invalidateWorkflowContent({ ...workflow, brief: parsed.data,
+  const next = invalidateWorkflowContent({
+    ...workflow,
+    brief: parsed.data,
     ...(input.research ? { research: input.research } : {}),
   });
   const fields = [
     ...new Set([...Object.keys(input.answers ?? {}), ...Object.keys(input.brief ?? {})]),
   ];
   markExplicitAnswers(next, fields);
-  const text = input.message ?? (input.research
-    ? `Updated creative research direction for ${input.research.topic}. Product facts are unchanged.`
-    : `Updated the following brief fields: ${fields.join(', ')}.`);
+  const text =
+    input.message ??
+    (input.research
+      ? `Updated creative research direction for ${input.research.topic}. Product facts are unchanged.`
+      : `Updated the following brief fields: ${fields.join(', ')}.`);
   next.messages.push(
     message(text, 'user', 'refinement'),
     message(refinementReply(next), 'assistant', 'refinement'),
@@ -547,15 +551,19 @@ export function editWorkflowScript(
 ): Workflow {
   if (!workflow.script)
     throw new ApiError(409, 'WORKFLOW_SCRIPT_REQUIRED', 'Generate a script before editing it.');
-  return setWorkflowScript(workflow, {
-    id: randomUUID(),
-    sourceRevision: workflow.contentRevision,
-    hook: content.hook,
-    segments: content.segments,
-    caption: content.caption,
-    provider: workflow.script.provider,
-    createdAt: new Date().toISOString(),
-  });
+  return setWorkflowScript(
+    workflow,
+    {
+      id: randomUUID(),
+      sourceRevision: workflow.contentRevision,
+      hook: content.hook,
+      segments: content.segments,
+      caption: content.caption,
+      provider: workflow.script.provider,
+      createdAt: new Date().toISOString(),
+    },
+    { requireApproval: false },
+  );
 }
 
 export function editWorkflowScenes(
@@ -564,13 +572,17 @@ export function editWorkflowScenes(
 ): Workflow {
   if (!workflow.scenes || !workflow.script)
     throw new ApiError(409, 'WORKFLOW_SCENES_REQUIRED', 'Generate scenes before editing them.');
-  return setWorkflowScenes(workflow, {
-    id: randomUUID(),
-    sourceScriptId: workflow.script.id,
-    scenes: content.scenes,
-    provider: workflow.scenes.provider,
-    createdAt: new Date().toISOString(),
-  });
+  return setWorkflowScenes(
+    workflow,
+    {
+      id: randomUUID(),
+      sourceScriptId: workflow.script.id,
+      scenes: content.scenes,
+      provider: workflow.scenes.provider,
+      createdAt: new Date().toISOString(),
+    },
+    { requireApproval: false },
+  );
 }
 
 function excerpt(text: string, wordLimit: number, charLimit = 1000): string {
@@ -603,7 +615,8 @@ export function buildGuidedScript(
     (_, index) => baseSeconds + (index < duration % count ? 1 : 0),
   );
   const hook = excerpt(
-    researchHook(brief.productName!, workflow.research) ?? `${brief.productName}: ${brief.productDescription}`,
+    researchHook(brief.productName!, workflow.research) ??
+      `${brief.productName}: ${brief.productDescription}`,
     Math.max(4, seconds[0]! * 2),
     1000,
   );

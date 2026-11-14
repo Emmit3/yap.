@@ -77,10 +77,36 @@ function createInvestigation(
 function publicImport(input: SocialResearchInput, dataset: SocialDataset): SocialDataset {
   const posts = new Set<string>();
   const actors = new Set<string>();
+  const actorPlatforms = new Map(dataset.actors.map((actor) => [actor.id, actor.platform]));
   for (const actor of dataset.actors) {
     if (actors.has(actor.id))
       throw new ApiError(400, 'SOCIAL_IMPORT_DUPLICATE', 'Each imported actor needs a unique ID.');
     actors.add(actor.id);
+    if (actor.url) {
+      const url = new URL(actor.url);
+      const host = url.hostname.toLowerCase().replace(/^www\./, '');
+      const isX =
+        ['x.com', 'twitter.com'].includes(host) && /^\/[A-Za-z0-9_]{1,15}\/?$/.test(url.pathname);
+      const isInstagram =
+        host === 'instagram.com' && /^\/[A-Za-z0-9_.]{1,30}\/?$/.test(url.pathname);
+      const publicHost =
+        host.includes('.') &&
+        !isIP(host) &&
+        !host.endsWith('.local') &&
+        !host.endsWith('.internal') &&
+        !host.endsWith('.localhost');
+      if (
+        !publicHost ||
+        (actor.platform === 'x' && !isX) ||
+        (actor.platform === 'instagram' && !isInstagram) ||
+        (actor.platform === 'web' && ['x.com', 'twitter.com', 'instagram.com'].includes(host))
+      )
+        throw new ApiError(
+          400,
+          'SOCIAL_IMPORT_ACTOR_URL',
+          'Imported actor URLs must be public profiles matching the actor platform.',
+        );
+    }
   }
   for (const post of dataset.posts) {
     const url = new URL(post.url);
@@ -119,6 +145,12 @@ function publicImport(input: SocialResearchInput, dataset: SocialDataset): Socia
         400,
         'SOCIAL_IMPORT_REFERENCE',
         'Every post author must reference an imported actor.',
+      );
+    if (post.actorId && actorPlatforms.get(post.actorId) !== post.platform)
+      throw new ApiError(
+        400,
+        'SOCIAL_IMPORT_ACTOR_PLATFORM',
+        'Imported post authors must belong to the same platform as their posts.',
       );
     posts.add(post.id);
   }
@@ -163,9 +195,20 @@ export async function createSocialRouter(options: SocialRouterOptions): Promise<
   router.get('/providers', (_request, response) =>
     response.json({ providers: providers.statuses() }),
   );
-  router.get('/investigations', async (_request, response) =>
-    response.json({ investigations: await repository.list() }),
-  );
+  router.get('/investigations', async (request, response) => {
+    if (
+      request.query.summary !== undefined &&
+      request.query.summary !== 'true' &&
+      request.query.summary !== 'false'
+    )
+      throw new ApiError(400, 'SOCIAL_VALIDATION', 'Choose true or false for the summary option.');
+    response.json({
+      investigations:
+        request.query.summary === 'true'
+          ? await repository.listSummaries()
+          : await repository.list(),
+    });
+  });
   router.post('/investigations', async (request, response) => {
     const input = validate(socialResearchInputSchema, request.body);
     if (collecting >= 2)

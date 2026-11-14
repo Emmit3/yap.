@@ -24,8 +24,9 @@ export function generateGuidedDraft(brief: ProjectBrief): VideoDraft {
   const topic = words(brief.title, 10).replace(/[.!?]+$/, '');
   const idea = brief.idea.replace(/\s+/g, ' ').trim();
   const count = brief.duration === 15 ? 3 : brief.duration === 30 ? 4 : 6;
-  const hook = researchHook(topic, brief.research) ?? (
-    brief.tone === 'bold'
+  const hook =
+    researchHook(topic, brief.research) ??
+    (brief.tone === 'bold'
       ? `${topic}. Start here.`
       : brief.tone === 'educational'
         ? `A quick guide to ${topic.charAt(0).toLowerCase()}${topic.slice(1)}.`

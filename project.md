@@ -1,6 +1,6 @@
 # Yap working product brief
 
-This brief was created during the initial implementation on November 13, 2026. It is a working proposal inferred from the README tagline, not the missing original specification.
+This brief was created during implementation on November 13, 2026, then revised after the user clarified the small business promo use case. It does not claim to reproduce the missing original specification.
 
 ## Confirmed direction
 
@@ -8,13 +8,13 @@ This brief was created during the initial implementation on November 13, 2026. I
 - Separate frontend and backend implementation so developers can work independently.
 - Keep the shared interface explicit and provide a usable local development workflow.
 
-## Working product assumption
+## Confirmed product direction
 
-Yap helps an independent creator turn an idea into a short video recording plan. The first usable flow is **idea → brief → editable starter script and shot plan → export**.
+Yap should be easy for a business such as a matcha shop: supply photos of the shop and drinks, describe what to highlight, refine the idea, and receive a promo it can post. The main path is **photos and natural language → reviewable promo → explicit approval → MP4 and caption**.
 
-The creator sets an audience, platform, duration, tone, and goal. They can save projects, return to them, edit the script and shots, mark a plan ready, and export Markdown or JSON.
+The backend prepares the brief, script, and scenes beneath this simple flow. Defaults keep setup short; refinement questions help when useful. A query endpoint explains the saved idea, open questions, script, and scenes. Detailed stage approval endpoints remain available, while one final approval supports the main product flow.
 
-The first engine uses guided templates and identifies that behavior in the UI and API. No AI provider, MP4 rendering, uploaded media processing, social publishing, billing, or account system is implied.
+The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Output is silent; the business downloads a video and caption for posting. Social account posting, background music, billing, and accounts are not implemented.
 
 ## Acceptance criteria for this implementation
 
@@ -28,8 +28,20 @@ The first engine uses guided templates and identifies that behavior in the UI an
 - The interface works on a phone and with keyboard navigation.
 - Automated checks exercise API behavior, persistence, and shared contract regressions.
 
+Backend promo acceptance criteria:
+
+- A shop can begin with incomplete natural language and uploaded PNG, JPEG, or WebP photos.
+- Explicit answers take precedence over model suggestions.
+- Preparation produces a complete proposed script and scenes without pretending they are approved.
+- Verification reports distinguish structural checks from factual certainty and creator approval.
+- Changes invalidate downstream artifacts and approvals; stale clients receive a conflict rather than overwriting newer work.
+- Approved scenes render into an actual 1080×1920 H264 MP4 with exact duration and supplied photos.
+- Query, history, render status, range-capable video preview/download, and caption handoff are available over HTTP.
+- Photo files and render intermediates remain scoped to their workflow; failures and restarts preserve truthful job state.
+- Frontend source remains owned by the other session; backend progress is committed and pushed in batches.
+
 ## Decisions still needed before expanding
 
-Confirm the creator audience and whether the main output should be a script, rendered video, or clips from existing video. Choose model and media providers only after that decision. Developer collaboration in this repository is separate from multiple users editing the same project in the product.
+Choose user identity, deployment storage, music or voiceover, brand controls, and social publishing integrations before expanding beyond the local service. Developer collaboration in this repository is separate from multiple businesses having isolated accounts.
 
 See [research](docs/product-research.md) for source evidence and [architecture](docs/architecture.md) for implementation boundaries.

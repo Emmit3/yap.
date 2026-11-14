@@ -151,6 +151,15 @@ export const socialGraphEdgeSchema = z
   .strict();
 export const socialAnalysisSchema = z
   .object({
+    methodology: z
+      .object({
+        version: text.max(80),
+        content: text.max(200),
+        connectivity: text.max(200),
+        retrieval: text.max(200),
+      })
+      .strict()
+      .optional(),
     summary: text.max(6000),
     posts: z.array(socialPostSchema).max(300),
     actors: z.array(socialActorSchema).max(500),
@@ -232,9 +241,24 @@ export const socialInvestigationSchema = socialResearchInputSchema
     notes: z.array(socialNoteSchema).max(100),
   })
   .strict();
+export const socialInvestigationSummarySchema = socialInvestigationSchema.omit({
+  analysis: true,
+  notes: true,
+});
+export const socialInvestigationSummariesResponseSchema = z
+  .object({ investigations: z.array(socialInvestigationSummarySchema).max(1000) })
+  .strict();
 export const socialQueryInputSchema = z.object({ question: text.max(2000) }).strict();
 export const socialEvidenceSchema = z
-  .object({ postId: id, url: publicUrl, excerpt: text.max(1200) })
+  .object({
+    postId: id,
+    url: publicUrl,
+    excerpt: text.max(1200),
+    collectedAt: timestamp.optional(),
+    publishedAt: timestamp.nullable().optional(),
+    provider: socialPostSchema.shape.provider.optional(),
+    contentKind: socialPostSchema.shape.contentKind.optional(),
+  })
   .strict();
 export const socialQueryResponseSchema = z
   .object({
@@ -300,7 +324,9 @@ export type SocialNote = z.infer<typeof socialNoteSchema>;
 export type SocialNoteInput = z.infer<typeof socialNoteInputSchema>;
 export type SocialNoteUpdate = z.infer<typeof socialNoteUpdateSchema>;
 export type SocialInvestigation = z.infer<typeof socialInvestigationSchema>;
+export type SocialInvestigationSummary = z.infer<typeof socialInvestigationSummarySchema>;
 export type SocialQueryResponse = z.infer<typeof socialQueryResponseSchema>;
+export type SocialEvidence = z.infer<typeof socialEvidenceSchema>;
 export type SocialHandoffInput = z.infer<typeof socialHandoffInputSchema>;
 export type SocialHandoff = z.infer<typeof socialHandoffSchema>;
 export type SocialProviderStatus = z.infer<typeof socialProviderStatusSchema>;

@@ -1,5 +1,7 @@
 # Social analysis and evidence-backed creation
 
+Implementation status: the additive social contracts, providers, API, public import, combined analysis, graph workspace, notes, retrieval, and project/workflow research handoff are implemented. Main backend snapshot `1dd6fce` is integrated into this branch. Final App/navigation and photo-promo UI mounting belong to the frontend agent after the social feature merges into main. See [current implementation and integration instructions](social-analysis.md). Live provider credentials and browser verification have not been exercised. Research objectives as a separate field, queued collection, and official Instagram account authorization remain future work.
+
 ## Product outcome
 
 Yap should help a creator decide what to make by showing what people in their field are saying, which public posts are receiving attention, how actors and topics connect, and which creative choices the evidence supports. The research becomes a usable input to the existing brief, script, scenes, and review workflow.
@@ -227,17 +229,17 @@ Implement a social router mounted under `/api/social`, separate from the existin
 
 Suggested operations:
 
-| Operation | Purpose |
-| --- | --- |
+| Operation                  | Purpose                                                      |
+| -------------------------- | ------------------------------------------------------------ |
 | List provider capabilities | Explain current source availability without exposing secrets |
-| List investigations | Reopen saved research |
-| Create investigation | Validate scope, collect or import evidence, analyze, persist |
-| Read investigation | Return the stored evidence and derived graph |
-| Delete investigation | Remove its local stored research |
-| Create/update/delete note | Persist reviewed creative decisions |
-| Query investigation | Retrieve evidence and answer from the current sample |
-| Build script handoff | Validate selected notes and return bounded creation context |
-| Apply handoff to project | Persist research direction and use it during generation |
+| List investigations        | Reopen saved research                                        |
+| Create investigation       | Validate scope, collect or import evidence, analyze, persist |
+| Read investigation         | Return the stored evidence and derived graph                 |
+| Delete investigation       | Remove its local stored research                             |
+| Create/update/delete note  | Persist reviewed creative decisions                          |
+| Query investigation        | Retrieve evidence and answer from the current sample         |
+| Build script handoff       | Validate selected notes and return bounded creation context  |
+| Apply handoff to project   | Persist research direction and use it during generation      |
 
 Keep provider network calls outside serialized storage locks. Save only validated results. Failed collection must not silently destroy a previous successful investigation.
 

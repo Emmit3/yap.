@@ -2,7 +2,11 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { z } from 'zod';
-import { socialInvestigationSchema, type SocialInvestigation } from '@yap/contracts/social';
+import {
+  socialInvestigationSchema,
+  type SocialInvestigation,
+  type SocialInvestigationSummary,
+} from '@yap/contracts/social';
 import { ApiError, StorageError } from './errors.js';
 
 const storeSchema = z.array(socialInvestigationSchema).max(1000);
@@ -37,6 +41,14 @@ export class SocialRepository {
     return structuredClone(this.investigations).sort((a, b) =>
       b.updatedAt.localeCompare(a.updatedAt),
     );
+  }
+
+  async listSummaries(): Promise<SocialInvestigationSummary[]> {
+    await this.pending;
+    const summaries = this.investigations.map(
+      ({ analysis: _analysis, notes: _notes, ...summary }) => summary,
+    );
+    return structuredClone(summaries).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   async get(id: string): Promise<SocialInvestigation> {

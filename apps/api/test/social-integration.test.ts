@@ -1,48 +1,79 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { mkdtemp, rm } from 'node:fs/promises';
+import type { Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { projectResponseSchema } from '@yap/contracts';
+import { workflowResponseSchema } from '@yap/contracts/workflow';
 import { socialHandoffSchema, socialInvestigationResponseSchema } from '@yap/contracts/social';
 import { createApp } from '../src/app.js';
 
-test('saved research decisions influence a persistent script through the integrated HTTP app', async (t) => {
+test('saved research decisions guide projects and promo workflows without becoming creator facts or approvals', async (t) => {
   const directory = await mkdtemp(join(tmpdir(), 'yap-social-integration-'));
-  const app = await createApp({ dataFile: join(directory, 'projects.json'), socialProviderConfig: {} });
-  const server = app.listen(0, '127.0.0.1');
-  await once(server, 'listening');
+  let app: Awaited<ReturnType<typeof createApp>> | undefined;
+  let server: Server | undefined;
+  let base = '';
+  async function start() {
+    app = await createApp({
+      dataFile: join(directory, 'projects.json'),
+      socialProviderConfig: {},
+      workflowProviderConfig: { provider: 'guided' },
+    });
+    server = app.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const address = server.address();
+    assert.ok(address && typeof address !== 'string');
+    base = `http://127.0.0.1:${address.port}/api`;
+  }
+  async function stop() {
+    await app?.locals.shutdown?.();
+    const active = server;
+    if (active?.listening)
+      await new Promise<void>((resolve, reject) =>
+        active.close((error) => (error ? reject(error) : resolve())),
+      );
+  }
   t.after(async () => {
-    await app.locals.shutdown?.();
-    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    await stop();
     await rm(directory, { recursive: true, force: true });
   });
-  const address = server.address();
-  assert.ok(address && typeof address !== 'string');
-  const base = `http://127.0.0.1:${address.port}/api`;
-  const send = (path: string, body: unknown, method = 'POST') => fetch(`${base}${path}`, {
-    method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  await start();
+  const send = (path: string, body: unknown, method = 'POST') =>
+    fetch(`${base}${path}`, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const created = await send('/social/investigations', {
+    topic: 'Coffee education',
+    mode: 'demo',
+    platforms: ['x'],
+    limit: 20,
   });
-  const created = await send('/social/investigations', { topic: 'Coffee education', mode: 'demo', platforms: ['x'], limit: 20 });
   assert.equal(created.status, 201);
   const { investigation } = socialInvestigationResponseSchema.parse(await created.json());
   const evidenceId = investigation.analysis.posts[0]!.id;
   const saved = await send(`/social/investigations/${investigation.id}/notes`, {
     text: 'Open with one clear question and answer it using our own verified information.',
-    kind: 'adopt', evidenceIds: [evidenceId],
+    kind: 'adopt',
+    evidenceIds: [evidenceId],
   });
   assert.equal(saved.status, 201);
   const withNote = socialInvestigationResponseSchema.parse(await saved.json()).investigation;
   const handoffResponse = await send(`/social/investigations/${investigation.id}/handoff`, {
-    noteIds: [withNote.notes[0]!.id], insightIds: [],
+    noteIds: [withNote.notes[0]!.id],
+    insightIds: [],
   });
   assert.equal(handoffResponse.status, 200);
   const handoff = socialHandoffSchema.parse(await handoffResponse.json());
   assert.equal(handoff.sourceUrls.length, 1);
   const projectResponse = await send('/projects', {
-    title: 'Our reusable filter', idea: 'Show our reusable coffee filter and explain how to rinse it after use.',
-    audience: 'People making coffee at home', research: handoff,
+    title: 'Our reusable filter',
+    idea: 'Show our reusable coffee filter and explain how to rinse it after use.',
+    audience: 'People making coffee at home',
+    research: handoff,
   });
   assert.equal(projectResponse.status, 201);
   const { project } = projectResponseSchema.parse(await projectResponse.json());
@@ -54,11 +85,134 @@ test('saved research decisions influence a persistent script through the integra
   const markdown = await (await fetch(`${base}/projects/${project.id}/export`)).text();
   assert.match(markdown, /Research direction/);
   assert.ok(markdown.includes(handoff.sourceUrls[0]!));
-  const changed = await send(`/projects/${project.id}`, {
-    research: { ...handoff, creativeDirection: 'Adopt: Show a demonstration first.' },
-  }, 'PATCH');
+  const changed = await send(
+    `/projects/${project.id}`,
+    {
+      research: { ...handoff, creativeDirection: 'Adopt: Show a demonstration first.' },
+    },
+    'PATCH',
+  );
   assert.equal(changed.status, 200);
-  assert.equal(projectResponseSchema.parse(await changed.json()).project.draft, null);
-  const reopened = await createApp({ dataFile: join(directory, 'projects.json'), socialProviderConfig: {} });
-  await reopened.locals.shutdown?.();
+  const changedProject = projectResponseSchema.parse(await changed.json()).project;
+  assert.equal(changedProject.draft, null);
+
+  const creatorInput =
+    'Make a short promo about our reusable coffee filter using our own product details.';
+  const creatorBrief = {
+    productName: 'Our reusable filter',
+    productDescription: 'A reusable coffee filter that rinses under running water.',
+    audience: 'People making coffee at home',
+    keyBenefits: ['Rinses under running water after each brew.'],
+    callToAction: 'See the filter in our shop.',
+    imageDirection: 'Show our actual filter and the rinse process.',
+    platform: 'instagram',
+    duration: 30,
+    tone: 'educational',
+  };
+  const workflowCreated = await send('/workflows', {
+    title: 'Reusable filter promo',
+    input: creatorInput,
+    brief: creatorBrief,
+    research: handoff,
+  });
+  assert.equal(workflowCreated.status, 201, await workflowCreated.clone().text());
+  const { workflow } = workflowResponseSchema.parse(await workflowCreated.json());
+  assert.deepEqual(workflow.research, handoff);
+  assert.deepEqual(workflow.brief, creatorBrief);
+  assert.equal(workflow.input, creatorInput);
+  assert.deepEqual(workflow.approvals, { brief: null, script: null, scenes: null });
+  assert.equal(workflow.script, null);
+  assert.equal(workflow.scenes, null);
+
+  const preparedResponse = await send(`/workflows/${workflow.id}/prepare`, {
+    expectedVersion: workflow.version,
+  });
+  assert.equal(preparedResponse.status, 200, await preparedResponse.clone().text());
+  const prepared = workflowResponseSchema.parse(await preparedResponse.json());
+  assert.deepEqual(prepared.workflow.research, handoff);
+  assert.deepEqual(prepared.workflow.brief, creatorBrief);
+  assert.equal(prepared.workflow.input, creatorInput);
+  assert.match(prepared.workflow.script!.hook, /^What should you know/);
+  assert.match(prepared.workflow.scenes!.scenes[0]!.visual, /viewer question/);
+  assert.equal(prepared.workflow.script!.caption.split('\n')[0], creatorBrief.productDescription);
+  assert.ok(
+    prepared.workflow.script!.segments.some(
+      (segment) => segment.text === creatorBrief.keyBenefits[0],
+    ),
+  );
+  assert.ok(!JSON.stringify(prepared.workflow.brief).includes(handoff.evidence[0]!.excerpt));
+  assert.ok(!JSON.stringify(prepared.workflow.script).includes(handoff.evidence[0]!.excerpt));
+  assert.deepEqual(prepared.workflow.approvals, { brief: null, script: null, scenes: null });
+  assert.ok(Object.values(prepared.verification).every((stage) => stage.state !== 'approved'));
+
+  await stop();
+  await start();
+  const persistedPrepared = workflowResponseSchema.parse(
+    await (await fetch(`${base}/workflows/${workflow.id}`)).json(),
+  );
+  assert.deepEqual(persistedPrepared.workflow, prepared.workflow);
+  assert.deepEqual(persistedPrepared.workflow.approvals, {
+    brief: null,
+    script: null,
+    scenes: null,
+  });
+  const approvedResponse = await send(`/workflows/${workflow.id}/approve-all`, {
+    expectedVersion: prepared.workflow.version,
+  });
+  assert.equal(approvedResponse.status, 200, await approvedResponse.clone().text());
+  const { workflow: approved } = workflowResponseSchema.parse(await approvedResponse.json());
+  assert.equal(approved.approvals.brief, approved.contentRevision);
+  assert.equal(approved.approvals.script, approved.script!.id);
+  assert.equal(approved.approvals.scenes, approved.scenes!.id);
+
+  const changedNote = await send(
+    `/social/investigations/${investigation.id}/notes/${withNote.notes[0]!.id}`,
+    {
+      text: 'Start with a visual demonstration using our own verified material.',
+    },
+    'PATCH',
+  );
+  assert.equal(changedNote.status, 200);
+  const updatedHandoffResponse = await send(`/social/investigations/${investigation.id}/handoff`, {
+    noteIds: [withNote.notes[0]!.id],
+    insightIds: [],
+  });
+  assert.equal(updatedHandoffResponse.status, 200);
+  const updatedHandoff = socialHandoffSchema.parse(await updatedHandoffResponse.json());
+  assert.notEqual(updatedHandoff.creativeDirection, handoff.creativeDirection);
+  const refinedResponse = await send(`/workflows/${workflow.id}/refine`, {
+    expectedVersion: approved.version,
+    research: updatedHandoff,
+  });
+  assert.equal(refinedResponse.status, 200, await refinedResponse.clone().text());
+  const { workflow: refined } = workflowResponseSchema.parse(await refinedResponse.json());
+  assert.deepEqual(refined.research, updatedHandoff);
+  assert.deepEqual(refined.brief, creatorBrief);
+  assert.equal(refined.input, creatorInput);
+  assert.equal(refined.version, approved.version + 1);
+  assert.equal(refined.contentRevision, approved.contentRevision + 1);
+  assert.equal(refined.script, null);
+  assert.equal(refined.scenes, null);
+  assert.deepEqual(refined.approvals, { brief: null, script: null, scenes: null });
+  const staleRefinement = await send(`/workflows/${workflow.id}/refine`, {
+    expectedVersion: approved.version,
+    research: handoff,
+  });
+  assert.equal(staleRefinement.status, 409);
+  assert.equal((await staleRefinement.json()).error.code, 'WORKFLOW_VERSION_CONFLICT');
+
+  await stop();
+  await start();
+  const persistedWorkflow = workflowResponseSchema.parse(
+    await (await fetch(`${base}/workflows/${workflow.id}`)).json(),
+  ).workflow;
+  assert.deepEqual(persistedWorkflow, refined);
+  const persistedProject = projectResponseSchema.parse(
+    await (await fetch(`${base}/projects/${project.id}`)).json(),
+  ).project;
+  assert.deepEqual(persistedProject, changedProject);
+  const persistedResearch = socialInvestigationResponseSchema.parse(
+    await (await fetch(`${base}/social/investigations/${investigation.id}`)).json(),
+  ).investigation;
+  assert.match(persistedResearch.notes[0]!.text, /^Start with a visual demonstration/);
 });

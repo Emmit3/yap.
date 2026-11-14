@@ -256,6 +256,15 @@ test('retrieval returns actual source citations plus one-hop observed public con
     ),
   );
   assert.match(answer.answer, /one-hop/);
+  assert.ok(
+    answer.evidence.every(
+      (item) =>
+        item.collectedAt === now &&
+        item.publishedAt === now &&
+        item.provider === 'x' &&
+        item.contentKind === 'post',
+    ),
+  );
   const unavailable = querySocialAnalysis(analysis, 'quasiparticle superconductivity xenolith');
   assert.deepEqual(unavailable.evidence, []);
   assert.equal(unavailable.confidence, 'low');
@@ -289,6 +298,15 @@ test('only selected notes and patterns enter handoff, with original evidence and
   });
   assert.deepEqual(output.selectedNoteIds, [selectedId]);
   assert.deepEqual(output.sourceUrls, ['https://x.com/coffee/status/a']);
+  assert.deepEqual(output.evidence[0], {
+    postId: 'a',
+    url: 'https://x.com/coffee/status/a',
+    excerpt: 'Why is coffee bitter? Compare grind sizes.',
+    collectedAt: now,
+    publishedAt: now,
+    provider: 'x',
+    contentKind: 'post',
+  });
   assert.match(output.creativeDirection, /original comparison/);
   assert.doesNotMatch(output.creativeDirection, /Secret unselected/);
   assert.match(output.creativeDirection, /verified product facts/);
@@ -304,6 +322,97 @@ test('only selected notes and patterns enter handoff, with original evidence and
     () => buildSocialHandoff(item, { noteIds: [randomUUID()], insightIds: [] }),
     /not part/,
   );
+});
+
+test('large Unicode research handoffs fit the serialized byte budget while retaining selections and observation metadata', () => {
+  const largeInput = socialResearchInputSchema.parse({ ...input, limit: 300 });
+  const dataset = data(
+    Array.from({ length: 100 }, (_, index) => post(`unicode-${index}`, '咖啡🧪'.repeat(1200))),
+  );
+  const item: SocialInvestigation = {
+    ...largeInput,
+    id: randomUUID(),
+    analysis: analyzeSocialDataset(largeInput, dataset),
+    notes: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+  item.analysis.coverage.warnings = Array.from(
+    { length: 100 },
+    (_, index) => `${index} ${'留意來源'.repeat(450)}`,
+  );
+  item.notes = Array.from({ length: 100 }, (_, index) => ({
+    id: randomUUID(),
+    text: `${index} ${'保留原創'.repeat(990)}`,
+    kind: 'test',
+    evidenceIds: dataset.posts.map((post) => post.id),
+    createdAt: now,
+    updatedAt: now,
+  }));
+  const output = buildSocialHandoff(item, {
+    noteIds: item.notes.map((note) => note.id),
+    insightIds: item.analysis.insights.map((insight) => insight.id),
+  });
+  assert.ok(Buffer.byteLength(JSON.stringify(output), 'utf8') <= 48 * 1024);
+  assert.ok(Buffer.byteLength(JSON.stringify({ research: output }), 'utf8') < 128 * 1024);
+  assert.deepEqual(
+    output.selectedNoteIds,
+    item.notes.map((note) => note.id),
+  );
+  assert.deepEqual(
+    output.selectedInsightIds,
+    item.analysis.insights.map((insight) => insight.id),
+  );
+  assert.ok(output.evidence.length > 0);
+  assert.ok(
+    output.evidence.every((evidence) =>
+      dataset.posts.some((post) => post.id === evidence.postId && post.url === evidence.url),
+    ),
+  );
+  assert.ok(
+    output.evidence.every(
+      (evidence) =>
+        evidence.collectedAt === now && evidence.publishedAt === now && evidence.provider === 'x',
+    ),
+  );
+  assert.match(output.cautions.join(' '), /shortened.*48 KB/);
+  assert.ok(!JSON.stringify(output).includes('\uFFFD'));
+});
+
+test('long evidence URLs are omitted explicitly when full citation records cannot fit', () => {
+  const largeInput = socialResearchInputSchema.parse({ ...input, limit: 100 });
+  const dataset = data(
+    Array.from({ length: 100 }, (_, index) =>
+      post(`long-${index}`, 'A source with an original coffee question.', {
+        platform: 'web',
+        actorId: null,
+        url: `https://example.org/${'long-public-path/'.repeat(100)}${index}`,
+      }),
+    ),
+  );
+  const item: SocialInvestigation = {
+    ...largeInput,
+    id: randomUUID(),
+    analysis: analyzeSocialDataset(largeInput, dataset),
+    notes: [
+      {
+        id: randomUUID(),
+        text: 'Test an original demonstration.',
+        kind: 'test',
+        evidenceIds: dataset.posts.map((post) => post.id),
+        createdAt: now,
+        updatedAt: now,
+      },
+    ],
+    createdAt: now,
+    updatedAt: now,
+  };
+  const output = buildSocialHandoff(item, { noteIds: [item.notes[0]!.id], insightIds: [] });
+  assert.ok(Buffer.byteLength(JSON.stringify(output), 'utf8') <= 48 * 1024);
+  assert.ok(output.evidence.length > 0 && output.evidence.length < 100);
+  assert.deepEqual(new Set(output.sourceUrls), new Set(output.evidence.map((item) => item.url)));
+  assert.match(output.cautions.join(' '), /references.*omitted/);
+  assert.deepEqual(output.selectedNoteIds, [item.notes[0]!.id]);
 });
 
 test('empty analysis is usable and maximum dataset produces a bounded graph with no dangling edges', () => {

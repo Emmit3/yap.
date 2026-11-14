@@ -211,11 +211,17 @@ export const refineWorkflowSchema = z
   .strict()
   .refine(
     (value) =>
-      value.message !== undefined || value.answers !== undefined || value.brief !== undefined || value.research !== undefined,
+      value.message !== undefined ||
+      value.answers !== undefined ||
+      value.brief !== undefined ||
+      value.research !== undefined,
     'Provide a message, answers, or brief changes.',
   );
 
 export const generateWorkflowSchema = z.object({ expectedVersion: version }).strict();
+export const prepareWorkflowSchema = generateWorkflowSchema.extend({
+  regenerate: z.boolean().default(false),
+});
 
 export const updateWorkflowScriptSchema = z
   .object({
@@ -305,6 +311,7 @@ export type WorkflowQueryResponse = z.infer<typeof workflowQueryResponseSchema>;
 export type CreateWorkflowInput = z.infer<typeof createWorkflowSchema>;
 export type RefineWorkflowInput = z.infer<typeof refineWorkflowSchema>;
 export type GenerateWorkflowInput = z.infer<typeof generateWorkflowSchema>;
+export type PrepareWorkflowInput = z.input<typeof prepareWorkflowSchema>;
 export type UpdateWorkflowScriptInput = z.infer<typeof updateWorkflowScriptSchema>;
 export type UpdateWorkflowScenesInput = z.infer<typeof updateWorkflowScenesSchema>;
 export type ApproveWorkflowStageInput = z.infer<typeof approveWorkflowStageSchema>;

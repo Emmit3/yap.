@@ -7,30 +7,20 @@ import {
   Lightbulb,
   Plus,
   Question,
-  Graph,
   X,
 } from '@phosphor-icons/react';
 import type { Project } from '@yap/contracts';
-import { socialHandoffSchema, type SocialHandoff } from '@yap/contracts/social';
 import { api, messageOf } from './api';
 import { PageHeading } from './components';
 import { NewProject } from './NewProject';
 import { ProjectLibrary } from './ProjectLibrary';
 import { ProjectEditor } from './ProjectEditor';
-import SocialWorkspace from './social/SocialWorkspace';
 
 function currentRoute() {
   return window.location.hash.replace(/^#/, '') || '/projects';
 }
 
 export function App() {
-  const [research, setResearch] = useState<SocialHandoff | undefined>(() => {
-    try {
-      const saved = sessionStorage.getItem('yap-research-direction');
-      const parsed = socialHandoffSchema.safeParse(saved ? JSON.parse(saved) : undefined);
-      return parsed.success ? parsed.data : undefined;
-    } catch { return undefined; }
-  });
   const [route, setRoute] = useState(currentRoute);
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
@@ -91,9 +81,7 @@ export function App() {
   }, [dirty]);
   useEffect(() => {
     document.title =
-      route === '/research'
-        ? 'Research — Yap'
-        : route === '/new'
+      route === '/new'
         ? 'New project — Yap'
         : route.startsWith('/projects/')
           ? 'Your studio — Yap'
@@ -190,14 +178,6 @@ export function App() {
             <Plus size={20} />
             New project
           </button>
-          <button
-            className={route === '/research' ? 'nav-item current' : 'nav-item'}
-            onClick={() => navigate('/research')}
-            aria-current={route === '/research' ? 'page' : undefined}
-          >
-            <Graph size={20} />
-            Research
-          </button>
         </nav>
         <div className="sidebar-bottom">
           <div className="sidebar-tip">
@@ -216,7 +196,7 @@ export function App() {
           <div className="breadcrumb">
             <span>Workspace</span>
             <span>/</span>
-            <strong>{route === '/research' ? 'Research' : route === '/new' ? 'New project' : projectId ? 'Studio' : 'Projects'}</strong>
+            <strong>{route === '/new' ? 'New project' : projectId ? 'Studio' : 'Projects'}</strong>
           </div>
           <div className="topbar-note">
             <span className="coral-dot" /> Made for your next take
@@ -234,13 +214,7 @@ export function App() {
               </button>
             </div>
           )}
-          {route === '/research' ? (
-            <SocialWorkspace onDirty={changeDirty} onUseResearch={(handoff) => {
-              setResearch(handoff);
-              try { sessionStorage.setItem('yap-research-direction', JSON.stringify(handoff)); } catch { /* State still holds this direction. */ }
-              navigate('/new');
-            }} />
-          ) : route === '/projects' ? (
+          {route === '/projects' ? (
             <ProjectLibrary
               projects={projects}
               loading={loading}
@@ -251,12 +225,9 @@ export function App() {
             />
           ) : route === '/new' ? (
             <NewProject
-              initialResearch={research}
               onBack={() => navigate('/projects')}
               onDirty={changeDirty}
               onCreated={(project) => {
-                setResearch(undefined);
-                try { sessionStorage.removeItem('yap-research-direction'); } catch { /* Storage may be unavailable. */ }
                 changeDirty(false);
                 void refresh();
                 navigate(`/projects/${project.id}`, true);

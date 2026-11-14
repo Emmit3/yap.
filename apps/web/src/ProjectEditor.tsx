@@ -46,7 +46,6 @@ function briefOf(project: Project): ProjectBrief {
     duration: project.duration,
     tone: project.tone,
     goal: project.goal,
-    ...(project.research ? { research: project.research } : {}),
   };
 }
 function draftOf(project: Project): DraftContent | null {
@@ -349,15 +348,6 @@ export function ProjectEditor({
           </details>
         </div>
       </div>
-      {project.research && (
-        <details className="research-brief-context">
-          <summary>Research behind this script · {project.research.sourceUrls.length} sources</summary>
-          <p>The saved direction guides the opening and visuals. Your brief supplies the product facts.</p>
-          <p style={{ whiteSpace: 'pre-wrap' }}>{project.research.creativeDirection}</p>
-          <ul>{project.research.sourceUrls.map((url) => <li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>
-          {project.research.cautions.length > 0 && <p>{project.research.cautions.join(' ')}</p>}
-        </details>
-      )}
       {notice && (
         <div className="notice notice-success" role="status">
           <Check size={20} />

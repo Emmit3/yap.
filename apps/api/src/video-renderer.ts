@@ -2,8 +2,7 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { constants, createReadStream } from 'node:fs';
 import { copyFile, mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, extname, isAbsolute, join } from 'node:path';
+import { dirname, extname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import sharp from 'sharp';
 import {
@@ -28,6 +27,8 @@ export interface RenderOptions {
   outputPath: string;
   loadAsset(asset: WorkflowImageAsset): Promise<Buffer>;
   ffmpegPath?: string;
+  /** Exclusive, direct child of the output directory, so interrupted jobs can be recovered. */
+  workDirectory?: string;
   signal?: AbortSignal;
   /** Fraction between zero and one. This callback must not throw. */
   onProgress?(progress: number): void;
@@ -124,7 +125,6 @@ function overlay(workflow: Workflow, scene: WorkflowScene, index: number): Buffe
   const cta = workflow.brief.callToAction?.trim() ?? '';
   const extraCta = last && cta && !headline.toLocaleLowerCase().includes(cta.toLocaleLowerCase());
   return Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">
-    <rect width="1080" height="1920" fill="#09110c" opacity="0.16"/>
     <rect x="0" y="1280" width="1080" height="640" fill="#101a13" opacity="0.94"/>
     <rect x="80" y="1320" width="88" height="6" rx="3" fill="#d4e8b7"/>
     <g font-family="Segoe UI, DejaVu Sans, sans-serif" letter-spacing="-1">
@@ -135,12 +135,7 @@ function overlay(workflow: Workflow, scene: WorkflowScene, index: number): Buffe
   </svg>`);
 }
 
-async function frame(
-  workflow: Workflow,
-  scene: WorkflowScene,
-  index: number,
-  photo: Buffer,
-): Promise<Buffer> {
+async function photoFrame(photo: Buffer): Promise<Buffer> {
   const image = sharp(photo, { limitInputPixels: MAX_PIXELS, failOn: 'error' });
   const metadata = await image.metadata();
   if (!['jpeg', 'png', 'webp'].includes(metadata.format ?? '') || (metadata.pages ?? 1) !== 1) {
@@ -161,7 +156,7 @@ async function frame(
   const foreground = await image
     .clone()
     .rotate()
-    .resize(920, 1000, { fit: 'contain', background: '#17231a' })
+    .resize(920, 1000, { fit: 'cover', position: sharp.strategy.attention })
     .png()
     .toBuffer();
   const rounded = await sharp(foreground)
@@ -176,10 +171,7 @@ async function frame(
     .png()
     .toBuffer();
   return sharp(background)
-    .composite([
-      { input: rounded, left: 80, top: 256 },
-      { input: overlay(workflow, scene, index), left: 0, top: 0 },
-    ])
+    .composite([{ input: rounded, left: 80, top: 256 }])
     .png()
     .toBuffer();
 }
@@ -261,7 +253,7 @@ async function encode(
   onProgress?: (progress: number) => void,
 ): Promise<void> {
   aborted(signal);
-  const filter = `fps=${FPS},format=yuv420p,fade=t=in:st=0:d=0.25,fade=t=out:st=${duration - 0.25}:d=0.25`;
+  const filter = `[0:v]fps=${FPS},format=yuv420p,zoompan=z='min(1.025,1+0.025*on/${duration * FPS - 1})':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=${WIDTH}x${HEIGHT}:fps=${FPS}[moving];[1:v]fps=${FPS},format=yuva420p[fixed];[moving][fixed]overlay=0:0:format=yuv420:shortest=1,fade=t=in:st=0:d=0.25,fade=t=out:st=${duration - 0.25}:d=0.25[video]`;
   const args = [
     '-hide_banner',
     '-loglevel',
@@ -276,15 +268,25 @@ async function encode(
     '1',
     '-i',
     'frames.ffconcat',
-    '-vf',
+    '-protocol_whitelist',
+    'file,pipe',
+    '-f',
+    'concat',
+    '-safe',
+    '1',
+    '-i',
+    'overlays.ffconcat',
+    '-filter_complex',
     filter,
+    '-map',
+    '[video]',
     '-t',
     String(duration),
     '-an',
     '-c:v',
     'libx264',
     '-preset',
-    'veryfast',
+    'ultrafast',
     '-crf',
     '21',
     '-threads',
@@ -377,6 +379,27 @@ export async function renderPromoVideo(options: RenderOptions): Promise<RenderRe
   const { duration, scenes } = validateWorkflow(workflow);
   if (!isAbsolute(outputPath) || extname(outputPath).toLowerCase() !== '.mp4')
     throw new ApiError(400, 'RENDER_OUTPUT_INVALID', 'Use an absolute MP4 output path.');
+  const outputParent = resolve(dirname(outputPath));
+  let requestedWorkDirectory: string | undefined;
+  if (options.workDirectory !== undefined) {
+    requestedWorkDirectory = resolve(options.workDirectory);
+    const withinParent = relative(outputParent, requestedWorkDirectory);
+    if (
+      !isAbsolute(options.workDirectory) ||
+      !withinParent ||
+      withinParent === '..' ||
+      isAbsolute(withinParent) ||
+      dirname(withinParent) !== '.' ||
+      requestedWorkDirectory === parse(requestedWorkDirectory).root ||
+      relative(resolve(outputPath), requestedWorkDirectory) === ''
+    ) {
+      throw new ApiError(
+        400,
+        'RENDER_WORKSPACE_INVALID',
+        'Use a dedicated render workspace directly inside the video output directory.',
+      );
+    }
+  }
   const executable = options.ffmpegPath ?? ffmpegStatic;
   if (!executable)
     throw new ApiError(
@@ -385,12 +408,33 @@ export async function renderPromoVideo(options: RenderOptions): Promise<RenderRe
       'FFmpeg is not installed for this platform. Configure an encoder path.',
     );
   aborted(signal);
-  const directory = await mkdtemp(join(tmpdir(), 'yap-render-'));
-  const temporaryOutput = join(directory, `output-${randomUUID()}.mp4`);
+  let directory: string | undefined;
+  let createdWorkDirectory = false;
   const images = new Map<string, Buffer>();
   let createdOutput = false;
   try {
+    await mkdir(outputParent, { recursive: true });
+    if (requestedWorkDirectory) {
+      try {
+        await mkdir(requestedWorkDirectory, { recursive: false });
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error && error.code === 'EEXIST') {
+          throw new ApiError(
+            409,
+            'RENDER_WORKSPACE_EXISTS',
+            'Another render already owns this workspace. Start a new render.',
+          );
+        }
+        throw error;
+      }
+      directory = requestedWorkDirectory;
+    } else {
+      directory = await mkdtemp(join(outputParent, '.yap-render-'));
+    }
+    createdWorkDirectory = true;
+    const temporaryOutput = join(directory, `output-${randomUUID()}.mp4`);
     const manifest = ['ffconcat version 1.0'];
+    const overlayManifest = ['ffconcat version 1.0'];
     for (let index = 0; index < scenes.length; index += 1) {
       aborted(signal);
       const scene = scenes[index]!;
@@ -414,17 +458,31 @@ export async function renderPromoVideo(options: RenderOptions): Promise<RenderRe
         images.set(asset.id, photo);
       }
       const filename = `scene-${String(index).padStart(3, '0')}.png`;
-      await writeFile(join(directory, filename), await frame(workflow, scene, index, photo), {
+      const overlayFilename = `overlay-${String(index).padStart(3, '0')}.png`;
+      await writeFile(join(directory, filename), await photoFrame(photo), {
         flag: 'wx',
       });
+      await writeFile(
+        join(directory, overlayFilename),
+        await sharp(overlay(workflow, scene, index))
+          .png()
+          .toBuffer(),
+        { flag: 'wx' },
+      );
       manifest.push(`file '${filename}'`, `duration ${scene.seconds}`);
+      overlayManifest.push(`file '${overlayFilename}'`, `duration ${scene.seconds}`);
       onProgress?.((0.25 * (index + 1)) / scenes.length);
     }
     manifest.push(`file 'scene-${String(scenes.length - 1).padStart(3, '0')}.png'`);
+    overlayManifest.push(`file 'overlay-${String(scenes.length - 1).padStart(3, '0')}.png'`);
     await writeFile(join(directory, 'frames.ffconcat'), `${manifest.join('\n')}\n`, 'utf8');
+    await writeFile(
+      join(directory, 'overlays.ffconcat'),
+      `${overlayManifest.join('\n')}\n`,
+      'utf8',
+    );
     await encode(executable, directory, temporaryOutput, duration, signal, onProgress);
     aborted(signal);
-    await mkdir(dirname(outputPath), { recursive: true });
     await copyFile(temporaryOutput, outputPath, constants.COPYFILE_EXCL);
     createdOutput = true;
     const outputStat = await stat(outputPath);
@@ -445,6 +503,9 @@ export async function renderPromoVideo(options: RenderOptions): Promise<RenderRe
     if (createdOutput) await rm(outputPath, { force: true }).catch(() => undefined);
     throw error;
   } finally {
-    await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    // Only remove a directory this invocation created, after resolving its allowed parent above.
+    if (createdWorkDirectory && directory) {
+      await rm(directory, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }

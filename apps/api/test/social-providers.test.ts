@@ -3,6 +3,7 @@ import test from 'node:test';
 import { socialDatasetSchema, socialResearchInputSchema } from '@yap/contracts/social';
 import { createSocialProviders } from '../src/social-providers.js';
 import { ApiError } from '../src/errors.js';
+import { analyzeSocialDataset } from '../src/social-analysis.js';
 
 const fixed = new Date('2026-11-13T18:00:00.000Z');
 const input = (changes = {}) =>
@@ -84,6 +85,37 @@ test('Firecrawl scopes each selected platform, shares the record budget, and kee
   assert.ok(data.warnings.some((warning) => warning.includes('Instagram')));
 });
 
+test('web discovery preserves content query IDs while deduplicating tracking-only variants', async () => {
+  const provider = createSocialProviders(
+    { firecrawlApiKey: 'key' },
+    {
+      now: () => fixed,
+      fetch: async () =>
+        json({
+          success: true,
+          data: {
+            web: [
+              { url: 'https://example.org/post?id=1&utm_source=feed', title: 'Coffee example one' },
+              { url: 'https://example.org/post?id=2', title: 'Coffee example two' },
+              {
+                url: 'https://example.org/post?utm_campaign=week&id=1',
+                title: 'Coffee example one again',
+              },
+            ],
+          },
+        }),
+    },
+  );
+  const request = input({ platforms: ['web'], limit: 10 });
+  const evidence = await provider.collect(request);
+  assert.equal(evidence.posts.length, 2);
+  assert.deepEqual(evidence.posts.map((post) => post.url).sort(), [
+    'https://example.org/post?id=1',
+    'https://example.org/post?id=2',
+  ]);
+  assert.equal(analyzeSocialDataset(request, evidence).posts.length, 2);
+});
+
 test('X collection retains observed metrics, author identity, references, and the seven day limit', async () => {
   let called: URL | undefined;
   const provider = createSocialProviders(
@@ -158,6 +190,55 @@ test('cross-provider duplicates prefer actual post text over indexed snippets', 
   assert.equal(data.posts[0]?.provider, 'x');
   assert.equal(data.posts[0]?.text, 'Actual public post');
   assert.equal(data.posts[0]?.metrics.likes, 9);
+});
+
+test('X references outside the result sample preserve observed target accounts without inventing posts or profiles', async () => {
+  const provider = createSocialProviders(
+    { xBearerToken: 'key' },
+    {
+      fetch: async () =>
+        json({
+          data: [
+            {
+              id: '123',
+              author_id: '7',
+              text: 'A public repost about coffee',
+              referenced_tweets: [{ id: '122', type: 'retweeted' }],
+            },
+            { id: '124', author_id: '7', text: 'Replying about coffee', in_reply_to_user_id: '8' },
+            {
+              id: '125',
+              author_id: '7',
+              text: 'Another coffee reply',
+              in_reply_to_user_id: '9',
+              referenced_tweets: [{ id: '121', type: 'replied_to' }],
+            },
+          ],
+          includes: {
+            users: [
+              { id: '7', username: 'creator' },
+              { id: '8', username: 'sourceauthor' },
+            ],
+            tweets: [{ id: '122', author_id: '8' }],
+          },
+        }),
+    },
+  );
+  const query = input({ platforms: ['x'], limit: 10 });
+  const data = await provider.collect(query);
+  assert.equal(data.posts.length, 3);
+  assert.equal(data.relationships.length, 3);
+  assert.ok(
+    data.relationships.every((edge) => edge.targetPostId === null && edge.targetActorId !== null),
+  );
+  assert.equal(data.relationships[0]?.targetActorId, 'x:actor:sourceauthor');
+  const unknownProfile = data.actors.find((actor) => actor.id === 'x:actor-id:9');
+  assert.equal(unknownProfile?.handle, '');
+  assert.equal(unknownProfile?.url, null);
+  const analysis = analyzeSocialDataset(query, data);
+  assert.equal(analysis.coverage.observedRelationshipCount, 3);
+  assert.ok(analysis.graph.edges.some((edge) => edge.kind === 'repost' && edge.observed));
+  assert.ok(data.warnings.some((warning) => warning.includes('outside the collected sample')));
 });
 
 test('Grok citations are discovery records and generated prose never becomes post content', async () => {

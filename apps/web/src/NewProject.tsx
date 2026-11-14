@@ -1,7 +1,6 @@
 import { useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, FilmStrip, NotePencil, Quotes } from '@phosphor-icons/react';
 import { createProjectSchema, type Project, type ProjectBrief } from '@yap/contracts';
-import type { SocialHandoff } from '@yap/contracts/social';
 import { api, messageOf } from './api';
 import { BriefFields, ErrorNotice, PageHeading } from './components';
 
@@ -19,19 +18,12 @@ export function NewProject({
   onBack,
   onCreated,
   onDirty,
-  initialResearch,
 }: {
   onBack(): void;
   onCreated(project: Project): void;
   onDirty(dirty: boolean): void;
-  initialResearch?: SocialHandoff;
 }) {
-  const [brief, setBrief] = useState<ProjectBrief>(() => initialResearch ? {
-    ...initialBrief,
-    title: initialResearch.topic.slice(0, 120),
-    audience: initialResearch.audience.slice(0, 200),
-    research: initialResearch,
-  } : initialBrief);
+  const [brief, setBrief] = useState<ProjectBrief>(initialBrief);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -76,21 +68,6 @@ export function NewProject({
       <div className="create-layout">
         <form className="brief-panel" onSubmit={create} noValidate>
           {error && <ErrorNotice message={error} onDismiss={() => setError('')} />}
-          {brief.research && (
-            <section className="research-brief-context" aria-label="Selected research direction">
-              <h2>Your research is attached</h2>
-              <p>Add your own idea and product facts below. The selected research guides presentation and keeps its source links with this project.</p>
-              <details>
-                <summary>Review selected direction and {brief.research.sourceUrls.length} sources</summary>
-                <p style={{ whiteSpace: 'pre-wrap' }}>{brief.research.creativeDirection}</p>
-                <ul>{brief.research.sourceUrls.map((url) => <li key={url}><a href={url} target="_blank" rel="noreferrer">{url}</a></li>)}</ul>
-              </details>
-              <button type="button" className="text-button" disabled={busy} onClick={() => {
-                const { research: _research, ...withoutResearch } = brief;
-                change(withoutResearch);
-              }}>Remove research direction</button>
-            </section>
-          )}
           <BriefFields value={brief} onChange={change} errors={errors} disabled={busy} />
           <div className="form-footer">
             <span>You can change all of this later.</span>

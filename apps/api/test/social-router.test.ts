@@ -10,6 +10,7 @@ import {
   socialHandoffSchema,
   socialInvestigationResponseSchema,
   socialInvestigationsResponseSchema,
+  socialInvestigationSummariesResponseSchema,
   socialProvidersResponseSchema,
   socialQueryResponseSchema,
   socialResearchInputSchema,
@@ -34,14 +35,12 @@ async function fixture(t: TestContext) {
     app.use(express.json({ limit: '128kb' }));
     app.use('/api/social', await createSocialRouter({ dataFile: file, config: {} }));
     const errors: ErrorRequestHandler = (error: unknown, _request, response, _next) => {
-      response
-        .status(error instanceof ApiError ? error.status : 500)
-        .json({
-          error: {
-            code: error instanceof ApiError ? error.code : 'INTERNAL_ERROR',
-            message: error instanceof Error ? error.message : 'Failed',
-          },
-        });
+      response.status(error instanceof ApiError ? error.status : 500).json({
+        error: {
+          code: error instanceof ApiError ? error.code : 'INTERNAL_ERROR',
+          message: error instanceof Error ? error.message : 'Failed',
+        },
+      });
     };
     app.use(errors);
     server = app.listen(0, '127.0.0.1');
@@ -95,6 +94,12 @@ test('investigations and evidence-backed notes persist through restarts, with sp
   const { investigation } = socialInvestigationResponseSchema.parse(await created.json());
   assert.equal(created.headers.get('location'), `/api/social/investigations/${investigation.id}`);
   assert.equal(investigation.analysis.posts.length, 12);
+  const summaries = socialInvestigationSummariesResponseSchema.parse(
+    await (await f.request('/investigations?summary=true')).json(),
+  );
+  assert.equal(summaries.investigations[0]?.id, investigation.id);
+  assert.ok(!Object.hasOwn(summaries.investigations[0]!, 'analysis'));
+  assert.ok(!Object.hasOwn(summaries.investigations[0]!, 'notes'));
   const postId = investigation.analysis.posts[0]!.id;
   const noteResponse = await f.request(`/investigations/${investigation.id}/notes`, 'POST', {
     text: 'Test a comparison hook, then show one concrete example.',
@@ -203,11 +208,47 @@ test('public import validates platform URLs and references, requires attestation
   const sample = buildDemoSocialDataset(input);
   const dataset = {
     ...sample,
+    actors: sample.actors.map((actor, index) => ({
+      ...actor,
+      url: `https://x.com/public_${index}`,
+    })),
     posts: sample.posts.map((post, index) => ({
       ...post,
       url: `https://x.com/publiccreator/status/${1000 + index}`,
     })),
   };
+  assert.equal(
+    (
+      await f.request('/investigations/import', 'POST', {
+        input,
+        dataset: {
+          ...dataset,
+          actors: dataset.actors.map((actor, index) =>
+            index === 0
+              ? { ...actor, platform: 'instagram', url: 'https://instagram.com/public_creator' }
+              : actor,
+          ),
+        },
+        publicDataOnly: true,
+      })
+    ).status,
+    400,
+  );
+  assert.equal(
+    (
+      await f.request('/investigations/import', 'POST', {
+        input,
+        dataset: {
+          ...dataset,
+          actors: dataset.actors.map((actor, index) =>
+            index === 0 ? { ...actor, url: 'https://instagram.com/public_creator' } : actor,
+          ),
+        },
+        publicDataOnly: true,
+      })
+    ).status,
+    400,
+  );
   assert.equal((await f.request('/investigations/import', 'POST', { input, dataset })).status, 400);
   assert.equal(
     (

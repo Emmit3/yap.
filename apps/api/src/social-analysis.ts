@@ -7,6 +7,7 @@ import {
   type SocialAnalysis,
   type SocialCommunity,
   type SocialDataset,
+  type SocialEvidence,
   type SocialGraphEdge,
   type SocialGraphNode,
   type SocialHandoff,
@@ -20,6 +21,7 @@ import {
   type SocialTopic,
 } from '@yap/contracts/social';
 import { ApiError } from './errors.js';
+import { removeSocialTracking } from './social-urls.js';
 
 const STOP = new Set(
   'a an and are as at be been being but by can could did do does for from had has have how i if in into is it its just like may me more most my no not of on one or our out over own really she should so some than that the their them then there these they this those through to too under up us very was we were what when where which who why will with would you your about after before also only same still new get got make made use using via https http www com'.split(
@@ -38,6 +40,30 @@ function key(value: string): string {
 function clip(value: string, max: number): string {
   const clean = value.replace(/\s+/g, ' ').trim();
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+function clipBytes(value: string, maxBytes: number): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (Buffer.byteLength(normalized, 'utf8') <= maxBytes) return normalized;
+  let result = '';
+  let bytes = 0;
+  for (const character of normalized) {
+    const next = Buffer.byteLength(character, 'utf8');
+    if (bytes + next > maxBytes - 3) break;
+    result += character;
+    bytes += next;
+  }
+  return `${result}…`;
+}
+function sourceEvidence(post: SocialPost, excerpt: string): SocialEvidence {
+  return {
+    postId: post.id,
+    url: post.url,
+    excerpt,
+    collectedAt: post.collectedAt,
+    publishedAt: post.publishedAt,
+    provider: post.provider,
+    contentKind: post.contentKind,
+  };
 }
 function tokens(value: string): string[] {
   return [
@@ -59,10 +85,9 @@ function unique<T>(items: T[]): T[] {
 }
 function canonical(value: string): string {
   const url = new URL(value);
-  url.search = '';
-  url.hash = '';
+  removeSocialTracking(url);
   const host = url.hostname.replace(/^www\./, '').replace(/^twitter\.com$/, 'x.com');
-  return `${host}${url.pathname.replace(/\/+$/, '')}`;
+  return `${host}${url.pathname.replace(/\/+$/, '')}${url.search}`;
 }
 type Pair = { a: string; b: string; weight: number };
 
@@ -778,6 +803,12 @@ export function analyzeSocialDataset(
     ? `${posts.length} ${sampleKind} evidence item${posts.length === 1 ? '' : 's'} about “${input.topic}” form ${communities.length} estimated group${communities.length === 1 ? '' : 's'} in this sample. ${relationships.length} observed interaction link${relationships.length === 1 ? '' : 's'} connect returned items or authors; ${similarities.length} additional links reflect similar wording. ${postsWithMetrics ? `${postsWithMetrics} items include returned engagement data, so ranking combines the available content and network signals.` : 'Engagement was not returned, so ranking reflects content relevance and available public links.'} Review each source before adopting a pattern.`
     : `No public evidence was returned for “${input.topic}”. Configure a source or adjust the topic to begin analysis.`;
   return socialAnalysisSchema.parse({
+    methodology: {
+      version: '1',
+      content: 'Bounded binary TF-IDF cosine similarity',
+      connectivity: 'Weighted label propagation; observed interactions outweigh similarity',
+      retrieval: 'Lexical retrieval with one-hop observed reference context',
+    },
     summary,
     posts,
     actors,
@@ -858,11 +889,7 @@ export function querySocialAnalysis(
       selected.push(post);
       sourceIds.add(post.id);
     }
-  const evidence = selected.map((post) => ({
-    postId: post.id,
-    url: post.url,
-    excerpt: clip(post.text, 1200),
-  }));
+  const evidence = selected.map((post) => sourceEvidence(post, clip(post.text, 1200)));
   const relatedInsights = analysis.insights
     .filter((insight) => insight.evidenceIds.some((postId) => sourceIds.has(postId)))
     .slice(0, 2);
@@ -922,39 +949,70 @@ export function buildSocialHandoff(
       'SOCIAL_EVIDENCE_MISSING',
       'Selected research points to evidence that is no longer available. Review the notes first.',
     );
-  const budget = Math.min(1500, Math.max(60, Math.floor(11500 / (notes.length + insights.length))));
-  const directions = [
-    ...insights.map(
-      (insight) => `Selected pattern: ${clip(`${insight.title}. ${insight.scriptAngle}`, budget)}`,
-    ),
-    ...notes.map((note) => `${title(note.kind)}: ${clip(note.text, budget)}`),
+  const maximumBytes = 48 * 1024;
+  const material = [
+    ...insights.map((insight) => ({
+      prefix: 'Selected pattern',
+      text: `${insight.title}. ${insight.scriptAngle}`,
+    })),
+    ...notes.map((note) => ({ prefix: title(note.kind), text: note.text })),
   ];
-  const shortened =
-    insights.some((insight) => `${insight.title}. ${insight.scriptAngle}`.length > budget) ||
-    notes.some((note) => note.text.length > budget);
-  const cautions = unique([
+  let directionBudget = Math.min(1500, Math.max(48, Math.floor(10000 / material.length)));
+  const allCautions = unique([
     ...investigation.analysis.coverage.warnings,
     ...insights.flatMap((insight) => insight.cons),
-    ...(shortened
-      ? [
-          'Long selected notes or angles were shortened to keep the script context bounded; review the saved originals.',
-        ]
-      : []),
-    ...(sources.length > 100
-      ? ['Evidence references were capped at 100 items for the script context.']
-      : []),
-  ]).slice(0, 100);
-  return socialHandoffSchema.parse({
+  ]);
+  const cautions = allCautions.slice(0, 12).map((caution) => clipBytes(caution, 500));
+  let bounded =
+    sources.length > 100 ||
+    cautions.length < allCautions.length ||
+    allCautions.slice(0, 12).some((caution) => Buffer.byteLength(caution) > 500) ||
+    material.some((item) => Buffer.byteLength(item.text) > directionBudget);
+  const retainedSources = sources.slice(0, 100);
+  let excerptBudget = 1200;
+  let evidence = retainedSources.map((post) =>
+    sourceEvidence(post, clipBytes(post.text, excerptBudget)),
+  );
+  if (retainedSources.some((post) => Buffer.byteLength(post.text) > excerptBudget)) bounded = true;
+  const boundNotice =
+    'Selected research was shortened for the 48 KB script handoff. Long note text, source excerpts, references, or caution details may be omitted here; review the saved investigation for the complete evidence.';
+  const result = (): SocialHandoff => ({
     investigationId: investigation.id,
     topic: investigation.topic,
     audience: investigation.audience,
-    creativeDirection: `Research topic: ${investigation.topic}\nAudience: ${investigation.audience || 'Use the creator’s existing audience.'}\n\n${directions.join('\n\n')}\n\nCreate original wording. Use this research to choose framing, structure, and questions; retain the creator’s verified product facts. Public popularity is not proof of a product claim or a promise of future reach.`,
+    creativeDirection: `Research topic: ${investigation.topic}\nAudience: ${investigation.audience || 'Use the creator’s existing audience.'}\n\n${material.map((item) => `${item.prefix}: ${clipBytes(item.text, directionBudget)}`).join('\n\n')}\n\nCreate original wording. Use this research to choose framing, structure, and questions; retain the creator’s verified product facts. Public popularity is not proof of a product claim or a promise of future reach.`,
     selectedNoteIds,
     selectedInsightIds,
-    evidence: sources
-      .slice(0, 100)
-      .map((post) => ({ postId: post.id, url: post.url, excerpt: clip(post.text, 1200) })),
-    sourceUrls: unique(sources.slice(0, 100).map((post) => post.url)),
-    cautions,
+    evidence,
+    sourceUrls: unique(evidence.map((item) => item.url)),
+    cautions: [...(bounded ? [boundNotice] : []), ...cautions],
   });
+  const size = () => Buffer.byteLength(JSON.stringify(result()), 'utf8');
+  // Measure the actual JSON wire representation, including escaping and multibyte text.
+  while (size() > maximumBytes && excerptBudget > 48) {
+    excerptBudget = Math.max(48, Math.floor(excerptBudget / 2));
+    evidence = retainedSources.map((post) =>
+      sourceEvidence(post, clipBytes(post.text, excerptBudget)),
+    );
+    bounded = true;
+  }
+  while (size() > maximumBytes && evidence.length) {
+    evidence.pop();
+    bounded = true;
+  }
+  while (size() > maximumBytes && cautions.length) {
+    cautions.pop();
+    bounded = true;
+  }
+  while (size() > maximumBytes && directionBudget > 12) {
+    directionBudget = Math.max(12, Math.floor(directionBudget / 2));
+    bounded = true;
+  }
+  if (size() > maximumBytes)
+    throw new ApiError(
+      413,
+      'SOCIAL_HANDOFF_TOO_LARGE',
+      'The selected research identifiers exceed the script context budget. Select fewer notes or insights.',
+    );
+  return socialHandoffSchema.parse(result());
 }
