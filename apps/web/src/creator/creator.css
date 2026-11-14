@@ -22,9 +22,9 @@
 .creator-workspace p {
   text-wrap: pretty;
 }
-.creator-workspace :is(button, a, input, textarea, select, summary):focus-visible {
-  outline: 2px solid #181818;
-  outline-offset: 4px;
+.creator-workspace :is(button, a, summary):focus-visible {
+  outline: 2px solid #8b8b8b;
+  outline-offset: 3px;
 }
 .creator-workspace button {
   font-family: inherit;
@@ -41,6 +41,7 @@
   border-radius: 8px;
   padding: 12px;
   width: 100%;
+  outline: none;
   box-shadow: none;
 }
 .creator-workspace :is(input, textarea)::placeholder {
@@ -52,8 +53,8 @@
   min-height: 96px;
 }
 .creator-workspace :is(input, textarea, select):focus {
-  border-color: #181818;
-  box-shadow: none;
+  border-color: #929292;
+  box-shadow: 0 0 0 3px #1818180a;
 }
 .creator-workspace fieldset {
   border: 0;
@@ -400,9 +401,13 @@
 }
 .creator-source-composer {
   background: #fff;
-  border: 1px solid #d3d3d3;
+  border: 1px solid #dedede;
   border-radius: 12px;
   overflow: hidden;
+}
+.creator-source-composer:has(.creator-idea:focus) {
+  border-color: #929292;
+  box-shadow: 0 0 0 3px #1818180a;
 }
 .creator-composer-tools {
   display: flex;
@@ -449,7 +454,10 @@
   font-size: 18px;
   line-height: 28px;
   resize: vertical;
-  outline-offset: -4px;
+}
+.creator-workspace .creator-idea:focus {
+  outline: none;
+  box-shadow: none;
 }
 .creator-context-fields {
   padding: 0 24px 24px;
@@ -1305,11 +1313,18 @@
   padding: 0 12px;
   flex: 1;
 }
+.creator-search:focus-within {
+  border-color: #929292;
+  box-shadow: 0 0 0 3px #1818180a;
+}
 .creator-workspace .creator-search input {
   border: 0;
   background: none;
   box-shadow: none;
   padding-left: 0;
+}
+.creator-workspace .creator-search input:focus {
+  box-shadow: none;
 }
 .creator-category {
   display: flex;
