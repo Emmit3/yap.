@@ -55,7 +55,13 @@ export interface CreatorWorkspaceProps {
   onDirty(dirty: boolean): void;
   initialResearch?: SocialHandoff;
   initialExternalReferences?: CreatorExternalReference[];
-  onContextChange?(context: { topic: string; audience?: string; research?: SocialHandoff }): void;
+  onContextChange?(context: {
+    topic: string;
+    audience?: string;
+    research?: SocialHandoff;
+    resourceId?: string;
+    isBusy?: boolean;
+  }): void;
   onOpenPromo(workflowId: string): void;
 }
 type View = 'guided' | 'director';
@@ -99,6 +105,8 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
     topic: c.source.prompt,
     audience: c.state?.workflow.brief.audience,
     research: c.state?.workflow.research ?? props.initialResearch,
+    resourceId: c.state?.session.id,
+    isBusy: Boolean(c.busy || c.loading),
   };
   const contextRef = useRef(context);
   contextRef.current = context;

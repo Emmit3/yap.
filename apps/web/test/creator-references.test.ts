@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFile } from 'node:fs/promises';
 import {
   externalFilmEmbed,
   filmMatches,
@@ -71,6 +72,27 @@ test('selections preserve attribution and only explicitly chosen catalog techniq
   assert.equal('video' in selected, false);
   assert.throws(() => selectedFilm(film, []), /Choose techniques/);
   assert.throws(() => selectedFilm(film, ['Unlisted effect']), /Choose techniques/);
+});
+
+test('all 103 catalog films pass the actual selection contract, including cited films with no technique tags', async () => {
+  const payload = JSON.parse(
+    await readFile(new URL('../../../public/film-references.json', import.meta.url), 'utf8'),
+  );
+  const films = parseFilmCatalog(payload);
+  assert.equal(films.length, 103);
+  for (const film of films) {
+    const selection = selectedFilm(film, film.techniques);
+    assert.equal(selection.id, film.id);
+    assert.equal(selection.url, film.url);
+    assert.equal(selection.watchUrl, film.watchUrl);
+    assert.deepEqual(selection.techniques, film.techniques);
+    assert.equal(selection.usage, 'external_reference');
+  }
+  for (const id of ['alani-witches-brew', 'apple-macbook-air-mvsm', 'mary-kay-timewise']) {
+    const film = films.find((item) => item.id === id)!;
+    assert.deepEqual(selectedFilm(film, []).techniques, []);
+    assert.throws(() => selectedFilm(film, ['Invented technique']), /Choose techniques/);
+  }
 });
 
 test('YouTube source URLs resolve only to a fixed privacy embed host without autoplay', () => {

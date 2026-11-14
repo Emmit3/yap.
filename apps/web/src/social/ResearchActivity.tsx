@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ArrowRight,
   ArrowsClockwise,
@@ -68,7 +68,8 @@ export default function ResearchActivity({
   onReconnect(): void;
   onDismiss(): void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(run.status !== 'completed');
+  const expansionChosen = useRef(false);
   const [filePath, setFilePath] = useState('');
   const [preview, setPreview] = useState<{ content: string; truncated: boolean } | null>(null);
   const [fileError, setFileError] = useState('');
@@ -90,11 +91,15 @@ export default function ResearchActivity({
     .reduce((maximum, event) => Math.max(maximum, event.resultCount ?? 0), 0);
 
   useEffect(() => {
-    setExpanded(true);
+    expansionChosen.current = false;
+    setExpanded(run.status !== 'completed');
     setFilePath('');
     setPreview(null);
     setFileError('');
   }, [run.id]);
+  useEffect(() => {
+    if (run.status === 'completed' && resultLoaded && !expansionChosen.current) setExpanded(false);
+  }, [run.status, resultLoaded]);
   useEffect(() => {
     if (!filePath) return;
     const controller = new AbortController();
@@ -167,7 +172,10 @@ export default function ResearchActivity({
           <button
             className="social-text-button"
             type="button"
-            onClick={() => setExpanded((value) => !value)}
+            onClick={() => {
+              expansionChosen.current = true;
+              setExpanded((value) => !value);
+            }}
             aria-expanded={expanded}
           >
             {expanded ? 'Collapse' : 'Expand'}
@@ -225,13 +233,15 @@ export default function ResearchActivity({
                   <GitBranch size={22} />
                 </div>
                 <div>
-                  <strong>{harness ? 'Research coordinator' : 'Research plan'}</strong>
+                  <strong>{harness ? 'Research coordinator' : 'Research stages'}</strong>
                   <span>
                     {run.status === 'completed'
                       ? 'Evidence ready for your decisions'
                       : replay
                         ? 'Replaying the example workflow'
-                        : 'Scope, delegate, and assemble'}
+                        : harness
+                          ? 'Scope, delegate, and assemble'
+                          : 'Scope, collect, analyze, and save'}
                   </span>
                 </div>
                 {run.status === 'completed' && <Check size={18} />}
