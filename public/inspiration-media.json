@@ -1,0 +1,275 @@
+{
+  "schemaVersion": 1,
+  "clips": [
+    {
+      "filmId": "adidas-ultraboost-21",
+      "kind": "embed",
+      "url": "https://player.mux.com/j1ppGEgL3KUlOWbx02UzLWDt7zL4M2QiI4KAJ4o700Y100",
+      "posterUrl": "https://image.mux.com/j1ppGEgL3KUlOWbx02UzLWDt7zL4M2QiI4KAJ4o700Y100/thumbnail.webp?width=1920",
+      "sourceUrl": "https://builders-club.com/projects/adidas-ultra-boost-21",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    },
+    {
+      "filmId": "adidas-originals-zx",
+      "kind": "embed",
+      "url": "https://player.mux.com/7amg8WBWPZ1VaEzsFVqG7pYDWmgjKzEziwRJfFhAzCA",
+      "posterUrl": "https://image.mux.com/7amg8WBWPZ1VaEzsFVqG7pYDWmgjKzEziwRJfFhAzCA/thumbnail.webp?width=1920",
+      "sourceUrl": "https://builders-club.com/3d-motion/adidas-originals-zx",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    },
+    {
+      "filmId": "bird-blend-magic-whisk",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1238004406?h=2573484b0e",
+      "posterUrl": "https://i.vimeocdn.com/video/2214983143-82aeed323ebcd176c68fc872fc862ec54ba73360560d3dbde4c563cdc7de4d0d-d_960?region=us",
+      "sourceUrl": "https://www.moveanimation.com/bird-and-blend/",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "abc-lancome-idole",
+      "kind": "embed",
+      "url": "https://www.youtube.com/watch?v=fMMXpBKzMuc",
+      "posterUrl": "https://i.ytimg.com/vi/fMMXpBKzMuc/hqdefault.jpg",
+      "sourceUrl": "https://www.alreadybeenchewed.tv/lancome",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "magnum-remix",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/713718052",
+      "posterUrl": "https://i.vimeocdn.com/video/1439534895-60f3ad7f34197685c4aa0703fb9010f6ad0ff9a90306f3af4665a94f44308311-d_960?region=us",
+      "sourceUrl": "https://mvsm.com/project/magnum",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "on-cloud5-built-different",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/691324833",
+      "posterUrl": "https://i.vimeocdn.com/video/1399543017-27176e55a457a01b815e3845708ea72d87d43eec8e6429a7137e260bcac9c4a3-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/on-running",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "powerbeats-pro-2",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1055994596",
+      "posterUrl": "https://i.vimeocdn.com/video/1981678633-9088e19119b5058f6b89aa1202457b17f8442bafc730928e9a339785dd44e43a-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/beats",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "gfore-g18",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/985846400",
+      "posterUrl": "https://i.vimeocdn.com/video/1901384606-1baa33212072388e99f12faf8250dca09b985777deb692ecf3d883defcf5c64b-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/g-fore",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "nothing-phone-3",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1098214196",
+      "posterUrl": "https://i.vimeocdn.com/video/2032756227-3d29711f2a1250b77b96a33bd98f973d5c22b27c448655ea5711dfb8aaea97f5-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/nothing",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "nothing-phone-4a-headphone-a",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1177272159",
+      "posterUrl": "https://i.vimeocdn.com/video/2139032000-b2d5f06fdcf7d0e8820bc9bb35ce966cdd820af0a5ca5316777b67f963766cae-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/nothing-a",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "pepsi-refresh",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/300411817",
+      "posterUrl": "https://i.vimeocdn.com/video/738758073-f47a250742afbc5e0dbfa968cccd540719c24306d3ace9f5802715f5ad83be64-d_960?region=us",
+      "sourceUrl": "https://mvsm.com/project/pepsi",
+      "verifiedAt": "2026-11-14T21:23:03Z"
+    },
+    {
+      "filmId": "beosound-theatre",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/746646949",
+      "posterUrl": "https://i.vimeocdn.com/video/1501749959-950594fe79fc510f2fdd2aa7c33586fb81d00bc16e17b8820ca9ca237a925ed6-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/bang-olufsen",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "campbells-flavours-motion",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/205479721",
+      "posterUrl": "https://i.vimeocdn.com/video/620259455-33796b4cd60b4456bf137c6bdcc10938221aba1e698c2b1ca6bb3519676321d9-d_960?region=us",
+      "sourceUrl": "https://mvsm.com/project/campbells",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "castello-sensations",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/333302543",
+      "posterUrl": "https://i.vimeocdn.com/video/779247546-012d8fb29e606a76a7dfe55f82284e7d4a887be07955abecd8c001c8e9fe3d08-d_960?region=us",
+      "sourceUrl": "https://mvsm.com/project/castello-sensations",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "diadora-run-valley",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/918388030",
+      "posterUrl": "https://i.vimeocdn.com/video/1807193933-94655823534e879df29c34c39aaf342a603781934338e42b3ad2f7d73f405b31-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/diadora-run-valley",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "dyson-triple-launch",
+      "kind": "embed",
+      "url": "https://www.youtube.com/watch?v=xbDA-NlVf48",
+      "posterUrl": "https://i.ytimg.com/vi/xbDA-NlVf48/hqdefault.jpg",
+      "sourceUrl": "https://jsproductions.tv/case-studies/dyson",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "ecobee-smartthermostat-tendril",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/343072157",
+      "posterUrl": "https://i.vimeocdn.com/video/792123262-74530c3dad74c61f204d7de729333a9d825c2f75e7e48a555e535643aa1cc608-d_960?region=us",
+      "sourceUrl": "https://tendril.studio/work/ecobee",
+      "verifiedAt": "2026-11-14T21:23:04Z"
+    },
+    {
+      "filmId": "klinex-botanitech",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/817550067",
+      "posterUrl": "https://i.vimeocdn.com/video/1660100882-abf3c021e5771ab053c7f53f11a1a292386c896426018aea7580f92dcf9f89ee-d_960?region=us",
+      "sourceUrl": "https://onesal.com/work/klinex",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "kose-decorte",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/318711873",
+      "posterUrl": "https://i.vimeocdn.com/video/761400478-2ff5fd7df5e438499f26ea5cd93c9b566042fa8df852a56921efde6c21f46022-d_960?region=us",
+      "sourceUrl": "https://onesal.com/work/kose",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "nespresso-taste-that-takes-you",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/771062376",
+      "posterUrl": "https://i.vimeocdn.com/video/1547619795-1338296b95b7334b03c42c878ade8a19ce647e81dd29f91a517a951eca33db00-d_960?region=us",
+      "sourceUrl": "https://vimeo.com/771062376",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "prada-virtual-flower",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1000692273",
+      "posterUrl": "https://i.vimeocdn.com/video/1916823719-5b74a81f0b88c80b81a7bc42b01451b8ba04f786087a5c78bd13391b2fdf000c-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/prada",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "skinceuticals-holidays",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/910276384",
+      "posterUrl": "https://i.vimeocdn.com/video/1794259999-53d99deafc907f4bbad17463be061e0b3715ea1df1922a1197035776f90ee72d-d_960?region=us",
+      "sourceUrl": "https://onesal.com/work/skinceuticals",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "sonos-arc-ultra",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/1022858430",
+      "posterUrl": "https://i.vimeocdn.com/video/1941891417-ee3cc4c67db134595c1a3a55df909dd07dcb0a2400dc72c7b481e5fc93070b85-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/sonos-arc-ultra",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "sonos-sub-mini",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/759202366",
+      "posterUrl": "https://i.vimeocdn.com/video/1524889788-3fba1ab1ae421016d40957d4cbebef7b52a33fb3bc95f4d16df26c99fa22d49b-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/sonos_submini",
+      "verifiedAt": "2026-11-14T21:23:05Z"
+    },
+    {
+      "filmId": "vitra-mariposa-family",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/126497200",
+      "posterUrl": "https://i.vimeocdn.com/video/651639591-e40e9d49f68ad4ae463160c1b84bca4e59cc0210295f858f9578c1fa58769a58-d_960?region=us",
+      "sourceUrl": "https://vimeo.com/126497200",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "vizio-p-series-quantum",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/347354764",
+      "posterUrl": "https://i.vimeocdn.com/video/797714720-eeac6f68eb87c7e976e7099ea1353735d3d74a1b82efd19d490f08324a31103e-d_960?region=us",
+      "sourceUrl": "https://tendril.studio/work/viziopx",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "xfinity-xb7-futuredeluxe",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/531292430",
+      "posterUrl": "https://i.vimeocdn.com/video/1099659256-7d32e6bb9ccf752df7331deeae03ebd236f1f12cf41dffecbdb4dd127aefdaee-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/xfinity",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "apple-imac-pro-power",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/260493809",
+      "posterUrl": "https://i.vimeocdn.com/video/690390624-10d3eddf4c40b1ad377df0a2a30d9fea4abdafd65e7be462c10a1edef6fdbdb6-d_960?region=us",
+      "sourceUrl": "https://buck.co/work/apple-power-to-the-pro",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "apple-macbook-air-mvsm",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/315705991",
+      "posterUrl": "https://i.vimeocdn.com/video/757550770-18c4753ab7d575ea8065764b1e0e34cac3044da870bba5238bdf44c91a93aad9-d_960?region=us",
+      "sourceUrl": "https://mvsm.com/project/macbook-air",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "arcteryx-ss24",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/961042980",
+      "posterUrl": "https://i.vimeocdn.com/video/1873683981-c76f83e2189129cda8266d94804517534dac20f577aac30e14a1ae51e8c694e4-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/arcteryx",
+      "verifiedAt": "2026-11-14T21:23:06Z"
+    },
+    {
+      "filmId": "ecobee-smarthome-futuredeluxe",
+      "kind": "embed",
+      "url": "https://player.vimeo.com/video/395076720",
+      "posterUrl": "https://i.vimeocdn.com/video/861210726-760163897497693747aac69a97dadc71911612af1fad0e13a3523a9c276d71f9-d_960?region=us",
+      "sourceUrl": "https://futuredeluxe.com/work/ecobee",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    },
+    {
+      "filmId": "rimmel-supergel",
+      "kind": "video",
+      "url": "https://stream.mux.com/OiHawB2rYSeFrpqj009btfogmd302jIKwhJ71U9518KbE/1080p.mp4?autoplay=1",
+      "posterUrl": "https://image.mux.com/OiHawB2rYSeFrpqj009btfogmd302jIKwhJ71U9518KbE/thumbnail.webp?width=960",
+      "sourceUrl": "https://www.wearefrantic.com/portfolio/rimmel-supergel-animation/",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    }
+  ],
+  "unavailable": [
+    {
+      "filmId": "onesal-tasty-cleaning",
+      "sourceUrl": "https://onesal.com/work/tasty-cleaning",
+      "reason": "The cataloged Vimeo ID 921929631 identifies a general Exploration Reel, not a verified dedicated Tasty Cleaning film.",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    },
+    {
+      "filmId": "milia-matcha-tybann",
+      "sourceUrl": "https://tybannmasson.fr/en/work/milia-matcha/",
+      "reason": "The official case lists exact film sources, but its MP4 and matching poster returned HTTP 403 during current availability checks.",
+      "verifiedAt": "2026-11-14T21:25:09Z"
+    }
+  ]
+}
