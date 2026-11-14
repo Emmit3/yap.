@@ -678,7 +678,7 @@ export function useCreatorSession(options: {
         setNeedsReload(false);
         setError(caught.message);
         setNotice(
-          'Your script and scenes were saved. Open Director to edit the saved timing, then prepare the plan again. No drafting request was automatically repeated.',
+          'Your saved drafting progress is available. Edit the saved script timing, then prepare the plan again. No drafting request was automatically repeated.',
         );
         return;
       }

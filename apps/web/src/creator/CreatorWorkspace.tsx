@@ -110,6 +110,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const promptInput = useRef<HTMLTextAreaElement>(null);
   const panelHeading = useRef<HTMLHeadingElement>(null);
+  const scriptTimingInput = useRef<HTMLInputElement>(null);
   const state = c.state;
   const active = isActiveJob(c.job);
   const production = active && c.job?.kind === 'production';
@@ -152,6 +153,11 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
       /* The current view still works. */
     }
     if (focusPanel) requestAnimationFrame(() => panelHeading.current?.focus());
+  }
+  function reviewSavedTiming() {
+    setInspector('script');
+    changeView('director', false);
+    requestAnimationFrame(() => (scriptTimingInput.current ?? panelHeading.current)?.focus());
   }
   useEffect(() => {
     if (c.plan && selectedShot >= c.plan.clips.length) setSelectedShot(0);
@@ -307,6 +313,23 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
           </button>
         </div>
       )}
+      {state?.workflow.script && !state.session.plan && (
+        <aside className="creator-feedback">
+          <TextT size={20} />
+          <div>
+            <p>
+              <strong>Your saved script is ready to edit.</strong>
+            </p>
+            <p>
+              Review the timing, save your changes, then prepare again. Your existing words are
+              kept; preparing resumes from the saved drafting progress.
+            </p>
+            <button className="creator-text-button" onClick={reviewSavedTiming}>
+              Edit saved script timing <ArrowUpRight size={16} />
+            </button>
+          </div>
+        </aside>
+      )}
 
       <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
         {view === 'guided' ? (
@@ -461,6 +484,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                   ) : (
                     <ScriptInspector
                       c={c}
+                      timingInputRef={scriptTimingInput}
                       disabled={
                         locked ||
                         active ||
@@ -1428,7 +1452,15 @@ function ShotInspector({
   );
 }
 
-function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: boolean }) {
+function ScriptInspector({
+  c,
+  disabled,
+  timingInputRef,
+}: {
+  c: CreatorController;
+  disabled: boolean;
+  timingInputRef: RefObject<HTMLInputElement | null>;
+}) {
   if (!c.script)
     return (
       <div className="creator-inspector-empty">
@@ -1472,6 +1504,7 @@ function ScriptInspector({ c, disabled }: { c: CreatorController; disabled: bool
               }
             />
             <input
+              ref={index === 0 ? timingInputRef : undefined}
               aria-label={`Seconds for script moment ${index + 1}`}
               type="number"
               min={1}
@@ -1732,10 +1765,18 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
       )}
       {job.status === 'succeeded' && job.output && !current && (
         <div className="creator-inline-error">
-          <p>
+          <p id="creator-earlier-export-reason">
             This completed job belongs to an earlier version. Its receipt and clip audits remain
-            visible; prepare and approve the current plan before producing a new film.
+            visible. Film downloads require the current approved version; prepare and approve the
+            current plan before producing a new film.
           </p>
+          <button
+            className="creator-primary-button"
+            disabled
+            aria-describedby="creator-earlier-export-reason"
+          >
+            <DownloadSimple size={18} /> Download film
+          </button>
         </div>
       )}
       {job.status === 'succeeded' && job.output && current && (
@@ -1786,7 +1827,7 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
               type="button"
               className="creator-primary-button"
               onClick={() => void downloadFilm()}
-              disabled={downloading || Boolean(c.busy)}
+              disabled={!current || downloading || Boolean(c.busy)}
             >
               <DownloadSimple size={18} />{' '}
               {downloading
