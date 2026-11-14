@@ -5,6 +5,10 @@ import {
   socialInvestigationSummariesResponseSchema,
   socialProvidersResponseSchema,
   socialQueryResponseSchema,
+  socialResearchRunResponseSchema,
+  socialResearchCapabilitiesSchema,
+  socialResearchArtifactResponseSchema,
+  type SocialResearchRunInput,
   type SocialHandoffInput,
   type SocialDataset,
   type SocialNoteInput,
@@ -13,6 +17,15 @@ import {
 } from '@yap/contracts/social';
 
 const origin = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+
+export class ResearchApiError extends Error {
+  constructor(
+    message: string,
+    readonly status = 0,
+  ) {
+    super(message);
+  }
+}
 
 async function response(path: string, init?: RequestInit) {
   let result: Response;
@@ -34,7 +47,7 @@ async function response(path: string, init?: RequestInit) {
     } catch {
       // A non JSON error response uses the safe fallback above.
     }
-    throw new Error(message);
+    throw new ResearchApiError(message, result.status);
   }
   return result;
 }
@@ -61,9 +74,33 @@ const mutation = (method: string, body?: unknown): RequestInit => ({
 const investigationPath = (id: string) => `/investigations/${encodeURIComponent(id)}`;
 
 export const socialApi = {
+  researchCapabilities: () =>
+    request('/research-runs/capabilities', socialResearchCapabilitiesSchema),
+  startRun: (input: SocialResearchRunInput, signal?: AbortSignal) =>
+    request('/research-runs', socialResearchRunResponseSchema, {
+      ...mutation('POST', input),
+      signal,
+    }),
+  getRun: (id: string, signal?: AbortSignal) =>
+    request(`/research-runs/${encodeURIComponent(id)}`, socialResearchRunResponseSchema, {
+      signal,
+    }),
+  cancelRun: (id: string) =>
+    request(
+      `/research-runs/${encodeURIComponent(id)}`,
+      socialResearchRunResponseSchema,
+      mutation('DELETE'),
+    ),
+  runArtifact: (id: string, path: string, signal?: AbortSignal) =>
+    request(
+      `/research-runs/${encodeURIComponent(id)}/artifacts?path=${encodeURIComponent(path)}`,
+      socialResearchArtifactResponseSchema,
+      { signal },
+    ),
   providers: () => request('/providers', socialProvidersResponseSchema),
   list: () => request('/investigations?summary=true', socialInvestigationSummariesResponseSchema),
-  get: (id: string) => request(investigationPath(id), socialInvestigationResponseSchema),
+  get: (id: string, signal?: AbortSignal) =>
+    request(investigationPath(id), socialInvestigationResponseSchema, { signal }),
   create: (input: SocialResearchInput) =>
     request('/investigations', socialInvestigationResponseSchema, mutation('POST', input)),
   importDataset: (input: SocialResearchInput, dataset: SocialDataset) =>
