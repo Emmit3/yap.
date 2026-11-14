@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./render": {
+      "types": "./src/render.ts",
+      "import": "./dist/render.js"
+    },
     "./workflow": {
       "types": "./src/workflow.ts",
       "import": "./dist/workflow.js"
