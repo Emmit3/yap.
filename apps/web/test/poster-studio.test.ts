@@ -135,7 +135,7 @@ function mount(restoredDesign?: PosterDesign) {
       }
     },
     useLayoutEffect() {
-      // Native dialog/FLIP geometry is exercised by browser smoke coverage.
+      // Native layout/FLIP geometry is exercised by browser smoke coverage.
       take();
     },
   };
@@ -242,9 +242,9 @@ function call(value: unknown, ...args: unknown[]) {
   if (typeof value === 'function') return value(...args);
 }
 function editor(tree: Node[]) {
-  const dialog = tree.find((node) => node.type === 'dialog');
-  assert.ok(dialog, 'choosing a style opens its customization dialog');
-  return elements(dialog);
+  const region = tree.find((node) => node.props['aria-labelledby'] === 'poster-editor-title');
+  assert.ok(region, 'choosing a style opens its customization region');
+  return elements(region);
 }
 function textarea(tree: Node[]) {
   const field = editor(tree).find((node) => node.type === 'textarea');
@@ -378,7 +378,7 @@ test('back, choosing another style and hiding the workspace preserve each unsave
     tree = edit(studio, tree, 'First draft: a blue garden party.');
     tree = back(studio, tree);
     assert.equal(
-      tree.some((node) => node.type === 'dialog'),
+      tree.some((node) => node.props['aria-labelledby'] === 'poster-editor-title'),
       false,
     );
     tree = choose(studio, tree, styles[1]!);
@@ -450,11 +450,11 @@ test('a browser hash change closes customization while retaining the dirty style
     });
     tree = studio.render();
     assert.equal(
-      tree.some((node) => node.type === 'dialog'),
+      tree.some((node) => node.props['aria-labelledby'] === 'poster-editor-title'),
       false,
     );
     assert.ok(tree.find((node) => node.type === studio.PosterCarousel));
-    assert.equal(studio.dirty.at(-1), true, 'closing the modal leaves the App draft guard active');
+    assert.equal(studio.dirty.at(-1), true, 'closing the editor leaves the App draft guard active');
 
     tree = choose(studio, tree, styles[0]!);
     assert.equal(

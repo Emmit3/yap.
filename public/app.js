@@ -774,6 +774,11 @@ $$('[data-social]').forEach((button) => {
   button.hidden = !embedded;
   button.addEventListener('click', () => requestWorkspace('yap:open-social'));
 });
+$$('[data-inspiration]').forEach((link) => {
+  link.addEventListener('click', (event) => {
+    if (requestWorkspace('yap:open-inspiration')) event.preventDefault();
+  });
+});
 studio.addEventListener('close', updatePlayback);
 $$('[data-close-dialog]').forEach((button) =>
   button.addEventListener('click', () => studio.close()),

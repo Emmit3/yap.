@@ -1,6 +1,6 @@
 # Poster style workspace
 
-Open **Reference room → Posters** at `#/references` in the React application. Browse the style carousel, filter by category or name, and hover to inspect a poster. Choose one style to open **What would you like to add to this design?**, describe the additions or changes, then choose **Save my direction**.
+Open **Inspiration → Posters** at `#/references` in the React application. Browse a floating wall of portrait artwork, hover to inspect a poster, or open **Find a style** to search and filter. Choose one style to open the inline **What would you like to add to this design?** editor, describe the additions or changes, then choose **Save my direction**. The Videos/Posters tabs remain accessible while editing.
 
 The backend combines that style's private instructions with the customer's changes and saves a prepared direction. Customers see the selected style, their own changes and the saved state. They do not receive reconstruction recipes or compiled prompts.
 
@@ -41,7 +41,7 @@ The local repository serializes atomic writes and limits storage to 250 saved di
 
 ## Reference room integration
 
-The workspace retains three primary controls: **Your creations**, **Reference room** and **Workspace guide**, plus the separate **New creation** action. Films and Posters are local tabs within the same Reference room route.
+The workspace retains three primary controls: **Your creations**, **Inspiration** and **Workspace guide**, plus the separate **New creation** action. Videos and Posters are local tabs within the same Inspiration route. This route presents the existing controls as a compact header; other workspace routes retain their normal shell.
 
 `PosterWorkspace` is exported from `apps/web/src/posters/PosterWorkspace.tsx`. The room supplies a stable dirty-state callback and the active tab state:
 
@@ -49,9 +49,9 @@ The workspace retains three primary controls: **Your creations**, **Reference ro
 <PosterWorkspace onDirty={reportDirty} active={tab === 'posters'} />
 ```
 
-Both reference panels remain mounted when switching tabs. Poster changes, the selected style and saved direction remain available on return; unsaved changes participate in the App's existing leave/discard guard. Film selections continue through the existing film reference bridge. Poster IDs and private instructions never enter the film handoff.
+Both inspiration panels remain mounted when switching tabs. Poster changes, the selected style and saved direction remain available on return; unsaved changes participate in the App's existing leave/discard guard. The native product gallery passes selected film IDs through its existing callback. Poster IDs and private instructions never enter the film handoff.
 
-The `active` prop controls carousel motion and interaction when the Posters tab is hidden or the style editor is open. Automatic movement also pauses for hover, focus, dragging, a hidden document or an offscreen carousel, and respects the reduced-motion preference and pause control. Changing tabs does not reset the poster workspace's draft state.
+The `active` prop controls wall motion and interaction when the Posters tab is hidden or the style editor is open. Three balanced rows on desktop and two on mobile drift in alternating directions. Ambient movement is independent of keyboard selection: arrows, Home and End reveal and focus the chosen artwork immediately. Automatic movement pauses for hover, focus, dragging, a hidden document or an offscreen wall, and respects the reduced-motion preference and pause control. Changing tabs does not reset the poster workspace's draft state.
 
 ## Development privacy
 

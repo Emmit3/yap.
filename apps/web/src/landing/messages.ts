@@ -2,7 +2,7 @@ export function destinationForShowcaseMessage(
   event: { origin: string; source: unknown; data: unknown },
   expectedOrigin: string,
   expectedSource: unknown | null,
-): 'studio' | 'social' | null {
+): 'studio' | 'social' | 'inspiration' | null {
   if (
     expectedSource === null ||
     expectedSource === undefined ||
@@ -25,5 +25,6 @@ export function destinationForShowcaseMessage(
 
   if (data.type === 'yap:enter-studio') return 'studio';
   if (data.type === 'yap:open-social') return 'social';
+  if (data.type === 'yap:open-inspiration') return 'inspiration';
   return null;
 }
