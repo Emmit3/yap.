@@ -220,9 +220,9 @@ $$('[data-jump]').forEach(button => button.addEventListener('click',goToProduct)
 $('.skip-link').addEventListener('click',event=>{event.preventDefault();goToProduct();setTimeout(()=>{$('.product-copy h2').tabIndex=-1;$('.product-copy h2').focus({preventScroll:true});},reduced?0:800);});
 $('#previous-reel').addEventListener('click',() => selectReel(selected-1));
 $('#next-reel').addEventListener('click',() => selectReel(selected+1));
-wall.addEventListener('pointerdown',event => { if (!settled || event.button > 0) return; dragStart={ x:event.clientX, y:event.clientY, selected, position:selected, lastX:event.clientX, lastTime:event.timeStamp, velocity:0, horizontal:false, pointerId:event.pointerId }; dragged=false; });
+wall.addEventListener('pointerdown',event => { if (!settled || dragStart || !event.isPrimary || event.button > 0) return; dragStart={ x:event.clientX, y:event.clientY, selected, position:selected, lastX:event.clientX, lastTime:event.timeStamp, velocity:0, horizontal:false, pointerId:event.pointerId }; dragged=false; });
 wall.addEventListener('pointermove',event => {
-  if (!dragStart) return;
+  if (!dragStart || event.pointerId !== dragStart.pointerId) return;
   const dx=event.clientX-dragStart.x;
   if (Math.abs(dx)>10 && Math.abs(dx)>Math.abs(event.clientY-dragStart.y)) {
     if(!dragStart.horizontal) wall.setPointerCapture(event.pointerId);
@@ -238,7 +238,7 @@ wall.addEventListener('pointermove',event => {
   }
 });
 window.addEventListener('pointerup',event => {
-  if (!dragStart) return;
+  if (!dragStart || event.pointerId !== dragStart.pointerId) return;
   if (dragged) {
     const step=(width<700?138:Math.min(236,width*.165))+(width<700?12:20);
     const velocity=event.timeStamp-dragStart.lastTime<100?dragStart.velocity:0;
@@ -249,7 +249,7 @@ window.addEventListener('pointerup',event => {
   requestFrame();
   setTimeout(()=>{ dragged=false; },0);
 });
-window.addEventListener('pointercancel',()=>{dragStart=null;dragged=false;wall.style.cursor='';});
+window.addEventListener('pointercancel',event=>{if(dragStart && event.pointerId===dragStart.pointerId){dragStart=null;dragged=false;wall.style.cursor='';requestFrame();}});
 
 $('#toggle-playback').addEventListener('click',()=>{playbackPaused=!playbackPaused;updatePlayback();});
 $('#silent-sample').addEventListener('click',()=>showToast('This sample clip is silent.'));
