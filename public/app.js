@@ -1,4 +1,4 @@
-import { clamp, lerp, phase, sceneState, tilePose } from './motion.js';
+import { clamp, lerp, phase, sceneState, tilePose, loadPose } from './motion.js';
 
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => [...document.querySelectorAll(selector)];
@@ -15,6 +15,11 @@ const film = $('#film-dialog');
 const filmVideo = $('#film-video');
 const studio = $('#studio-dialog');
 const motionPreference = matchMedia('(prefers-reduced-motion: reduce)');
+const headlineLines = $$('.intro-line > span');
+const introKicker = $('.intro-kicker');
+const introCaption = $('.intro-caption');
+const introScroll = $('.intro-scroll');
+const siteHead = $('.site-head');
 const reels = [
   { file:'fashion', title:'A little louder', category:'EDITORIAL', screen:'Wear the\nwhole feeling.', caption:'For the days that deserve a little more color.' },
   { file:'coast', title:'Somewhere slower', category:'ESCAPE', screen:'Take the\nlong way home.', caption:'A small detour. A whole different feeling.' },
@@ -126,21 +131,39 @@ function draw(time) {
   }
   if (!reduced && sceneVisible && !playbackPaused && progress < .5) ambient += dt * .000015;
   const state = sceneState(progress);
-  const entrance = reduced ? 1 : phase((time - bootTime) / 1000, 0, 1.1);
+  const elapsed = reduced ? 2 : (time - bootTime) / 1000;
+  const entrance = phase(elapsed, 0, 1.6);
   const drift = reduced ? 0 : Math.sin(ambient) * .055;
   tiles.forEach((tile, index) => {
     const pose = tilePose(index, selectedSmooth, progress, width, height, drift);
-    const delay = Math.abs(index % (width < 700 ? 5 : 7) - (width < 700 ? 2 : 3)) * .07 + Math.floor(index / (width < 700 ? 5 : 7)) * .045;
-    const arrival = reduced ? 1 : phase((time - bootTime) / 1000, delay, delay + .85);
-    tile.style.transform = `translate(-50%,-50%) translate3d(${pose.x.toFixed(2)}px,${(pose.y + (1-arrival)*65).toFixed(2)}px,${(pose.z - (1-arrival)*300).toFixed(2)}px) rotateY(${pose.yaw.toFixed(2)}deg) scale(${pose.scale.toFixed(4)})`;
-    tile.style.opacity = String(pose.opacity * arrival);
+    const load = loadPose(elapsed, index, width, height, Math.max(progress,targetProgress));
+    tile.style.transform = `translate(-50%,-50%) translate3d(${(pose.x+load.x).toFixed(2)}px,${(pose.y+load.y).toFixed(2)}px,${(pose.z+load.z).toFixed(2)}px) rotateX(${load.pitch.toFixed(2)}deg) rotateY(${(pose.yaw+load.yaw).toFixed(2)}deg) rotateZ(${load.roll.toFixed(2)}deg) scale(${(pose.scale*load.scale).toFixed(4)})`;
+    tile.style.opacity = String(pose.opacity * load.opacity);
     tile.style.zIndex = String(100 - Math.round(Math.abs(index - selectedSmooth)));
     tile.tabIndex = settled && pose.opacity > .5 ? (index === selected ? 0 : -1) : -1;
     tile.style.pointerEvents = settled && pose.opacity > .5 ? 'auto' : 'none';
   });
   $('.wall-shade').style.opacity = state.shade;
-  intro.style.opacity = String(state.intro * entrance);
+  intro.style.opacity = String(state.intro);
   intro.style.transform = `translateY(${-phase(progress,.02,.25)*48}px)`;
+  headlineLines.forEach((line,index)=>{
+    const reveal=phase(elapsed,.26+index*.16,.96+index*.2);
+    line.style.transform=`translateY(${(1-reveal)*115}%) rotateZ(${(1-reveal)*(index?-2:2)}deg)`;
+    line.style.opacity=String(phase(reveal,0,.5));
+  });
+  const kickerReveal=phase(elapsed,.42,.95);
+  introKicker.style.opacity=String(kickerReveal);
+  introKicker.style.transform=`translateY(${(1-kickerReveal)*16}px)`;
+  const captionReveal=phase(elapsed,.8,1.3);
+  introCaption.style.opacity=String(captionReveal);
+  introCaption.style.transform=`translateY(${(1-captionReveal)*24}px)`;
+  const cueReveal=phase(elapsed,1.05,1.55);
+  introScroll.style.opacity=String(cueReveal);
+  introScroll.inert=cueReveal<.9;
+  const headerReveal=phase(elapsed,.45,1.15);
+  siteHead.style.opacity=String(headerReveal);
+  siteHead.style.transform=`translateY(${(1-headerReveal)*-24}px)`;
+  siteHead.inert=headerReveal<.8;
   intro.inert = state.intro < .5;
   intro.setAttribute('aria-hidden', String(state.intro < .5));
   product.style.opacity = state.product;
@@ -159,7 +182,7 @@ function draw(time) {
 }
 
 function requestFrame() { if (!frameId && !document.hidden) frameId = requestAnimationFrame(draw); }
-const bootTime = performance.now();
+let bootTime = performance.now();
 
 function updatePlayback() {
   const data = reels[selected % reels.length];
@@ -280,7 +303,14 @@ $('#watch-film').addEventListener('click',()=>{film.showModal();updatePlayback()
 $$('[data-close-film]').forEach(button=>button.addEventListener('click',()=>film.close()));
 film.addEventListener('close',()=>{filmVideo.pause();updatePlayback();});
 film.addEventListener('click',event=>{if(event.target===film)film.close();});
-$('#replay-intro').addEventListener('click',()=>{window.scrollTo({top:0,behavior:reduced?'instant':'smooth'});});
+function replayWall(){
+  window.scrollTo({top:0,behavior:'instant'});
+  bootTime=performance.now();lastTime=0;
+  progress=targetProgress=reduced?1:0;
+  stage.tabIndex=-1;stage.focus({preventScroll:true});
+  requestFrame();
+}
+$('#replay-intro').addEventListener('click',replayWall);
 
 const opening=$('#opening-cut');
 let openingTimer;
@@ -297,7 +327,7 @@ function playOpening() {
 }
 $('#play-opening').addEventListener('click',playOpening);
 $('#skip-opening').addEventListener('click',()=>opening.close());
-opening.addEventListener('close',()=>{clearTimeout(openingTimer);opening.classList.remove('is-running');$('.wordmark').focus({preventScroll:true});});
+opening.addEventListener('close',()=>{clearTimeout(openingTimer);opening.classList.remove('is-running');replayWall();});
 
 function setStep(index,focus=false) {
   currentStep=clamp(index,0,2);

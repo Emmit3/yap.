@@ -3,6 +3,31 @@ export const lerp = (from, to, progress) => from + (to - from) * progress;
 export const smooth = (value) => { const t = clamp(value); return t * t * (3 - 2 * t); };
 export const phase = (progress, from, to) => smooth((progress - from) / (to - from));
 
+/** A center-out camera arrival layered over the existing wall-to-strip pose. */
+export function loadPose(elapsed, index, width, height, progress = 0) {
+  const mobile = width < 700;
+  const columns = mobile ? 5 : 7;
+  const row = Math.floor(index / columns) - 1;
+  const column = index % columns - (columns - 1) / 2;
+  const delay = .04 + Math.abs(column) * .055 + Math.abs(row) * .075;
+  const t = clamp((elapsed - delay) / 1.15);
+  const arrive = 1 - (1 - t) ** 4;
+  // Scrolling takes ownership immediately instead of fighting the load animation.
+  const weight = 1 - phase(progress, .015, .18);
+  const remaining = (1 - arrive) * weight;
+  const settle = Math.sin(Math.PI * t) * (1 - t) ** 2 * weight;
+  return {
+    x: column * width * (mobile ? .11 : .13) * remaining,
+    y: (row * height * .22 + height * .15) * remaining,
+    z: -Math.min(1500, width * 1.05) * (mobile ? .7 : 1) * remaining + settle * 100,
+    pitch: row * (mobile ? 12 : 18) * remaining,
+    yaw: (column * 7 + (row === 0 ? -8 : 8)) * remaining,
+    roll: (Math.sign(column) || row) * (mobile ? 4 : 7) * remaining,
+    scale: 1 - .14 * remaining,
+    opacity: lerp(phase(t, 0, .24), 1, 1 - weight),
+  };
+}
+
 /** One pose owner for both the Burst cylinder and the settled Frieze strip. */
 export function tilePose(index, selected, progress, width, height, drift = 0) {
   const mobile = width < 700;

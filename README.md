@@ -24,6 +24,7 @@ The static production site is written to `dist/`. It can be served by any static
 ## Experience
 
 - Scroll to transform the same image elements from a three-row curved wall into the bottom filmstrip.
+- The wall loads with a center-out camera arrival, unfolding image planes, and staggered headline reveals. Replay the wall from the footer. Scrolling interrupts the load cleanly.
 - Select a frame, drag horizontally, or use the previous/next buttons and arrow keys to change the phone preview.
 - Open the studio to put an idea into the illustrative phone preview and choose a mood.
 - Watch the included portrait clip in the phone or the full player. Playback, sample likes, and sample saves are interactive. The sample footage is silent.
