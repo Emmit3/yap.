@@ -156,6 +156,11 @@ export function useResearchRun(callbacks: {
         return;
       setRun(result.run);
       setConnected(true);
+      if (result.run.status === 'completed') {
+        // The save won the race. Let its polling owner load the result instead of canceling it.
+        if (!activeController && !resultLoaded) void watch(id);
+        return;
+      }
       if (terminal(result.run)) {
         remember(null);
         activeController?.abort();

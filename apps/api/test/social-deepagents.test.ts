@@ -306,3 +306,82 @@ test('model-call budget and cancellation stop the harness without leaking privat
     (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_CANCELED',
   );
 });
+
+test('SDK general-purpose and unknown subagents cannot bypass the shared research budget', async () => {
+  for (const subagentType of ['general-purpose', 'unexpected_specialist']) {
+    const model = new ScriptedResearchModel([
+      call('write_todos', {
+        todos: [{ content: 'Collect public evidence', status: 'in_progress' }],
+      }),
+      call('task', {
+        subagent_type: subagentType,
+        description: 'Read /research/scope.json repeatedly.',
+      }),
+      ...Array.from({ length: 4 }, () => call('read_file', { file_path: '/research/scope.json' })),
+      [],
+    ]);
+    let searches = 0;
+    await assert.rejects(
+      runSocialDeepAgents(
+        {
+          input,
+          signal: new AbortController().signal,
+          emit: () => undefined,
+          writeArtifact: () => undefined,
+          collect: async () => {
+            searches++;
+            return data;
+          },
+        },
+        { model, config: { maxModelCalls: 2, timeoutMs: 10000 } },
+      ),
+      (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_DELEGATION',
+    );
+    assert.equal(model.calls, 2);
+    assert.equal(searches, 0);
+  }
+});
+
+test('the model-call budget includes named specialists as well as the coordinator', async () => {
+  const model = new ScriptedResearchModel(script());
+  let searches = 0;
+  await assert.rejects(
+    runSocialDeepAgents(
+      {
+        input,
+        signal: new AbortController().signal,
+        emit: () => undefined,
+        writeArtifact: () => undefined,
+        collect: async () => {
+          searches++;
+          return data;
+        },
+      },
+      { model, config: { maxModelCalls: 3, timeoutMs: 10000 } },
+    ),
+    (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_BUDGET',
+  );
+  assert.equal(model.calls, 3);
+  assert.equal(searches, 0);
+});
+
+test('a batch of filesystem tool calls cannot exceed the shared tool budget', async () => {
+  const model = new ScriptedResearchModel([
+    Array.from({ length: 49 }, () => call('read_file', { file_path: '/research/scope.json' })[0]!),
+    [],
+  ]);
+  await assert.rejects(
+    runSocialDeepAgents(
+      {
+        input,
+        signal: new AbortController().signal,
+        emit: () => undefined,
+        writeArtifact: () => undefined,
+        collect: async () => data,
+      },
+      { model, config: { maxModelCalls: 2, timeoutMs: 10000 } },
+    ),
+    (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_BUDGET',
+  );
+  assert.equal(model.calls, 1);
+});

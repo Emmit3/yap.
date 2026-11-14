@@ -225,6 +225,7 @@ export async function runSocialDeepAgents(
   let modelCalls = 0;
   let toolCalls = 0;
   let budgetExceeded = false;
+  let rejectedDelegation = false;
   let planned = false;
   const completed = new Set<ResearchAgent>();
   const budget = createMiddleware({
@@ -242,6 +243,14 @@ export async function runSocialDeepAgents(
       if (toolCalls > 48) {
         budgetExceeded = true;
         throw new Error('Research tool call budget reached.');
+      }
+      if (request.toolCall.name === 'task') {
+        const requestedAgent = record(request.toolCall.args).subagent_type;
+        if (!AGENTS.some((name) => name === requestedAgent)) {
+          rejectedDelegation = true;
+          controller.abort();
+          throw new Error('Research requested a subagent outside the allowed specialists.');
+        }
       }
       return handler(request);
     },
@@ -534,6 +543,12 @@ export async function runSocialDeepAgents(
   } catch (error) {
     if (context.signal.aborted)
       throw new ApiError(408, 'SOCIAL_AGENT_CANCELED', 'The agent research was canceled.');
+    if (rejectedDelegation)
+      throw new ApiError(
+        502,
+        'SOCIAL_AGENT_DELEGATION',
+        'The research harness requested an unsupported specialist. Retry the bounded research job.',
+      );
     if (budgetExceeded)
       throw new ApiError(
         429,

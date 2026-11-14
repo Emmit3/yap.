@@ -222,7 +222,16 @@ export async function createSocialRouter(
       return runSocialDeepAgents(context);
     });
   const deepAvailability = options.deepAgentsAvailable ?? socialDeepAgentsAvailable;
-  let collecting = 0;
+  const legacyCollections = new Map<AbortController, Promise<void>>();
+  let closing = false;
+  const ensureResearchOpen = () => {
+    if (closing)
+      throw new ApiError(
+        503,
+        'SOCIAL_RUN_CLOSED',
+        'Research is shutting down. Start a new search after the API restarts.',
+      );
+  };
 
   router.get('/research-runs/capabilities', (_request, response) => {
     const deep = deepAvailability();
@@ -257,8 +266,9 @@ export async function createSocialRouter(
     response.json(capabilities);
   });
   router.post('/research-runs', (request, response) => {
+    ensureResearchOpen();
     const input = validate(socialResearchRunInputSchema, request.body);
-    if (collecting + runs.activeCount >= 2)
+    if (legacyCollections.size + runs.activeCount >= 2)
       throw new ApiError(
         429,
         'SOCIAL_BUSY',
@@ -463,30 +473,43 @@ export async function createSocialRouter(
     });
   });
   router.post('/investigations', async (request, response) => {
+    ensureResearchOpen();
     const input = validate(socialResearchInputSchema, request.body);
-    if (collecting + runs.activeCount >= 2)
+    if (legacyCollections.size + runs.activeCount >= 2)
       throw new ApiError(
         429,
         'SOCIAL_BUSY',
         'Two searches are already running. Wait for one to finish.',
       );
-    collecting++;
     const abort = new AbortController();
+    let complete: () => void = () => {};
+    const done = new Promise<void>((resolve) => {
+      complete = resolve;
+    });
+    legacyCollections.set(abort, done);
+    let committing = false;
     const onClose = () => {
       if (!response.writableEnded) abort.abort();
     };
     response.on('close', onClose);
     try {
       const dataset = await providers.collect(input, abort.signal);
+      ensureResearchOpen();
       if (abort.signal.aborted) return;
+      // Once the atomic save begins, shutdown waits for its truthful outcome.
+      committing = true;
       const investigation = await repository.create(createInvestigation(input, dataset));
       response
         .status(201)
         .location(`/api/social/investigations/${investigation.id}`)
         .json({ investigation });
+    } catch (error) {
+      if (!committing && closing) ensureResearchOpen();
+      throw error;
     } finally {
       response.off('close', onClose);
-      collecting--;
+      legacyCollections.delete(abort);
+      complete();
     }
   });
   router.post('/investigations/import', async (request, response) => {
@@ -593,7 +616,13 @@ export async function createSocialRouter(
       );
     response.json(buildSocialHandoff(investigation, input));
   });
-  return Object.assign(router, { closeSocialRuns: () => runs.close() });
+  return Object.assign(router, {
+    closeSocialRuns: async () => {
+      closing = true;
+      for (const controller of legacyCollections.keys()) controller.abort();
+      await Promise.all([runs.close(), ...legacyCollections.values()]);
+    },
+  });
 }
 
 function ensureActive(signal: AbortSignal): void {
