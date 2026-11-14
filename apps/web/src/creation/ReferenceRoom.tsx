@@ -2,19 +2,21 @@ import { useEffect, useRef, useState } from 'react';
 import { ArrowUpRight, FilmSlate } from '@phosphor-icons/react';
 import { loadFilmCatalog } from '../creator/references';
 import { referenceIdsFromMessage } from './bridge';
+import { createReferenceCatalogReader } from './reference-loader';
 import './creation.css';
 
 export function ReferenceRoom({ onUseReferences }: { onUseReferences(ids: string[]): void }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [error, setError] = useState('');
+  const [revision, setRevision] = useState(0);
   const callback = useRef(onUseReferences);
   callback.current = onUseReferences;
   useEffect(() => {
     const controller = new AbortController();
-    const catalog = loadFilmCatalog(controller.signal);
+    const readCatalog = createReferenceCatalogReader(() => loadFilmCatalog(controller.signal));
     // A click can arrive after the frame loads. Retain the failure for that click without an
     // unhandled rejection, and keep the original external links usable inside the frame.
-    void catalog.catch(() => undefined);
+    void readCatalog().catch(() => undefined);
     const receive = (event: MessageEvent<unknown>) => {
       const ids = referenceIdsFromMessage(
         event,
@@ -22,7 +24,7 @@ export function ReferenceRoom({ onUseReferences }: { onUseReferences(ids: string
         frame.current?.contentWindow ?? null,
       );
       if (!ids) return;
-      void catalog
+      void readCatalog()
         .then((films) => {
           if (controller.signal.aborted) return;
           const known = new Set(films.map((film) => film.id));
@@ -45,7 +47,7 @@ export function ReferenceRoom({ onUseReferences }: { onUseReferences(ids: string
       controller.abort();
       window.removeEventListener('message', receive);
     };
-  }, []);
+  }, [revision]);
   return (
     <section className="creation-reference-room" aria-label="Film reference room">
       <div className="creation-reference-intro">
@@ -59,11 +61,21 @@ export function ReferenceRoom({ onUseReferences }: { onUseReferences(ids: string
         </a>
       </div>
       {error && (
-        <p className="creation-message creation-message-error" role="alert">
-          {error}
-        </p>
+        <div className="creation-message creation-message-error" role="alert">
+          <p>{error} Select again to retry, or reload the room.</p>
+          <button
+            className="text-button"
+            onClick={() => {
+              setError('');
+              setRevision((value) => value + 1);
+            }}
+          >
+            Reload reference room
+          </button>
+        </div>
       )}
       <iframe
+        key={revision}
         ref={frame}
         src="/showcase/film-references.html?embedded=1"
         title="Interactive film reference library"

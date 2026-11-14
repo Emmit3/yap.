@@ -76,7 +76,7 @@ export function ReferenceBoard({
               <FilmSlate size={18} />
               <span>
                 <strong>{film.title}</strong>
-                <small>{film.techniques.join(' / ')}</small>
+                <small>{film.techniques.join(' / ') || 'Attributed film reference'}</small>
               </span>
               <button
                 type="button"
@@ -186,6 +186,12 @@ export function ReferenceBoard({
                       </label>
                     ))}
                   </fieldset>
+                  {!film.techniques.length && (
+                    <p className="creator-fineprint">
+                      No source-supported technique tags are available. You can still use the cited
+                      film as a reference.
+                    </p>
+                  )}
                   <details>
                     <summary>Source evidence</summary>
                     <p>{film.evidence}</p>
@@ -198,11 +204,22 @@ export function ReferenceBoard({
                     </a>
                     <button
                       type="button"
-                      disabled={disabled || !techniques.length || (!saved && selected.length >= 12)}
+                      disabled={
+                        disabled ||
+                        (film.techniques.length > 0 && !techniques.length) ||
+                        Boolean(saved && !film.techniques.length) ||
+                        (!saved && selected.length >= 12)
+                      }
                       onClick={() => onSelect(selectedFilm(film, techniques))}
                     >
                       {saved ? <Check size={16} /> : <FilmSlate size={16} />}{' '}
-                      {saved ? 'Update techniques' : 'Use techniques'}
+                      {!film.techniques.length
+                        ? saved
+                          ? 'Reference selected'
+                          : 'Use cited reference'
+                        : saved
+                          ? 'Update techniques'
+                          : 'Use techniques'}
                     </button>
                   </div>
                   {embed && (

@@ -66,7 +66,7 @@ Recommended recovery order for View analytics:
 3. If the investigation was deleted or is unavailable, show the workflow's saved handoff snapshot: creative direction, cautions, and source references. Explain that the detailed graph is unavailable.
 4. Offer a deliberate new investigation if the creator wants fresh evidence. Never synthesize a replacement live trace or silently substitute example data.
 
-The current handoff already carries an investigation ID and cited snapshot. Embedding View analytics in an existing workflow, optional run linkage, and a durable structured stage/plan summary are integration recommendations, not claims that a new analytics pane has already shipped. A run ID alone is insufficient as the durable link.
+The handoff carries an investigation ID and cited snapshot. `CreationWorkspace` now embeds View analytics beside both creation formats, restores the linked investigation, and retains the saved snapshot. Its always-mounted editor supplies authoritative saved context, avoiding duplicate hydration requests. Optional run linkage and a durable structured stage/plan summary remain recommendations. A run ID alone is insufficient as the durable link.
 
 ## Apply without losing creative work
 

@@ -7,12 +7,7 @@ import { loadFilmCatalog, selectedFilm } from '../creator/references';
 import { PromoWorkspace } from '../promo/PromoWorkspace';
 import SocialWorkspace from '../social/SocialWorkspace';
 import { validateResearchContext } from '../research-context';
-import {
-  applyCreationResearch,
-  creationContext,
-  type CreationContext,
-  type CreationKind,
-} from './research';
+import { applyCreationResearch, type CreationContext, type CreationKind } from './research';
 import './creation.css';
 
 export interface CreationWorkspaceProps {
@@ -60,7 +55,6 @@ export function CreationWorkspace({
   const [notice, setNotice] = useState('');
   const [applying, setApplying] = useState(false);
   const dirtyRef = useRef(false);
-  const contextGeneration = useRef(0);
   const applyingRef = useRef(false);
   const applyingController = useRef<AbortController | null>(null);
   const callbacks = useRef({ onDirty, onCreated });
@@ -72,9 +66,11 @@ export function CreationWorkspace({
     setCreatorDirty(dirty);
   }, []);
   const changeContext = useCallback((next: CreationContext) => {
-    contextGeneration.current++;
     setContext((previous) => (JSON.stringify(previous) === JSON.stringify(next) ? previous : next));
-    if (next.resourceId) setResearch(next.research);
+    if (next.resourceId) {
+      setResearch(next.research);
+      setContextLoading(false);
+    }
   }, []);
 
   useEffect(() => {
@@ -82,6 +78,9 @@ export function CreationWorkspace({
       creatorDirty || analyticsDirty || applying || (!resourceId && Boolean(research)),
     );
   }, [creatorDirty, analyticsDirty, applying, resourceId, research]);
+  useEffect(() => {
+    if (resourceId || context.isBusy || applying) setPendingKind(null);
+  }, [resourceId, context.isBusy, applying]);
   useEffect(
     () => () => {
       applyingController.current?.abort();
@@ -89,29 +88,6 @@ export function CreationWorkspace({
     },
     [],
   );
-  useEffect(() => {
-    if (!id) return;
-    const controller = new AbortController();
-    const generation = contextGeneration.current;
-    void creationContext(kind, id, controller.signal)
-      .then((next) => {
-        if (controller.signal.aborted) return;
-        if (contextGeneration.current === generation) {
-          setContext(next);
-          setResearch(next.research);
-        }
-      })
-      .catch((caught: unknown) => {
-        if (!controller.signal.aborted)
-          setError(
-            caught instanceof Error ? caught.message : 'Saved research could not be opened.',
-          );
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setContextLoading(false);
-      });
-    return () => controller.abort();
-  }, [kind, id, editorEpoch]);
   useEffect(() => {
     if (id || !initialReferenceIds.length) return;
     const controller = new AbortController();
@@ -395,7 +371,16 @@ export function CreationWorkspace({
           </details>
         )}
         {contextLoading ? (
-          <p role="status">Opening saved research context…</p>
+          <div className="creation-message" role="status">
+            <p>
+              {context.isBusy
+                ? 'Opening saved creation and its research context…'
+                : 'Load this saved creation to open its linked research. If loading failed, retry it in Create.'}
+            </p>
+            <button className="text-button" onClick={() => openView('create', true)}>
+              Open creation
+            </button>
+          </div>
         ) : (
           analyticsOpened && (
             <SocialWorkspace

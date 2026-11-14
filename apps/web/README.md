@@ -22,7 +22,9 @@ The Vite dev server proxies `/api` to `http://127.0.0.1:3001`. For a separately 
 - `#/promos`: searchable saved promos.
 - `#/promos/new`: the creator's idea, own business facts, and photos.
 - `#/promos/:id`: editable copy, timing, scenes, photo choices, refinement questions, explicit approval, render status, MP4 and caption.
-- `#/social`: the separately owned social research workspace.
+- `#/references`: the interactive film reference room, with original/source links and use-reference actions.
+- `#/create?view=analytics` and `#/promos/:id?view=analytics`: research inside the same creation, alongside its editor.
+- `#/social`: a compatible entry into creation analytics, without separate research navigation.
 - `#/projects`, `#/new`, and `#/projects/:id`: the existing script-planning records and Markdown/JSON exports.
 
 The photo promo path uploads raw image files sequentially using the latest returned workflow version. Preparation creates a proposal and never approves it. Saving content invalidates affected approvals. The creator must review the saved facts, copy, timings, and photos, then explicitly choose **Approve and render video**.
@@ -31,7 +33,11 @@ Queued/running renders are polled until a terminal status. Stopping status check
 
 ## Reviewed research handoff
 
-`SocialWorkspace.onUseResearch` provides a reviewed `SocialHandoff`. The shell validates its shared schema and 48 KiB serialized limit, retains it in session storage where available, and opens the creator studio. The creator still supplies their own request, facts, and media. The client sends research as a separate `research` field; it is never silently copied into product claims. Saved research retains source URLs, excerpts, dates, and cautions. No handoff calls approval or rendering.
+`CreationWorkspace` keeps the editor and embedded `SocialWorkspace` mounted in Create and View analytics panes. It combines their dirty state and keeps the same workspace through the first saved ID transition. `SocialWorkspace.onUseResearch` provides a reviewed `SocialHandoff`, validated against the shared schema and 48 KiB limit. A new creation retains that selection for its first save. An existing creation requires saved editor changes and no active job, then attaches context to the same workflow using its current version. Research-only refinement leaves creator facts intact and invalidates dependent proposals and approvals. No handoff calls approval or rendering.
+
+Saved analytics open the linked persisted investigation without a new search. The saved direction, cautions, and source URLs remain inspectable if that investigation was deleted or temporary run telemetry expired. Public task activity is separate from saved findings. Synthetic replay, direct public collection, and actual Deep Agents execution remain distinct.
+
+The shell has three primary controls plus a separate New creation button. Saved films, photo reels, and the legacy script archive are formats within Your creations. Film-page messages contain IDs only; the parent checks origin/window identity and resolves selections against the validated catalog. Direct creation links accept bounded, repeated `reference` query parameters.
 
 The studio also loads the separate verified campaign catalog from `/showcase/film-references.json` when available. Selected IDs, original case/watch URLs, and creative techniques are saved as `externalReferences`. Campaign videos are not downloaded, rehosted, or represented as creator-owned output. Guided and Director share session state; changing views does not duplicate the project or discard local edits.
 
@@ -44,6 +50,7 @@ Unsaved creator changes and social notes use the shared navigation guard. A vers
 - `src/creator/*`, `src/CreatorLibrary.tsx`: shared creation session, guided interview, director review, reference board, generated-clip activity and saved film library.
 - `src/promo/*`: photo promo API client, creator editor, library, and scoped monochrome styles.
 - `src/social/*`: exclusively maintained by the social module owner; mounted through its public props.
+- `src/creation/*`: creation/analytics panes, draft aggregation, same-workflow research attachment, and checked film-room integration.
 - `src/ProjectLibrary.tsx`, `src/NewProject.tsx`, `src/ProjectEditor.tsx`, `src/api.ts`: compatible legacy script planner.
 - `src/components.tsx`, `src/styles.css`: shared controls and baseline styles.
 
