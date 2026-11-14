@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, MagnifyingGlass, Sparkle } from '@phosphor-icons/react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CaretDown,
+  Check,
+  MagnifyingGlass,
+  Sparkle,
+} from '@phosphor-icons/react';
 import type { PosterDesign, PosterStyle } from '@yap/contracts/posters';
 import { PosterCarousel } from './PosterCarousel';
 import { posterApi } from './api';
@@ -235,8 +242,12 @@ export function PosterWorkspace({
       <div hidden={Boolean(editingStyle)}>
         <header className="poster-studio-heading">
           <div>
-            <h1 id="poster-studio-title">Find your next poster.</h1>
-            <p>Pick a look. Add your words, your details, your twist.</p>
+            <h1 id="poster-studio-title">
+              Find a feeling.
+              <br />
+              Make it yours.
+            </h1>
+            <p>A wall of possibilities. Pick a poster and put your own spin on it.</p>
           </div>
           {lastStyle && (
             <button className="poster-resume" onClick={() => open(lastStyle)}>
@@ -248,29 +259,50 @@ export function PosterWorkspace({
             </button>
           )}
         </header>
-        <div className="poster-studio-tools">
-          <div className="poster-categories" role="group" aria-label="Poster categories">
-            {categories.map(([value, label]) => (
+        <details className="poster-discovery">
+          <summary>
+            <MagnifyingGlass size={16} />
+            Find a style
+            {(category !== 'all' || query.trim()) && (
+              <span className="poster-filter-active">Filtered</span>
+            )}
+            <CaretDown size={14} />
+          </summary>
+          <div className="poster-studio-tools">
+            <div className="poster-categories" role="group" aria-label="Poster categories">
+              {categories.map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={category === value}
+                  onClick={() => setCategory(value!)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="poster-style-search">
+              <MagnifyingGlass size={18} />
+              <input
+                aria-label="Search poster styles"
+                placeholder="Find a style"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            {(category !== 'all' || query.trim()) && (
               <button
-                key={value}
-                type="button"
-                aria-pressed={category === value}
-                onClick={() => setCategory(value!)}
+                className="poster-filter-clear"
+                onClick={() => {
+                  setCategory('all');
+                  setQuery('');
+                }}
               >
-                {label}
+                Clear filters
               </button>
-            ))}
+            )}
           </div>
-          <label className="poster-style-search">
-            <MagnifyingGlass size={18} />
-            <input
-              aria-label="Search poster styles"
-              placeholder="Find a style"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-        </div>
+        </details>
         {loading ? (
           <div className="poster-studio-loading" role="status">
             <span>Finding your next look…</span>
@@ -313,7 +345,7 @@ export function PosterWorkspace({
         )}
         {!loading && styles.length > 0 && (
           <div className="poster-studio-footnote">
-            <p>Hover to take a closer look. Choose a poster to start.</p>
+            <p>Something catch your eye? Make it your starting point.</p>
             <a href={styles[0]?.source.url} target="_blank" rel="noreferrer">
               Source collection <ArrowUpRight size={14} />
             </a>

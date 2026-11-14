@@ -3,6 +3,7 @@ import { rovingIndex } from '../creator/keyboard';
 import { ProductGallery } from '../inspiration/ProductGallery';
 import { PosterWorkspace } from '../posters/PosterWorkspace';
 import './creation.css';
+import '../posters/poster-room.css';
 
 export function ReferenceRoom({
   onUseReferences,
@@ -26,7 +27,7 @@ export function ReferenceRoom({
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
   return (
-    <section className="creation-reference-room" aria-label="Inspiration">
+    <section className="creation-reference-room" aria-label="Inspiration" data-view={tab}>
       <div className="reference-room-toolbar">
         <div
           className="creation-view-tabs reference-room-tabs"
