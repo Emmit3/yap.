@@ -26,6 +26,7 @@ import {
   type Shot,
 } from '@yap/contracts';
 import { api, ApiFailure, messageOf } from './api';
+import { rovingIndex } from './creator/keyboard';
 import {
   BriefFields,
   ErrorNotice,
@@ -388,21 +389,39 @@ export function ProjectEditor({
       )}
       <div className="editor-layout">
         <div className="editor-main">
-          <div className="editor-tabs" role="tablist" aria-label="Project sections">
+          <div
+            className="editor-tabs"
+            role="tablist"
+            aria-label="Project sections"
+            aria-orientation="horizontal"
+          >
             {(
               [
                 { key: 'script', label: 'Script', Icon: Quotes },
                 { key: 'shots', label: 'Shot plan', Icon: FilmStrip },
                 { key: 'brief', label: 'The brief', Icon: NotePencil },
               ] as const
-            ).map(({ key, label, Icon }) => (
+            ).map(({ key, label, Icon }, index) => (
               <button
                 key={key}
                 id={`tab-${key}`}
                 role="tab"
                 aria-selected={tab === key}
                 aria-controls={`panel-${key}`}
+                tabIndex={tab === key ? 0 : -1}
                 onClick={() => setTab(key)}
+                onKeyDown={(event) => {
+                  if (event.altKey || event.ctrlKey || event.metaKey) return;
+                  const tabs =
+                    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                      '[role="tab"]',
+                    );
+                  const next = rovingIndex(event.key, index, tabs?.length ?? 0);
+                  if (next === null) return;
+                  event.preventDefault();
+                  tabs?.[next]?.focus();
+                  tabs?.[next]?.click();
+                }}
                 className={tab === key ? 'active' : ''}
               >
                 <Icon size={20} />
