@@ -105,7 +105,7 @@ export function App() {
   useEffect(() => {
     document.title =
       path === '/references'
-        ? 'Film reference room — Yap'
+        ? 'Reference room — Yap'
         : path === '/'
           ? 'yap. — good ideas, made REEL'
           : path === '/films'
@@ -346,6 +346,7 @@ export function App() {
           )}
           {path === '/references' ? (
             <ReferenceRoom
+              onDirty={changeDirty}
               onUseReferences={(ids) =>
                 navigate(
                   `/create?${ids.map((id) => `reference=${encodeURIComponent(id)}`).join('&')}`,
