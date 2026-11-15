@@ -46,6 +46,15 @@ async function fixture(t: TestContext, creatorOptions: AppOptions['creatorOption
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+// Failed status is saved before the worker's finally block releases unused clip holds.
+async function settledBudget(f: Fixture, expected: number) {
+  for (let attempt = 0; attempt < 100; attempt++) {
+    const { budget } = await (await f.request('/budget')).json();
+    if (budget.reservedCents + budget.chargedCents === expected) return budget;
+    await delay(20);
+  }
+  throw new Error(`The production budget did not settle to ${expected} cents.`);
+}
 async function reviewQuote(f: Fixture, value: CreatorSessionResponse) {
   const response = await f.request(
     '/sessions/' + value.session.id + '/quote',
@@ -697,9 +706,9 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   assert.equal(rejected.job.status, 'failed');
   assert.equal(rejected.job.error?.code, 'CREATOR_VOICEOVER_REJECTED');
   assert.equal(generated, 0);
-  const ledger = await CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  const budget = await settledBudget(f, 0);
   assert.deepEqual(
-    [(await ledger.budget()).reservedCents, (await ledger.budget()).chargedCents],
+    [budget.reservedCents, budget.chargedCents],
     [0, 0],
     'a definite rejection and untouched clip holds are all released',
   );
@@ -788,8 +797,7 @@ test('the narration hold is released when nothing was submitted and kept once a 
   assert.equal(changed.job.status, 'failed');
   assert.equal(changed.job.error?.code, 'CREATOR_SOURCE_CHANGED');
   assert.deepEqual([submitted, generated], [0, 0]);
-  const ledger = () => CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
-  let budget = await (await ledger()).budget();
+  let budget = await settledBudget(f, 0);
   assert.deepEqual(
     [budget.reservedCents, budget.chargedCents],
     [0, 0],
@@ -804,7 +812,7 @@ test('the narration hold is released when nothing was submitted and kept once a 
   assert.equal(failed.job.status, 'failed');
   assert.equal(failed.job.error?.code, 'CREATOR_VOICEOVER_FAILED');
   assert.deepEqual([submitted, generated], [1, 0]);
-  budget = await (await ledger()).budget();
+  budget = await settledBudget(f, lineCount * 10);
   assert.ok(lineCount > 0);
   assert.equal(
     budget.reservedCents + budget.chargedCents,
