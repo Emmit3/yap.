@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, FilmStrip, NotePencil, Quotes } from '@phosphor-icons/react';
 import { createProjectSchema, type Project, type ProjectBrief } from '@yap/contracts';
 import { api, messageOf } from './api';
@@ -12,6 +12,15 @@ const initialBrief: ProjectBrief = {
   duration: 30,
   tone: 'conversational',
   goal: 'educate',
+};
+const fieldLabels: Record<string, string> = {
+  title: 'project name',
+  idea: 'idea',
+  audience: 'audience',
+  platform: 'platform',
+  duration: 'video length',
+  tone: 'tone',
+  goal: 'goal',
 };
 
 export function NewProject({
@@ -27,6 +36,10 @@ export function NewProject({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    form.current?.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus();
+  }, [errors]);
   function change(value: ProjectBrief) {
     setBrief(value);
     onDirty(JSON.stringify(value) !== JSON.stringify(initialBrief));
@@ -38,7 +51,19 @@ export function NewProject({
     if (!result.success) {
       setErrors(
         Object.fromEntries(
-          result.error.issues.map((issue) => [String(issue.path[0]), issue.message]),
+          result.error.issues.map((issue) => {
+            const field = String(issue.path[0]);
+            const label = fieldLabels[field] ?? 'field';
+            const message =
+              issue.code === 'too_small'
+                ? field === 'title' && issue.minimum === 1
+                  ? 'Give your project a name.'
+                  : `Describe your ${label} in at least ${issue.minimum} characters.`
+                : issue.code === 'too_big'
+                  ? `Use ${issue.maximum} characters or fewer for your ${label}.`
+                  : `Check your ${label} and try again.`;
+            return [field, message];
+          }),
         ),
       );
       return;
@@ -66,7 +91,7 @@ export function NewProject({
         copy="It doesn’t have to be polished. Just give it a place to start."
       />
       <div className="create-layout">
-        <form className="brief-panel" onSubmit={create} noValidate>
+        <form ref={form} className="brief-panel" onSubmit={create} noValidate>
           {error && <ErrorNotice message={error} onDismiss={() => setError('')} />}
           <BriefFields value={brief} onChange={change} errors={errors} disabled={busy} />
           <div className="form-footer">
