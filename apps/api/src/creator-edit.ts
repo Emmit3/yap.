@@ -267,7 +267,9 @@ export async function createEditService(directory: string) {
         }
         const filters: string[] = [];
         document.draft.segments.forEach((_segment, index) => {
-          filters.push(`[${index}:v]settb=AVTB,setpts=PTS-STARTPTS[v${index}]`);
+          // FFmpeg 7 clears frame-rate metadata in setpts. Restore the saved
+          // 24 fps grid afterwards so xfade receives CFR inputs on every OS.
+          filters.push(`[${index}:v]setpts=PTS-STARTPTS,fps=24,settb=AVTB[v${index}]`);
           if (document.base.hasAudio) filters.push(`[${index}:a]asetpts=PTS-STARTPTS[a${index}]`);
         });
         let video = 'v0',
@@ -288,7 +290,9 @@ export async function createEditService(directory: string) {
               );
             duration -= previous.transitionSeconds;
           } else {
-            filters.push(`[${video}][v${index}]concat=n=2:v=1:a=0[${nextVideo}]`);
+            // Concat also clears CFR metadata; a later dissolve must see the
+            // same rate and timebase as the incoming source clip.
+            filters.push(`[${video}][v${index}]concat=n=2:v=1:a=0,fps=24,settb=AVTB[${nextVideo}]`);
             if (document.base.hasAudio)
               filters.push(`[${audio}][a${index}]concat=n=2:v=0:a=1[${nextAudio}]`);
           }

@@ -275,108 +275,109 @@ async function sourceFilm(directory: string) {
   };
 }
 
-test(
-  'real local edits reorder and trim video with matched audio dissolves, text, preview and integrity guards',
-  { timeout: 90_000 },
-  async (t) => {
-    requirePortableTextFilters(t);
-    const directory = await fixture(t),
-      { source, receipt } = await sourceFilm(directory),
-      service = await createEditService(directory),
-      sessionId = randomUUID();
-    const base = { ...baseFilm(), ...receipt },
-      first = await service.create(sessionId, base),
-      draft = structuredClone(first.draft);
-    draft.segments.reverse();
-    draft.segments = [
-      ...draft.segments,
-      ...draft.segments.map((segment) => ({ ...segment, id: randomUUID() })),
-    ];
-    for (const segment of draft.segments) {
-      segment.trimIn = 0.2;
-      segment.trimOut = 1.8;
-    }
-    draft.segments[0]!.transition = 'dissolve';
-    draft.segments[0]!.transitionSeconds = 0.3;
-    draft.textLayers.push({
-      id: randomUUID(),
-      text: 'Literal %{n} <b>',
-      start: 0,
-      end: 1,
-      x: 0.5,
-      y: 0.2,
-      fontSize: 48,
-      color: '#ffffff',
-    });
-    const saved = await service.update(sessionId, first.id, { expectedVersion: 1, draft });
-    assert.equal(saved.draft.segments[0]!.trimIn, 5 / 24);
-    assert.equal(saved.draft.segments[0]!.trimOut, 43 / 24);
-    assert.equal(saved.draft.segments[0]!.transitionSeconds, 7 / 24);
-    const output = await service.render(
-      sessionId,
-      saved.id,
-      { expectedVersion: saved.version, reviewed: true },
-      source,
-      new AbortController().signal,
-    );
-    assert.ok(Math.abs(output.duration - 145 / 24) <= 1 / 24);
-    assert.equal(output.hasAudio, true);
-    const verified = await service.verifyOutput(sessionId, saved.id, output.id);
-    for (const [at, visible] of [
-      [0.25, true],
-      [1.25, false],
-    ] as const) {
-      const pixels = await framePixels(directory, verified.path, at);
-      let white = 0;
-      for (let index = 0; index < pixels.length; index += 3)
-        if (pixels[index]! > 220 && pixels[index + 1]! > 220 && pixels[index + 2]! > 220) white++;
-      assert.equal(white > 5, visible, 'creator text appears only during its saved time window');
-    }
-    for (const [at, expected] of [
-      [0.1, 'blue'],
-      [5.7, 'red'],
-    ] as const) {
-      const frame = join(directory, `frame-${expected}.raw`);
-      await runProductionFfmpeg(
-        [
-          '-ss',
-          String(at),
-          '-i',
-          verified.path,
-          '-vf',
-          'scale=1:1',
-          '-frames:v',
-          '1',
-          '-f',
-          'rawvideo',
-          '-pix_fmt',
-          'rgb24',
-          '-y',
-          frame,
-        ],
+for (const dissolveIndex of [0, 1])
+  test(
+    `real local edits reorder and trim video with matched audio dissolves, text, preview and integrity guards (dissolve at join ${dissolveIndex + 1})`,
+    { timeout: 90_000 },
+    async (t) => {
+      requirePortableTextFilters(t);
+      const directory = await fixture(t),
+        { source, receipt } = await sourceFilm(directory),
+        service = await createEditService(directory),
+        sessionId = randomUUID();
+      const base = { ...baseFilm(), ...receipt },
+        first = await service.create(sessionId, base),
+        draft = structuredClone(first.draft);
+      draft.segments.reverse();
+      draft.segments = [
+        ...draft.segments,
+        ...draft.segments.map((segment) => ({ ...segment, id: randomUUID() })),
+      ];
+      for (const segment of draft.segments) {
+        segment.trimIn = 0.2;
+        segment.trimOut = 1.8;
+      }
+      draft.segments[dissolveIndex]!.transition = 'dissolve';
+      draft.segments[dissolveIndex]!.transitionSeconds = 0.3;
+      draft.textLayers.push({
+        id: randomUUID(),
+        text: 'Literal %{n} <b>',
+        start: 0,
+        end: 1,
+        x: 0.5,
+        y: 0.2,
+        fontSize: 48,
+        color: '#ffffff',
+      });
+      const saved = await service.update(sessionId, first.id, { expectedVersion: 1, draft });
+      assert.equal(saved.draft.segments[0]!.trimIn, 5 / 24);
+      assert.equal(saved.draft.segments[0]!.trimOut, 43 / 24);
+      assert.equal(saved.draft.segments[dissolveIndex]!.transitionSeconds, 7 / 24);
+      const output = await service.render(
+        sessionId,
+        saved.id,
+        { expectedVersion: saved.version, reviewed: true },
+        source,
         new AbortController().signal,
-        directory,
       );
-      const pixel = await readFile(frame);
-      assert.ok(
-        expected === 'blue' ? pixel[2]! > pixel[0]! : pixel[0]! > pixel[2]!,
-        'the rendered clip order matches the saved edit',
-      );
-    }
-    await writeFile(verified.path, 'replaced');
-    await assert.rejects(service.verifyOutput(sessionId, saved.id, output.id), {
-      code: 'CREATOR_PRODUCTION_INTEGRITY',
-    });
-    const changed = await service.update(sessionId, saved.id, {
-      expectedVersion: saved.version,
-      draft: saved.draft,
-    });
-    assert.equal(changed.version, 3);
-    await assert.rejects(service.verifyOutput(sessionId, saved.id, output.id), {
-      code: 'CREATOR_EDIT_STALE',
-    });
-  },
-);
+      assert.ok(Math.abs(output.duration - 145 / 24) <= 1 / 24);
+      assert.equal(output.hasAudio, true);
+      const verified = await service.verifyOutput(sessionId, saved.id, output.id);
+      for (const [at, visible] of [
+        [0.25, true],
+        [1.25, false],
+      ] as const) {
+        const pixels = await framePixels(directory, verified.path, at);
+        let white = 0;
+        for (let index = 0; index < pixels.length; index += 3)
+          if (pixels[index]! > 220 && pixels[index + 1]! > 220 && pixels[index + 2]! > 220) white++;
+        assert.equal(white > 5, visible, 'creator text appears only during its saved time window');
+      }
+      for (const [at, expected] of [
+        [0.1, 'blue'],
+        [5.7, 'red'],
+      ] as const) {
+        const frame = join(directory, `frame-${expected}.raw`);
+        await runProductionFfmpeg(
+          [
+            '-ss',
+            String(at),
+            '-i',
+            verified.path,
+            '-vf',
+            'scale=1:1',
+            '-frames:v',
+            '1',
+            '-f',
+            'rawvideo',
+            '-pix_fmt',
+            'rgb24',
+            '-y',
+            frame,
+          ],
+          new AbortController().signal,
+          directory,
+        );
+        const pixel = await readFile(frame);
+        assert.ok(
+          expected === 'blue' ? pixel[2]! > pixel[0]! : pixel[0]! > pixel[2]!,
+          'the rendered clip order matches the saved edit',
+        );
+      }
+      await writeFile(verified.path, 'replaced');
+      await assert.rejects(service.verifyOutput(sessionId, saved.id, output.id), {
+        code: 'CREATOR_PRODUCTION_INTEGRITY',
+      });
+      const changed = await service.update(sessionId, saved.id, {
+        expectedVersion: saved.version,
+        draft: saved.draft,
+      });
+      assert.equal(changed.version, 3);
+      await assert.rejects(service.verifyOutput(sessionId, saved.id, output.id), {
+        code: 'CREATOR_EDIT_STALE',
+      });
+    },
+  );
 
 test(
   'real brand overlay keeps source duration and audio and renders a verified logo and end card',
