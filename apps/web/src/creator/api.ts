@@ -171,6 +171,7 @@ export function createCreatorApi(origin = '', transport: typeof fetch = fetch) {
       ),
     produce: (id: string, input: CreatorProduceInput, signal?: AbortSignal) =>
       request(`${sessionPath(id)}/produce`, creatorJobResponseSchema, json('POST', input), signal),
+    musicUrl: (trackId: string) => `${base}/music/${encodeURIComponent(trackId)}`,
     outputUrl: (id: string, jobId: string, download = false) =>
       `${base}${jobPath(id, jobId)}/video${download ? '?download=1' : ''}`,
     clipUrl: (id: string, jobId: string, clipId: string, attempt: number) =>

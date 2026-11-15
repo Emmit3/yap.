@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import { once } from 'node:events';
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -16,6 +16,7 @@ import {
 } from '@yap/contracts/creator';
 import { createApp, type AppOptions } from '../src/app.js';
 import { CreatorRepository } from '../src/creator-repository.js';
+import { ApiError } from '../src/errors.js';
 import type { CreatorBudgetLedger } from '../src/creator-budget.js';
 const json = (method: string, body: unknown): RequestInit => ({
   method,
@@ -133,7 +134,7 @@ async function makeVideo(directory: string): Promise<Buffer> {
   return readFile(path);
 }
 
-test('production audits actual decoded clips, requires a new quote for retries and serves a real silent assembled MP4', async (t) => {
+test('production audits actual decoded clips, requires a new quote for retries and serves a real assembled MP4 with music', async (t) => {
   let bytes: Buffer | undefined,
     paid = 0,
     reviews = 0;
@@ -208,7 +209,10 @@ test('production audits actual decoded clips, requires a new quote for retries a
   assert.equal(reviews, 4);
   assert.equal(result.job.clips.filter((clip) => clip.status === 'passed').length, 3);
   assert.equal(result.job.output?.duration, 15);
-  assert.equal(result.job.output?.hasAudio, false);
+  // No narration key is configured here, so the default soundtrack is the bundled music bed.
+  assert.equal(next.session.plan?.audio?.voice, null);
+  assert.ok(next.session.plan?.audio?.musicTrackId);
+  assert.equal(result.job.output?.hasAudio, true);
   assert.ok(failed.job.clips[1]?.audit?.issues.includes('Keep the subject centered.'));
   assert.equal(
     result.job.clips[1]!.prompt,
@@ -519,4 +523,292 @@ test('shutdown waits for submitted provider cleanup and retains only started cli
     }),
   );
   assert.equal(late.status, 503);
+});
+
+async function makeSpeech(directory: string, seconds: number): Promise<Buffer> {
+  const binary: unknown = createRequire(import.meta.url)('ffmpeg-static');
+  const path = join(directory, `speech-${seconds}.wav`);
+  const process = spawn(
+    binary as string,
+    [
+      '-hide_banner',
+      '-nostdin',
+      '-f',
+      'lavfi',
+      '-i',
+      `sine=frequency=220:sample_rate=24000:duration=${seconds}`,
+      '-ac',
+      '1',
+      '-y',
+      path,
+    ],
+    { windowsHide: true, stdio: 'ignore' },
+  );
+  assert.equal((await once(process, 'close'))[0], 0);
+  return readFile(path);
+}
+async function streams(directory: string, bytes: Buffer): Promise<string> {
+  const binary: unknown = createRequire(import.meta.url)('ffmpeg-static');
+  const path = join(directory, `probe-${randomUUID()}.mp4`);
+  await writeFile(path, bytes);
+  const process = spawn(binary as string, ['-hide_banner', '-i', path, '-f', 'null', '-'], {
+    windowsHide: true,
+    stdio: ['ignore', 'ignore', 'pipe'],
+  });
+  let log = '';
+  process.stderr.on('data', (value: Buffer) => (log += value.toString('utf8')));
+  assert.equal((await once(process, 'close'))[0], 0);
+  return log;
+}
+const passingProduction = (clip: () => Buffer) => ({
+  video: {
+    configured: true,
+    cancel: async () => {},
+    generate: async ({ onSubmitted }: { onSubmitted: (id: string) => Promise<void> }) => {
+      await onSubmitted(randomUUID());
+      return clip();
+    },
+  },
+  auditor: {
+    configured: true,
+    audit: async () => ({
+      technicalPassed: true,
+      visionPassed: true,
+      summary: 'Sampled frames match the approved shot.',
+      issues: [],
+    }),
+  },
+});
+async function produce(f: Fixture, value: CreatorSessionResponse) {
+  const response = await f.request(
+    `/sessions/${value.session.id}/produce`,
+    json('POST', {
+      expectedVersion: value.session.version,
+      approvalId: value.session.approval!.id,
+      quoteId: value.session.approval!.quoteId!,
+      requestId: randomUUID(),
+    }),
+  );
+  assert.equal(response.status, 202, await response.clone().text());
+  const started = creatorJobResponseSchema.parse(await response.json());
+  return done(f, value.session.id, started.job.id);
+}
+
+test('narration is quoted, held, recorded before any clip and mixed with music into the final MP4', async (t) => {
+  let clip: Buffer | undefined, speech: Buffer | undefined;
+  const order: string[] = [],
+    spoken: string[][] = [];
+  const base = passingProduction(() => clip!);
+  const f = await fixture(t, {
+    ...base,
+    video: {
+      ...base.video,
+      generate: async (input) => {
+        order.push('clip');
+        return base.video.generate(input);
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (lines, voice, _tone, _signal, beforeSubmit) => {
+        order.push('narration');
+        spoken.push(lines);
+        assert.equal(voice, 'marin');
+        for (const _line of lines) await beforeSubmit?.();
+        return lines.map(() => speech!);
+      },
+    },
+  });
+  clip = await makeVideo(f.directory);
+  speech = await makeSpeech(f.directory, 2);
+  const capabilities = (await (await f.request('/capabilities')).json()) as {
+    voices: string[];
+    musicTracks: Array<{ id: string }>;
+  };
+  assert.ok(capabilities.voices.includes('marin'));
+  assert.ok(capabilities.musicTracks.length >= 1);
+  const preview = await f.request(`/music/${capabilities.musicTracks[0]!.id}`);
+  assert.equal(preview.status, 200);
+  assert.match(preview.headers.get('content-type') ?? '', /audio\/mp4/);
+  await preview.arrayBuffer();
+  assert.equal((await f.request('/music/not-a-track')).status, 400);
+
+  const draft = await prepared(f);
+  assert.equal(draft.session.plan?.audio?.voice, 'marin');
+  assert.equal(draft.session.plan?.hasAudio, true);
+  const quoted = await f.request(
+    `/sessions/${draft.session.id}/quote`,
+    json('POST', {
+      expectedVersion: draft.session.version,
+      expectedWorkflowVersion: draft.workflow.version,
+    }),
+  );
+  const { quote } = creatorQuoteResponseSchema.parse(await quoted.json());
+  assert.ok(quote.narratedSegments >= 1);
+  assert.equal(quote.audioCents, quote.narratedSegments * 10);
+  assert.equal(
+    quote.maxCostCents,
+    quote.clips.reduce((sum, item) => sum + item.costCents, 0) + quote.audioCents,
+  );
+  const result = await produce(f, await reviewQuote(f, draft));
+  assert.equal(result.job.status, 'succeeded', JSON.stringify(result.job.error));
+  assert.equal(order[0], 'narration', 'the cheapest paid step runs before any clip is generated');
+  assert.equal(spoken.length, 1);
+  assert.equal(spoken[0]!.length, quote.narratedSegments);
+  assert.equal(result.job.output?.hasAudio, true);
+  assert.equal(result.job.output?.duration, 15);
+  const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
+  const log = await streams(f.directory, Buffer.from(await final.arrayBuffer()));
+  assert.match(log, /Video: h264[^\n]* 1080x1920/);
+  assert.match(log, /Audio: aac[^\n]*48000 Hz, stereo/);
+  const ledger = await CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  const budget = await ledger.budget();
+  assert.equal(
+    budget.reservedCents + budget.chargedCents,
+    quote.maxCostCents,
+    'the narration hold stays in full because the provider reports no usage',
+  );
+});
+
+test('a creator can turn sound off, and a rejected narration key stops production before clips are bought', async (t) => {
+  let clip: Buffer | undefined,
+    generated = 0;
+  const base = passingProduction(() => clip!);
+  const f = await fixture(t, {
+    ...base,
+    video: {
+      ...base.video,
+      generate: async (input) => {
+        generated++;
+        return base.video.generate(input);
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (_lines, _voice, _tone, _signal, beforeSubmit) => {
+        await beforeSubmit?.();
+        throw new ApiError(502, 'CREATOR_VOICEOVER_REJECTED', 'OpenAI rejected the API key.');
+      },
+    },
+  });
+  clip = await makeVideo(f.directory);
+  const draft = await prepared(f);
+  const rejected = await produce(f, await reviewQuote(f, draft));
+  assert.equal(rejected.job.status, 'failed');
+  assert.equal(rejected.job.error?.code, 'CREATOR_VOICEOVER_REJECTED');
+  assert.equal(generated, 0);
+  const ledger = await CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  assert.deepEqual(
+    [(await ledger.budget()).reservedCents, (await ledger.budget()).chargedCents],
+    [0, 0],
+    'a definite rejection and untouched clip holds are all released',
+  );
+
+  const current = creatorSessionResponseSchema.parse(
+    await (await f.request(`/sessions/${draft.session.id}`)).json(),
+  );
+  const unknown = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: current.session.version,
+      expectedWorkflowVersion: current.workflow.version,
+      clips: current.session.plan!.clips,
+      caption: current.session.plan!.caption,
+      audio: { voice: null, musicTrackId: 'not-a-track' },
+    }),
+  );
+  assert.equal(unknown.status, 400);
+  const muted = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: current.session.version,
+      expectedWorkflowVersion: current.workflow.version,
+      clips: current.session.plan!.clips,
+      caption: current.session.plan!.caption,
+      audio: { voice: null, musicTrackId: null },
+    }),
+  );
+  assert.equal(muted.status, 200, await muted.clone().text());
+  const silent = creatorSessionResponseSchema.parse(await muted.json());
+  assert.equal(silent.session.plan?.hasAudio, false);
+  const result = await produce(f, await reviewQuote(f, silent));
+  assert.equal(result.job.status, 'succeeded', JSON.stringify(result.job.error));
+  assert.equal(result.job.output?.hasAudio, false);
+  const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
+  assert.doesNotMatch(await streams(f.directory, Buffer.from(await final.arrayBuffer())), /Audio:/);
+});
+
+test('the narration hold is released when nothing was submitted and kept once a line was', async (t) => {
+  let clip: Buffer | undefined,
+    generated = 0,
+    submitted = 0,
+    lineCount = 0,
+    mode: 'changed' | 'failed' = 'changed';
+  const base = passingProduction(() => clip!);
+  const f = await fixture(t, {
+    ...base,
+    video: {
+      ...base.video,
+      generate: async (input) => {
+        generated++;
+        return base.video.generate(input);
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (lines, _voice, _tone, _signal, beforeSubmit) => {
+        lineCount = lines.length;
+        if (mode === 'changed') {
+          // The creator edits the plan after production starts but before the first line leaves.
+          const now = creatorSessionResponseSchema.parse(
+            await (await f.request(`/sessions/${sessionId}`)).json(),
+          );
+          const edited = await f.request(
+            `/sessions/${sessionId}/plan`,
+            json('PATCH', {
+              expectedVersion: now.session.version,
+              expectedWorkflowVersion: now.workflow.version,
+              clips: now.session.plan!.clips,
+              caption: now.session.plan!.caption,
+              audio: { voice: 'cedar', musicTrackId: null },
+            }),
+          );
+          assert.equal(edited.status, 200, await edited.clone().text());
+        }
+        await beforeSubmit?.();
+        submitted++;
+        throw new ApiError(502, 'CREATOR_VOICEOVER_FAILED', 'The narration provider failed.');
+      },
+    },
+  });
+  clip = await makeVideo(f.directory);
+  const draft = await prepared(f);
+  const sessionId = draft.session.id;
+  const changed = await produce(f, await reviewQuote(f, draft));
+  assert.equal(changed.job.status, 'failed');
+  assert.equal(changed.job.error?.code, 'CREATOR_SOURCE_CHANGED');
+  assert.deepEqual([submitted, generated], [0, 0]);
+  const ledger = () => CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  let budget = await (await ledger()).budget();
+  assert.deepEqual(
+    [budget.reservedCents, budget.chargedCents],
+    [0, 0],
+    'a plan change before the first line leaves releases the whole narration hold',
+  );
+
+  mode = 'failed';
+  const current = creatorSessionResponseSchema.parse(
+    await (await f.request(`/sessions/${sessionId}`)).json(),
+  );
+  const failed = await produce(f, await reviewQuote(f, current));
+  assert.equal(failed.job.status, 'failed');
+  assert.equal(failed.job.error?.code, 'CREATOR_VOICEOVER_FAILED');
+  assert.deepEqual([submitted, generated], [1, 0]);
+  budget = await (await ledger()).budget();
+  assert.ok(lineCount > 0);
+  assert.equal(
+    budget.reservedCents + budget.chargedCents,
+    lineCount * 10,
+    'an uncertain outcome after a line left keeps the conservative narration hold',
+  );
 });

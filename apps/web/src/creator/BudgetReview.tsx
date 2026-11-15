@@ -111,7 +111,15 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
         </div>
         <div>
           <dt>Clip format</dt>
-          <dd>720 × 1280 / silent</dd>
+          <dd>720 × 1280 / silent clips</dd>
+        </div>
+        <div>
+          <dt>Sound</dt>
+          <dd>
+            {plan.audio?.voice ? `Narration (${plan.audio.voice})` : 'No narration'} /{' '}
+            {c.capabilities?.musicTracks.find((track) => track.id === plan.audio?.musicTrackId)
+              ?.title ?? 'no music'}
+          </dd>
         </div>
         <div>
           <dt>Clip duration</dt>
@@ -168,7 +176,10 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
             <div>
               <span className="creator-kicker">Conservative quote ceiling / USD</span>
               <strong>{formatUsd(quote.maxCostCents)}</strong>
-              <p>For the next listed attempts and their visual reviews.</p>
+              <p>
+                For the next listed attempts and their visual reviews
+                {quote.audioCents > 0 ? ', plus narration' : ''}.
+              </p>
             </div>
             <div className="creator-quote-expiry">
               <span>
@@ -221,6 +232,23 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
                     </tr>
                   );
                 })}
+                {quote.hasAudio && (
+                  <tr>
+                    <th scope="row">
+                      Sound
+                      <small>whole film</small>
+                    </th>
+                    <td>
+                      {quote.narratedSegments > 0
+                        ? `Narration, ${quote.narratedSegments} ${quote.narratedSegments === 1 ? 'line' : 'lines'}`
+                        : 'Music only'}
+                      {quote.audio?.musicTrackId && quote.narratedSegments > 0 ? ' + music' : ''}
+                    </td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>{formatUsd(quote.audioCents)}</td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

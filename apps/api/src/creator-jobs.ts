@@ -17,8 +17,16 @@ import { type CreatorVideoProvider } from './creator-video-provider.js';
 import {
   inspectCreatorClip,
   assembleCreatorClips,
+  prepareCreatorVoice,
+  type CreatorSoundtrack,
   type CreatorVisionAuditor,
 } from './creator-media.js';
+import {
+  layoutVoiceover,
+  voiceoverLines,
+  type CreatorMusicLibrary,
+  type CreatorVoiceover,
+} from './creator-audio.js';
 import { verifyWorkflow } from './workflow-engine.js';
 import { productionProfile, quoteFingerprint } from './creator-budget.js';
 
@@ -36,6 +44,8 @@ export interface CreatorJobsOptions {
   analyze: CreatorAnalyzer;
   video: CreatorVideoProvider;
   auditor: CreatorVisionAuditor;
+  voiceover: CreatorVoiceover;
+  music: CreatorMusicLibrary;
   onError?: (error: unknown) => void;
 }
 const terminal = (job: CreatorJob) =>
@@ -404,6 +414,81 @@ export class CreatorJobs {
         const accepted: string[] = [];
         const quote = await this.options.repository.quote(job.quoteId!);
         const paidClips = quote.clips.filter((item) => item.costCents > 0);
+        const total = plan.clips.reduce((sum, clip) => sum + clip.seconds, 0);
+        const soundtrack: CreatorSoundtrack = {
+          voices: [],
+          // Resolved first so a missing track fails before any paid request.
+          ...(plan.audio?.musicTrackId
+            ? { music: this.options.music.path(plan.audio.musicTrackId) }
+            : {}),
+        };
+        const lines = voiceoverLines(plan, workflow);
+        if (plan.audio?.voice && lines.length > 0) {
+          // Narration is recorded before any clip is generated: it is the cheapest paid step,
+          // and a script that cannot fit the film must stop production before the costly ones.
+          if (!job.audioReservationId || quote.narratedSegments !== lines.length)
+            throw new ApiError(
+              409,
+              'CREATOR_QUOTE_STALE',
+              'The narration is not in the approved quote. Review a new quote.',
+            );
+          await this.event(
+            job,
+            `Recording ${lines.length} narration ${lines.length === 1 ? 'line' : 'lines'}.`,
+            'generating',
+          );
+          await this.current(session, workflow);
+          signal.throwIfAborted();
+          // The hold counts as used only once a line reaches the provider. Until then a
+          // failure proves nothing was billed, and the whole narration hold is released.
+          let started = false;
+          let recorded: Buffer[];
+          try {
+            recorded = await this.options.voiceover.narrate(
+              lines.map((line) => line.text),
+              plan.audio.voice,
+              workflow.brief.tone,
+              signal,
+              async () => {
+                await this.current(session, workflow);
+                signal.throwIfAborted();
+                if (started) return;
+                await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
+                  ...current,
+                  audioStarted: true,
+                }));
+                started = true;
+              },
+            );
+          } catch (error) {
+            // A definite rejection of the first line means the provider billed nothing.
+            if (error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_REJECTED')
+              await this.options.repository
+                .settle(job.audioReservationId, 0)
+                .catch((failure) => this.options.onError?.(failure));
+            throw error;
+          }
+          if (recorded.length !== lines.length)
+            throw new ApiError(
+              502,
+              'CREATOR_VOICEOVER_FAILED',
+              'The narration provider returned the wrong number of lines.',
+            );
+          const durations: number[] = [];
+          for (const [index, bytes] of recorded.entries()) {
+            signal.throwIfAborted();
+            const source = join(directory, `voice-${index}.wav`),
+              target = join(directory, `voice-${index}.pcm`);
+            await writeFile(source, bytes);
+            durations.push(await prepareCreatorVoice(source, target, signal));
+            soundtrack.voices.push({ path: target, at: 0, tempo: 1 });
+          }
+          const placed = layoutVoiceover(
+            lines.map((line, index) => ({ start: line.start, duration: durations[index]! })),
+            total,
+          );
+          placed.forEach((place, index) => Object.assign(soundtrack.voices[index]!, place));
+        }
         for (const clip of plan.clips) {
           signal.throwIfAborted();
           await this.current(session, workflow);
@@ -559,7 +644,14 @@ export class CreatorJobs {
           directory,
           plan.clips.map((clip) => clip.seconds),
           signal,
+          soundtrack,
         );
+        if (output.hasAudio !== plan.hasAudio)
+          throw new ApiError(
+            502,
+            'CREATOR_ASSEMBLY_VERIFICATION',
+            'The assembled film does not have the approved soundtrack.',
+          );
         await this.current(session, workflow);
         signal.throwIfAborted();
         await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
@@ -568,7 +660,7 @@ export class CreatorJobs {
         }));
         await this.event(
           job,
-          'Saved the silent final MP4. Sampled-frame review does not establish product facts or inspect every frame.',
+          `Saved the final MP4 ${soundtrack.voices.length > 0 ? 'with narration' : 'without narration'}${soundtrack.music ? ' and music' : ''}. Sampled-frame review does not establish product facts or inspect every frame.`,
           'complete',
         );
       }

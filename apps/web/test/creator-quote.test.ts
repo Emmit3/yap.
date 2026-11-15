@@ -229,3 +229,24 @@ test('the exact quote persists without repricing and malformed or mismatched rec
     /No paid work was submitted/,
   );
 });
+
+test('a narration line item must be part of the quote total and match the plan sound', () => {
+  const { session, workflow, quote, now } = fixture();
+  const audio = { voice: 'marin' as const, musicTrackId: 'calm' };
+  const narrated = { ...quote, hasAudio: true, audio, audioCents: 30, narratedSegments: 3 };
+  const plan = { ...session.plan!, hasAudio: true, audio };
+  assert.equal(
+    quoteIsCurrent({ ...narrated, maxCostCents: 135 }, { ...session, plan }, workflow, now),
+    true,
+  );
+  assert.equal(
+    quoteIsCurrent({ ...narrated, maxCostCents: 105 }, { ...session, plan }, workflow, now),
+    false,
+    'a total that leaves narration out is not shown as approvable',
+  );
+  assert.equal(
+    quoteIsCurrent({ ...narrated, maxCostCents: 135 }, session, workflow, now),
+    false,
+    'a quote with sound does not match a silent plan',
+  );
+});

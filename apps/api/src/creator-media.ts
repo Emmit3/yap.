@@ -371,20 +371,155 @@ export function createCreatorVisionAuditor(
     },
   };
 }
+const AUDIO_RATE = 48000;
+const audioFailure = () =>
+  new ApiError(502, 'CREATOR_AUDIO_FAILED', 'The narration or music could not be processed.');
+/**
+ * Decodes one recorded line to 48 kHz mono PCM with leading and trailing silence removed,
+ * and returns its exact spoken duration in seconds.
+ */
+export async function prepareCreatorVoice(
+  source: string,
+  target: string,
+  signal: AbortSignal,
+): Promise<number> {
+  const trim = 'silenceremove=start_periods=1:start_threshold=-50dB';
+  try {
+    await ffmpeg(
+      [
+        '-hide_banner',
+        '-nostdin',
+        '-protocol_whitelist',
+        'file,pipe',
+        '-i',
+        source,
+        '-map',
+        '0:a:0',
+        '-af',
+        `${trim},areverse,${trim},areverse`,
+        '-ar',
+        String(AUDIO_RATE),
+        '-ac',
+        '1',
+        '-f',
+        's16le',
+        '-y',
+        target,
+      ],
+      signal,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'CREATOR_VIDEO_DECODE_FAILED')
+      throw audioFailure();
+    throw error;
+  }
+  const duration = (await stat(target)).size / (AUDIO_RATE * 2);
+  if (duration < 0.2) throw audioFailure();
+  return duration;
+}
+export interface CreatorSoundtrack {
+  /** PCM files from prepareCreatorVoice, each placed at a time and optionally sped up. */
+  voices: Array<{ path: string; at: number; tempo: number }>;
+  /** A bundled music file, looped under the whole film and lowered while a voice speaks. */
+  music?: string;
+}
+async function mixCreatorAudio(
+  video: string,
+  output: string,
+  soundtrack: CreatorSoundtrack,
+  duration: number,
+  signal: AbortSignal,
+): Promise<void> {
+  const inputs: string[] = [],
+    filters: string[] = [];
+  soundtrack.voices.forEach((voice, index) => {
+    inputs.push('-f', 's16le', '-ar', String(AUDIO_RATE), '-ac', '1', '-i', voice.path);
+    filters.push(
+      `[${index + 1}:a]atempo=${voice.tempo.toFixed(3)},adelay=${Math.round(voice.at * 1000)}:all=1[v${index}]`,
+    );
+  });
+  const count = soundtrack.voices.length;
+  if (count > 0)
+    filters.push(
+      `${soundtrack.voices.map((_voice, index) => `[v${index}]`).join('')}amix=inputs=${count}:normalize=0:duration=longest,apad,atrim=0:${duration},aformat=channel_layouts=stereo[voice]`,
+    );
+  if (soundtrack.music) {
+    inputs.push('-stream_loop', '-1', '-i', soundtrack.music);
+    const fade = Math.max(0, duration - 1.5);
+    filters.push(
+      `[${count + 1}:a]aresample=${AUDIO_RATE},aformat=channel_layouts=stereo,atrim=0:${duration},afade=t=in:d=0.4,afade=t=out:st=${fade}:d=1.5[bed]`,
+    );
+  }
+  // Speech sits near -16 LUFS. Music alone is a touch quieter; under speech it ducks further.
+  if (count > 0 && soundtrack.music)
+    filters.push(
+      '[voice]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000,asplit=2[speech][key]',
+      '[bed]loudnorm=I=-27:TP=-2:LRA=11,aresample=48000[quiet]',
+      '[quiet][key]sidechaincompress=threshold=0.02:ratio=6:attack=15:release=450[ducked]',
+      '[speech][ducked]amix=inputs=2:normalize=0,alimiter=limit=0.89[mix]',
+    );
+  else if (count > 0) filters.push('[voice]loudnorm=I=-16:TP=-1.5:LRA=11,aresample=48000[mix]');
+  else filters.push('[bed]loudnorm=I=-18:TP=-1.5:LRA=11,aresample=48000[mix]');
+  try {
+    await ffmpeg(
+      [
+        '-hide_banner',
+        '-nostdin',
+        '-protocol_whitelist',
+        'file,pipe',
+        '-i',
+        video,
+        ...inputs,
+        '-filter_complex',
+        filters.join(';'),
+        '-map',
+        '0:v:0',
+        '-map',
+        '[mix]',
+        '-c:v',
+        'copy',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '192k',
+        '-ar',
+        String(AUDIO_RATE),
+        '-ac',
+        '2',
+        '-t',
+        String(duration),
+        '-movflags',
+        '+faststart',
+        '-map_metadata',
+        '-1',
+        '-y',
+        output,
+      ],
+      signal,
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.code === 'CREATOR_VIDEO_DECODE_FAILED')
+      throw audioFailure();
+    throw error;
+  }
+}
 export async function assembleCreatorClips(
   paths: string[],
   output: string,
   directory: string,
   durations: number[],
   signal: AbortSignal,
+  soundtrack?: CreatorSoundtrack,
 ): Promise<{
   bytes: number;
   sha256: string;
   duration: number;
   width: 1080;
   height: 1920;
-  hasAudio: false;
+  hasAudio: boolean;
 }> {
+  const hasAudio = Boolean(soundtrack && (soundtrack.voices.length > 0 || soundtrack.music));
+  const silent = hasAudio ? join(directory, 'silent.mp4') : output;
   if (
     paths.length !== durations.length ||
     durations.some((duration) => !Number.isInteger(duration) || duration < 2 || duration > 10)
@@ -460,10 +595,11 @@ export async function assembleCreatorClips(
       '-map_metadata',
       '-1',
       '-y',
-      output,
+      silent,
     ],
     signal,
   );
+  if (hasAudio) await mixCreatorAudio(silent, output, soundtrack!, duration, signal);
   const log = await ffmpeg(
       [
         '-hide_banner',
@@ -481,18 +617,21 @@ export async function assembleCreatorClips(
       ],
       signal,
     ),
-    match = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(log);
+    match = /Duration: (\d+):(\d+):(\d+(?:\.\d+)?)/.exec(log),
+    audioStreams = log.match(/Stream[^\r\n]*Audio:[^\r\n]*/g) ?? [];
   const measured = match ? Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]) : NaN;
   if (
     !Number.isFinite(measured) ||
     Math.abs(measured - duration) > 1 / 24 ||
     !/Video:[^\r\n]*? 1080x1920/.test(log) ||
-    /Stream[^\r\n]*Audio:/.test(log)
+    (hasAudio
+      ? audioStreams.length !== 1 || !/Audio: aac[^\r\n]*48000 Hz, stereo/.test(audioStreams[0]!)
+      : audioStreams.length !== 0)
   )
     throw new ApiError(
       502,
       'CREATOR_ASSEMBLY_VERIFICATION',
-      'The assembled MP4 did not match the approved duration, dimensions or silent format.',
+      'The assembled MP4 did not match the approved duration, dimensions or audio format.',
     );
   const bytes = await readFile(output);
   return {
@@ -501,6 +640,6 @@ export async function assembleCreatorClips(
     duration: measured,
     width: 1080,
     height: 1920,
-    hasAudio: false,
+    hasAudio,
   };
 }

@@ -120,7 +120,13 @@ export function generatedSeconds(clips: CreatorClip[], attempts = 2) {
 }
 
 export function planDraft(plan: CreatorPlan | null) {
-  return plan ? { clips: plan.clips.map((clip) => ({ ...clip })), caption: plan.caption } : null;
+  return plan
+    ? {
+        clips: plan.clips.map((clip) => ({ ...clip })),
+        caption: plan.caption,
+        audio: { voice: plan.audio?.voice ?? null, musicTrackId: plan.audio?.musicTrackId ?? null },
+      }
+    : null;
 }
 
 export function combineScriptMoments(

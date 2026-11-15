@@ -262,6 +262,16 @@ export class CreatorRepository implements CreatorBudgetLedger {
                   amountCents: clip.costCents,
                 }).id,
             ),
+          ...(quote.audioCents > 0
+            ? {
+                audioReservationId: reserveBudget(state.budget, {
+                  idempotencyKey: `${job.id}:audio`,
+                  category: 'audio',
+                  sourceId: `${job.id}:audio`,
+                  amountCents: quote.audioCents,
+                }).id,
+              }
+            : {}),
         };
         quote.consumedByJobId = job.id;
       }
@@ -339,6 +349,8 @@ export class CreatorRepository implements CreatorBudgetLedger {
       const started = new Set(job.clips.map((clip) => clip.reservationId));
       for (const id of job.reservationIds ?? [])
         if (!started.has(id)) settleBudget(state.budget, id, 0);
+      if (job.audioReservationId && !job.audioStarted)
+        settleBudget(state.budget, job.audioReservationId, 0);
     });
   }
   async updateJob(

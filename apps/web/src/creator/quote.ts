@@ -18,7 +18,8 @@ export function formatUsd(cents: number): string {
 
 function costsConsistent(quote: CreatorQuote): boolean {
   return (
-    quote.maxCostCents === quote.clips.reduce((sum, clip) => sum + clip.costCents, 0) &&
+    quote.maxCostCents ===
+      quote.clips.reduce((sum, clip) => sum + clip.costCents, 0) + quote.audioCents &&
     quote.clips.every(
       (clip) =>
         clip.costCents === clip.videoCents + clip.visionCents &&

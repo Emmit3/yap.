@@ -4,6 +4,11 @@ import type { CreatorBudgetLedger, CreatorReservation } from './creator-budget.j
 import type { CreatorAnalyzer } from './creator-jobs.js';
 import { readBounded } from './creator-video-provider.js';
 import { ApiError } from './errors.js';
+import {
+  CREATOR_VOICEOVER_MODEL,
+  VOICEOVER_CENTS_PER_LINE,
+  VOICEOVER_MAX_CHARACTERS,
+} from './creator-audio.js';
 
 export const BUDGET_OPENAI_MODEL = 'gpt-6-luna';
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -13,6 +18,8 @@ const MAX_OUTPUT_TOKENS = 8000;
 const OPENAI_RESERVATION_CENTS = 50;
 interface CoveredRequest {
   submitted: number;
+  speech: number;
+  speechLimit: number;
   beforeSubmit?: () => Promise<void>;
 }
 
@@ -107,7 +114,24 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
       );
     }
     let amountCents: number;
-    if (openai) {
+    const speech = openai && url.pathname === '/v1/audio/speech';
+    if (speech) {
+      // Narration returns audio without usage, so its fixed ceiling is never settled lower.
+      if (
+        body.model !== CREATOR_VOICEOVER_MODEL ||
+        typeof body.input !== 'string' ||
+        body.input.length < 1 ||
+        body.input.length > VOICEOVER_MAX_CHARACTERS ||
+        body.response_format !== 'wav' ||
+        body.stream_format !== undefined
+      )
+        throw new ApiError(
+          503,
+          'CREATOR_BUDGET_MODEL',
+          `Narration is priced only for ${CREATOR_VOICEOVER_MODEL} WAV requests of at most ${VOICEOVER_MAX_CHARACTERS} characters.`,
+        );
+      amountCents = VOICEOVER_CENTS_PER_LINE;
+    } else if (openai) {
       if (
         !['/v1/responses', '/v1/chat/completions'].includes(url.pathname) ||
         body.model !== BUDGET_OPENAI_MODEL
@@ -167,20 +191,31 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
       amountCents = Math.max(10, Math.ceil(count / 10) * 10);
     }
     const parent = covered.getStore();
-    if (parent && (!openai || parent.submitted >= 1))
+    if (parent && speech && parent.speech >= parent.speechLimit)
+      throw new ApiError(
+        503,
+        'CREATOR_BUDGET_AUDIT',
+        'The approved quote does not cover another narration request.',
+      );
+    if (parent && !speech && (!openai || parent.submitted >= 1 || parent.speechLimit > 0))
       throw new ApiError(503, 'CREATOR_BUDGET_AUDIT', 'A clip quote covers one visual audit.');
     const activeLedger = requireLedger();
     const reservation = parent
       ? undefined
       : await activeLedger.reserve({
           idempotencyKey: `request:${randomUUID()}`,
-          category: openai ? 'drafting' : 'research',
-          sourceId: openai ? 'openai:gpt-6-luna' : `firecrawl:${url.pathname}`,
+          category: speech ? 'audio' : openai ? 'drafting' : 'research',
+          sourceId: speech
+            ? `openai:${CREATOR_VOICEOVER_MODEL}`
+            : openai
+              ? 'openai:gpt-6-luna'
+              : `firecrawl:${url.pathname}`,
           amountCents,
         });
     const headers = new Headers(request.headers);
     headers.delete('content-length');
-    if (parent) parent.submitted++;
+    if (parent && speech) parent.speech++;
+    else if (parent) parent.submitted++;
     try {
       await parent?.beforeSubmit?.();
       request.signal.throwIfAborted();
@@ -205,9 +240,14 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
     attach(value: CreatorBudgetLedger) {
       ledger = value;
     },
-    async prepaid<T>(operation: () => Promise<T>, beforeSubmit?: () => Promise<void>): Promise<T> {
+    /** Runs calls already covered by an approved hold: one visual audit, or `speechLimit` narration lines. */
+    async prepaid<T>(
+      operation: () => Promise<T>,
+      beforeSubmit?: () => Promise<void>,
+      speechLimit = 0,
+    ): Promise<T> {
       if (covered.getStore()) return operation();
-      return covered.run({ submitted: 0, beforeSubmit }, operation);
+      return covered.run({ submitted: 0, speech: 0, speechLimit, beforeSubmit }, operation);
     },
     research(analyze: CreatorAnalyzer, live: boolean): CreatorAnalyzer {
       return async (...args) => {
