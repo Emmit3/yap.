@@ -283,8 +283,11 @@ export class CreatorRepository implements CreatorBudgetLedger {
     await this.pending;
     return budgetSnapshot(this.state.budget);
   }
-  async reserve(input: CreatorReservationInput): Promise<CreatorReservation> {
-    return this.mutate((state) => reserveBudget(state.budget, input));
+  async reserve(
+    input: CreatorReservationInput,
+    options?: { requireNew?: boolean },
+  ): Promise<CreatorReservation> {
+    return this.mutate((state) => reserveBudget(state.budget, input, options));
   }
   async settle(id: string, chargedCents: number): Promise<CreatorReservation> {
     return this.mutate((state) => settleBudget(state.budget, id, chargedCents));

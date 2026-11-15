@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import type { CreatorJob, CreatorPlan } from '@yap/contracts/creator';
 import type { Workflow } from '@yap/contracts/workflow';
 import { ApiError } from './errors.js';
+import type { BrandSnapshot } from '@yap/contracts/production';
+import { subtitleStyle } from './creator-brand.js';
 
 export interface SubtitleWindow {
   segmentId: string;
@@ -158,7 +160,25 @@ export function subtitleSrt(snapshot: CreatorSubtitleSnapshot): string {
     )
     .join('\n');
 }
-export function subtitleAss(snapshot: CreatorSubtitleSnapshot): string {
+export function subtitleAss(
+  snapshot: CreatorSubtitleSnapshot,
+  options?: { brand?: BrandSnapshot; width?: number; height?: number },
+): string {
+  const width = options?.width ?? 1080,
+    height = options?.height ?? 1920;
+  const style = options?.brand
+    ? subtitleStyle(options.brand)
+    : {
+        fontName: 'Arial',
+        fontSize: 54,
+        primaryColor: '&H00FFFFFF',
+        outlineColor: '&H00101010',
+        outline: 3,
+      };
+  const scale = width > height ? height / 1080 : width / 1080;
+  const fontSize = Math.max(18, Math.round(style.fontSize * scale));
+  const margin = Math.round((width * 96) / 1080),
+    bottom = Math.round(height * (width > height ? 0.08 : 280 / 1920));
   // libass recognizes escaped braces. A zero-width word joiner after creator
   // backslashes prevents literal \\N / \\h from becoming layout commands.
   const literal = (text: string) =>
@@ -169,7 +189,7 @@ export function subtitleAss(snapshot: CreatorSubtitleSnapshot): string {
       .replaceAll('\n', '\\N');
   const time = (ms: number) => timestamp(ms).replace(',', '.').slice(0, -1);
   return (
-    `[Script Info]\nScriptType: v4.00+\nPlayResX: 1080\nPlayResY: 1920\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,Arial,54,&H00FFFFFF,&H00FFFFFF,&H00101010,&H00101010,0,0,0,0,100,100,0,0,1,3,1,2,96,96,280,1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n` +
+    `[Script Info]\nScriptType: v4.00+\nPlayResX: ${width}\nPlayResY: ${height}\nWrapStyle: 2\nScaledBorderAndShadow: yes\n\n[V4+ Styles]\nFormat: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\nStyle: Default,${style.fontName},${fontSize},${style.primaryColor},${style.primaryColor},${style.outlineColor},${style.outlineColor},0,0,0,0,100,100,0,0,1,${style.outline},1,2,${margin},${margin},${bottom},1\n\n[Events]\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n` +
     snapshot.cues
       .map(
         (cue) =>
@@ -181,12 +201,13 @@ export function subtitleAss(snapshot: CreatorSubtitleSnapshot): string {
 export async function writeCreatorSubtitles(
   directory: string,
   snapshot: CreatorSubtitleSnapshot,
+  options?: { brand?: BrandSnapshot; width?: number; height?: number },
 ): Promise<NonNullable<NonNullable<CreatorJob['output']>['subtitles']>> {
   const bytes = Buffer.from(subtitleSrt(snapshot), 'utf8');
   if (!bytes.length || bytes.length > SUBTITLE_MAX_BYTES) throw cannotFit();
   await writeFile(join(directory, 'subtitle-cues.json'), JSON.stringify(snapshot), 'utf8');
   await writeFile(join(directory, SUBTITLE_FILENAME), bytes);
-  await writeFile(join(directory, 'subtitles.ass'), subtitleAss(snapshot), 'utf8');
+  await writeFile(join(directory, 'subtitles.ass'), subtitleAss(snapshot, options), 'utf8');
   return {
     format: 'srt',
     bytes: bytes.length,

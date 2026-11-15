@@ -48,6 +48,7 @@ export interface AppOptions {
       CreatorRouterOptions,
       | 'videoConfig'
       | 'video'
+      | 'videoProviders'
       | 'auditor'
       | 'voiceover'
       | 'music'
@@ -120,7 +121,7 @@ export async function createApp(options: AppOptions = {}) {
           new ApiError(403, 'ORIGIN_NOT_ALLOWED', 'This origin is not allowed to access the API.'),
         );
       },
-      methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
       exposedHeaders: ['Content-Disposition', 'X-Yap-Workflow-Version', 'X-Yap-Source-Stale'],
     }),
   );
@@ -322,6 +323,8 @@ export async function createApp(options: AppOptions = {}) {
       ...options.creatorOptions,
       budgetLimitCents,
       fetch: creatorSpending.fetch,
+      paidImage: creatorSpending.approvedImage,
+      paidReference: creatorSpending.approvedReference,
       auditor: {
         configured: rawAuditor.configured && supportedAudit,
         audit: (...args) => creatorSpending.prepaid(() => rawAuditor.audit(...args), args[4]),

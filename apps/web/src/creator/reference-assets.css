@@ -1,0 +1,168 @@
+.creator-production-tools .creator-reference-assets {
+  min-width: 0;
+  width: 100%;
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--creator-line);
+  color: var(--creator-ink);
+  overflow-wrap: anywhere;
+}
+
+.creator-production-tools .creator-reference-assets > fieldset {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.creator-production-tools .creator-reference-assets :is(h3, h4) {
+  margin: 0;
+  font-family: inherit;
+  font-size: 18px;
+  line-height: 28px;
+  font-weight: 600;
+  text-wrap: balance;
+}
+
+.creator-production-tools .creator-reference-assets :is(p, li, figcaption) {
+  margin: 0;
+  font-size: 14px;
+  line-height: 24px;
+  text-wrap: pretty;
+}
+
+.creator-production-tools .creator-reference-assets :is(form, .creator-asset-grid) {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.creator-production-tools .creator-reference-assets form > :is(button, p),
+.creator-production-tools .creator-reference-assets form > label:has(textarea) {
+  grid-column: 1 / -1;
+}
+
+.creator-production-tools .creator-reference-assets label {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.creator-production-tools .creator-reference-assets :is(input, select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  font: inherit;
+  font-size: 14px;
+  line-height: 24px;
+}
+
+.creator-production-tools .creator-reference-assets input[type='file'] {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.creator-production-tools .creator-reference-assets textarea {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.creator-production-tools .creator-reference-assets button {
+  justify-self: start;
+  max-width: 100%;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--creator-line);
+  border-radius: 4px;
+  background: var(--creator-paper);
+  color: var(--creator-ink);
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  white-space: normal;
+  text-align: left;
+}
+
+.creator-production-tools .creator-reference-assets button:hover:not(:disabled) {
+  border-color: var(--creator-ink);
+}
+
+.creator-production-tools .creator-reference-assets form > button,
+.creator-production-tools .creator-reference-assets .creator-cost-review > button:first-of-type {
+  border-color: var(--creator-ink);
+  background: var(--creator-ink);
+  color: var(--creator-paper);
+}
+
+.creator-production-tools .creator-reference-assets .creator-cost-review {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--creator-line);
+  border-bottom: 1px solid var(--creator-line);
+}
+
+.creator-production-tools .creator-reference-assets .creator-cost-review label {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.creator-production-tools .creator-reference-assets .creator-cost-review input[type='checkbox'] {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+}
+
+.creator-production-tools
+  .creator-reference-assets
+  :is(.creator-asset, .creator-asset-grid > figure) {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: var(--space-2);
+  margin: 0;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--creator-line);
+}
+
+.creator-production-tools .creator-reference-assets .creator-asset-grid img {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  max-height: 360px;
+  object-fit: contain;
+  background: var(--creator-soft);
+}
+
+.creator-production-tools .creator-reference-assets .creator-muted {
+  color: var(--creator-muted);
+}
+
+.creator-production-tools
+  .creator-reference-assets
+  :is(button, input, textarea, select, a):focus-visible {
+  outline: 2px solid var(--creator-ink);
+  outline-offset: 3px;
+}
+
+@media (max-width: 640px) {
+  .creator-production-tools .creator-reference-assets :is(form, .creator-asset-grid) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .creator-production-tools .creator-reference-assets button {
+    width: 100%;
+    justify-self: stretch;
+  }
+}

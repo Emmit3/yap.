@@ -1,7 +1,12 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import sharp from 'sharp';
 import { z } from 'zod';
-import type { CreatorClip } from '@yap/contracts/creator';
+import type {
+  CreatorClip,
+  CreatorVideoModel,
+  CreatorVideoProfileId,
+  CreatorVideoRatio,
+} from '@yap/contracts/creator';
 import { ApiError } from './errors.js';
 
 export interface CreatorVideoRequest {
@@ -20,7 +25,16 @@ export interface CreatorVideoProvider {
 }
 export interface CreatorVideoProfile {
   provider: 'fal' | 'runway';
-  model: 'seedance-v1.5-pro' | 'gen4.5';
+  model: CreatorVideoModel;
+  id?: CreatorVideoProfileId;
+  label?: string;
+  nativeWidth?: number;
+  nativeHeight?: number;
+  ratio?: CreatorVideoRatio;
+  requiresImage?: boolean;
+  allowedSeconds?: readonly number[];
+  retired?: boolean;
+  unavailableReason?: string;
   minSeconds: number;
   maxSeconds: number;
   /** Conservative reservation ceiling, not the provider's final invoice. */
@@ -33,6 +47,8 @@ export interface CreatorVideoConfig {
   apiKey?: string;
   timeoutMs?: number;
   pollMs?: number;
+  model?: 'gen4.5' | 'gen4_turbo';
+  ratio?: CreatorVideoRatio;
 }
 const ROOT = 'https://api.dev.runwayml.com/v1';
 export function creatorVideoPrompt(clip: CreatorClip): string {
@@ -100,14 +116,18 @@ export function createCreatorVideoProvider(
 ): CreatorVideoProvider {
   const apiKey = config.apiKey?.trim(),
     timeout = config.timeoutMs ?? 15 * 60 * 1000,
-    pollMs = config.pollMs ?? 5000;
+    pollMs = config.pollMs ?? 5000,
+    model = config.model ?? 'gen4.5',
+    ratio = config.ratio ?? '720:1280';
   if (
     !Number.isInteger(timeout) ||
     timeout < 1 ||
     timeout > 30 * 60 * 1000 ||
     !Number.isInteger(pollMs) ||
     pollMs < 1 ||
-    pollMs > 60000
+    pollMs > 60000 ||
+    !['gen4.5', 'gen4_turbo'].includes(model) ||
+    !['720:1280', '1280:720'].includes(ratio)
   )
     throw new ApiError(503, 'CREATOR_CONFIGURATION', 'Invalid video provider deadline.');
   const headers = {
@@ -165,17 +185,34 @@ export function createCreatorVideoProvider(
         'The provider did not confirm cancellation. It may continue billing.',
       );
   }
+  const landscape = ratio === '1280:720';
+  const profile: CreatorVideoProfile = {
+    provider: 'runway',
+    model,
+    id:
+      model === 'gen4_turbo'
+        ? landscape
+          ? 'runway-gen4turbo-landscape'
+          : 'runway-gen4turbo-portrait'
+        : landscape
+          ? 'runway-gen4.5-landscape'
+          : 'runway-gen4.5-portrait',
+    label: `Runway ${model === 'gen4_turbo' ? 'Gen 4 Turbo' : 'Gen 4.5'} · ${landscape ? 'landscape' : 'portrait'} 720p`,
+    nativeWidth: landscape ? 1280 : 720,
+    nativeHeight: landscape ? 720 : 1280,
+    ratio,
+    requiresImage: model === 'gen4_turbo',
+    ...(model === 'gen4_turbo' ? { allowedSeconds: [5, 10] } : {}),
+    minSeconds: model === 'gen4_turbo' ? 5 : 2,
+    maxSeconds: 10,
+    // Gen 4.5 retains the existing conservative ceiling; Turbo is 5 credits/s.
+    rateCentsPerSecond: model === 'gen4_turbo' ? 5 : 16,
+    priceSourceUrl: 'https://docs.dev.runwayml.com/guides/pricing/',
+    pricingCheckedAt: '2026-11-15T00:00:00.000Z',
+  };
   return {
     configured: Boolean(apiKey),
-    profile: {
-      provider: 'runway',
-      model: 'gen4.5',
-      minSeconds: 2,
-      maxSeconds: 10,
-      rateCentsPerSecond: 16,
-      priceSourceUrl: 'https://docs.dev.runwayml.com/guides/pricing/',
-      pricingCheckedAt: '2026-11-14T00:00:00.000Z',
-    },
+    profile,
     cancel,
     async generate(request) {
       if (!apiKey)
@@ -183,6 +220,31 @@ export function createCreatorVideoProvider(
           503,
           'CREATOR_VIDEO_NOT_CONFIGURED',
           'Set RUNWAYML_API_SECRET to generate real clips.',
+        );
+      if (request.clip.videoProfileId !== undefined && request.clip.videoProfileId !== profile.id)
+        throw new ApiError(
+          409,
+          'CREATOR_PROVIDER_CHANGED',
+          'This shot uses a different provider profile. Request a new quote.',
+        );
+      if (
+        !Number.isInteger(request.clip.seconds) ||
+        request.clip.seconds < profile.minSeconds ||
+        request.clip.seconds > profile.maxSeconds ||
+        (profile.allowedSeconds && !profile.allowedSeconds.includes(request.clip.seconds))
+      )
+        throw new ApiError(
+          400,
+          'CREATOR_CLIP_DURATION',
+          model === 'gen4_turbo'
+            ? 'This Gen 4 Turbo profile supports 5 or 10 second shots.'
+            : 'Use a whole shot duration from 2 to 10 seconds.',
+        );
+      if (profile.requiresImage && !request.image)
+        throw new ApiError(
+          400,
+          'CREATOR_IMAGE_REQUIRED',
+          'Gen 4 Turbo needs an uploaded or approved storyboard image.',
         );
       const signal = AbortSignal.any([request.signal, AbortSignal.timeout(timeout)]);
       let taskId: string | undefined;
@@ -214,9 +276,9 @@ export function createCreatorVideoProvider(
         signal.throwIfAborted();
         const result = z.object({ id: z.uuid() }).parse(
           await json(promptImage ? '/image_to_video' : '/text_to_video', 'POST', signal, {
-            model: 'gen4.5',
+            model,
             promptText,
-            ratio: '720:1280',
+            ratio,
             duration: request.clip.seconds,
             ...(promptImage ? { promptImage } : {}),
           }),

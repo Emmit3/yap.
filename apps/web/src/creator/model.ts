@@ -126,6 +126,8 @@ export function planDraft(plan: CreatorPlan | null) {
         caption: plan.caption,
         audio: { voice: plan.audio?.voice ?? null, musicTrackId: plan.audio?.musicTrackId ?? null },
         ...(plan.subtitlesEnabled !== undefined ? { subtitlesEnabled: plan.subtitlesEnabled } : {}),
+        ...(plan.outputProfileId !== undefined ? { outputProfileId: plan.outputProfileId } : {}),
+        ...(plan.brandSnapshot !== undefined ? { brandSnapshot: plan.brandSnapshot } : {}),
       }
     : null;
 }

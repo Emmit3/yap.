@@ -15,8 +15,8 @@ Use a user-owned API key with access to the selected model. A consumer video sub
 
 ## Local configuration
 
-1. Copy [the root `.env.example`](../.env.example) to `apps/api/.env` if that file does not already exist. Preserve existing private settings.
-2. Add keys only to that ignored server file or the API process environment. Never use `VITE_` variables for secrets, commit keys, or paste them into public chat.
+1. Copy [the root `.env.example`](../.env.example) to an ignored root `.env` or `apps/api/.env` if neither already exists. Preserve existing private settings.
+2. API commands load root `.env` first, then `apps/api/.env`; existing process environment values take precedence. Add keys only to these ignored server files or the API process environment. Never use `VITE_` variables for secrets, commit keys, or paste them into public chat.
 3. Keep the selected settings below. To enable model-driven script interpretation, change `WORKFLOW_PROVIDER` from `guided` to `openai` after adding the OpenAI key.
 4. Restart the API after changing environment settings. Run `npm ci` and `npm run dev` from the repository root for the normal local application at `http://127.0.0.1:5173`.
 

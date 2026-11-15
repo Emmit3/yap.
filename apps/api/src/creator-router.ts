@@ -22,6 +22,7 @@ import { ApiError } from './errors.js';
 import { CreatorRepository } from './creator-repository.js';
 import {
   productionProfile,
+  productionProfiles,
   buildCreatorQuote,
   quoteFingerprint,
   type CreatorBudgetLedger,
@@ -36,7 +37,16 @@ import {
 import {
   createConfiguredCreatorVideoProvider,
   creatorVideoConfigFromEnv,
+  createConfiguredCreatorVideoProviders,
+  creatorVideoProfileOptions,
+  resolveCreatorVideoProvider,
+  type CreatorVideoProviderRegistry,
 } from './creator-video-factory.js';
+import {
+  createCreatorTools,
+  type PaidImageRunner,
+  type PaidReferenceRunner,
+} from './creator-tools-router.js';
 import { createCreatorVisionAuditor, type CreatorVisionAuditor } from './creator-media.js';
 import { analyzeCreator } from './creator-research.js';
 import {
@@ -69,6 +79,9 @@ export interface CreatorRouterOptions {
   provider: VideoWorkflowProvider;
   videoConfig?: CreatorVideoConfig;
   video?: CreatorVideoProvider;
+  videoProviders?: CreatorVideoProviderRegistry;
+  paidImage?: PaidImageRunner;
+  paidReference?: PaidReferenceRunner;
   auditor?: CreatorVisionAuditor;
   voiceover?: CreatorVoiceover;
   music?: CreatorMusicLibrary;
@@ -262,6 +275,9 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
   });
   const budgeted = options.withBudget?.(repository);
   const draftingProvider = budgeted?.provider ?? options.provider;
+  const registry =
+    options.videoProviders ??
+    (options.video ? new Map() : createConfiguredCreatorVideoProviders(process.env, options.fetch));
   const video =
     options.video ??
     createConfiguredCreatorVideoProvider(
@@ -278,12 +294,25 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     options.voiceover ??
     createCreatorVoiceover({ apiKey: process.env.OPENAI_API_KEY }, options.fetch);
   const music = options.music ?? (await loadCreatorMusic());
+  const tools = await createCreatorTools({
+    directory: resolve(options.directory),
+    repository,
+    workflows: options.workflows,
+    fetch: options.fetch ?? globalThis.fetch,
+    paidImage: options.paidImage,
+    paidReference: options.paidReference,
+    apiKey: process.env.OPENAI_API_KEY,
+    model: process.env.OPENAI_MODEL,
+  });
   const jobs = new CreatorJobs({
     repository,
     workflows: options.workflows,
     assets: options.assets,
     directory: resolve(options.directory),
     video,
+    videoProviders: registry,
+    branding: tools.brands,
+    loadStoryboard: (sessionId, frameId) => tools.images.verifyImage(sessionId, frameId),
     auditor,
     voiceover,
     music,
@@ -321,7 +350,9 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
   });
   router.get('/capabilities', (_request, response) =>
     response.json({
-      configured: video.configured,
+      configured:
+        video.configured || [...registry.values()].some((provider) => provider.configured),
+      videoProfiles: creatorVideoProfileOptions(registry),
       researchConfigured: Boolean(options.analyze || process.env.FIRECRAWL_API_KEY?.trim()),
       visionConfigured: auditor.configured,
       provider: productionProfile(video).provider,
@@ -333,7 +364,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       maxAttemptsPerClip: 2,
       maxGeneratedSeconds: 120,
       reason: !video.configured
-        ? `Configure ${productionProfile(video).provider === 'fal' ? 'FAL_KEY' : 'RUNWAYML_API_SECRET'} for real paid video generation.`
+        ? (video.profile?.unavailableReason ??
+          `Configure ${productionProfile(video).provider === 'fal' ? 'FAL_KEY' : 'RUNWAYML_API_SECRET'} for real paid video generation.`)
         : !auditor.configured
           ? 'Configure OPENAI_API_KEY for the required generated-frame review.'
           : 'Paid generation and sampled-frame review are configured. Cancellation is best effort; submitted provider tasks may continue and be billed.',
@@ -649,6 +681,19 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         (scene) => secondsByScene.get(scene.id) !== scene.seconds,
       );
       const audio = input.audio ? checkAudio(input.audio, voiceover, music) : plan.audio;
+      if (input.brandSnapshot) await tools.brands.verifySnapshot(input.brandSnapshot);
+      for (const clip of input.clips) {
+        if (clip.assetId && clip.storyboardFrameId)
+          throw new ApiError(
+            400,
+            'CREATOR_IMAGE_SOURCE',
+            'Choose either a supplied photo or a generated storyboard frame for each shot.',
+          );
+        if (clip.storyboardFrameId) {
+          const image = await tools.images.verifyImage(session.id, clip.storyboardFrameId);
+          clip.storyboardFrameSha256 = image.record.output!.sha256;
+        } else delete clip.storyboardFrameSha256;
+      }
       if (audio?.voice && !voiceoverContiguous(input.clips, workflow))
         throw new ApiError(
           400,
@@ -697,6 +742,10 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           clips: input.clips,
           hasAudio: Boolean(audio?.voice || audio?.musicTrackId),
           ...(audio ? { audio } : {}),
+          ...(input.outputProfileId === undefined
+            ? {}
+            : { outputProfileId: input.outputProfileId }),
+          ...(input.brandSnapshot === undefined ? {} : { brandSnapshot: input.brandSnapshot }),
           ...(input.subtitlesEnabled === undefined
             ? {}
             : { subtitlesEnabled: input.subtitlesEnabled }),
@@ -726,7 +775,17 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           'CREATOR_JOB_ACTIVE',
           'Wait for the current job before reviewing another paid quote.',
         );
-      const quote = buildCreatorQuote(session, workflow, productionProfile(video), history);
+      if (session.plan?.brandSnapshot)
+        await tools.brands.verifySnapshot(session.plan.brandSnapshot);
+      for (const clip of session.plan!.clips)
+        if (clip.storyboardFrameId)
+          await tools.images.verifyImage(session.id, clip.storyboardFrameId);
+      const quote = buildCreatorQuote(
+        session,
+        workflow,
+        productionProfiles(video, session.plan!.clips, registry),
+        history,
+      );
       for (const item of quote.clips)
         if (item.reuse) {
           const oldJob = await repository.job(session.id, item.reuse.jobId);
@@ -751,7 +810,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         quote.workflowVersion !== workflow.version ||
         quote.planId !== input.planId ||
         quote.planId !== plan.id ||
-        quote.fingerprint !== quoteFingerprint(session, workflow, productionProfile(video))
+        quote.fingerprint !==
+          quoteFingerprint(session, workflow, productionProfiles(video, plan.clips, registry))
       )
         throw new ApiError(
           409,
@@ -900,11 +960,12 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       if (error) next(error);
     });
   });
+  router.use(tools.router(jobs));
   return {
     router,
     repository,
     budget: repository as CreatorBudgetLedger,
     jobs,
-    close: () => jobs.close(),
+    close: () => Promise.all([jobs.close(), tools.close()]).then(() => undefined),
   };
 }

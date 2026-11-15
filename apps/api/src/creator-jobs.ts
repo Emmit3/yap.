@@ -7,7 +7,9 @@ import type {
   CreatorInput,
   CreatorAnswer,
   CreatorResearch,
+  CreatorClip,
 } from '@yap/contracts/creator';
+import type { CreatorImageJob } from '@yap/contracts/reference-assets';
 import type { Workflow } from '@yap/contracts/workflow';
 import { ApiError } from './errors.js';
 import { CreatorRepository } from './creator-repository.js';
@@ -28,7 +30,13 @@ import {
   type CreatorVoiceover,
 } from './creator-audio.js';
 import { verifyWorkflow } from './workflow-engine.js';
-import { productionProfile, quoteFingerprint } from './creator-budget.js';
+import { productionProfile, productionProfiles, quoteFingerprint } from './creator-budget.js';
+import {
+  resolveCreatorVideoProvider,
+  type CreatorVideoProviderRegistry,
+} from './creator-video-factory.js';
+import { resolveOutputProfile } from './creator-output-profiles.js';
+import { createBrandService } from './creator-brand.js';
 import {
   createSubtitleSnapshot,
   writeCreatorSubtitles,
@@ -50,6 +58,12 @@ export interface CreatorJobsOptions {
   directory: string;
   analyze: CreatorAnalyzer;
   video: CreatorVideoProvider;
+  videoProviders?: CreatorVideoProviderRegistry;
+  branding?: Awaited<ReturnType<typeof createBrandService>>;
+  loadStoryboard?: (
+    sessionId: string,
+    frameId: string,
+  ) => Promise<{ record: CreatorImageJob; bytes: Buffer }>;
   auditor: CreatorVisionAuditor;
   voiceover: CreatorVoiceover;
   music: CreatorMusicLibrary;
@@ -202,14 +216,26 @@ export class CreatorJobs {
     const quote = await this.options.repository.quote(session.approval!.quoteId!);
     if (
       quote.fingerprint !==
-      quoteFingerprint(session, workflow, productionProfile(this.options.video))
+      quoteFingerprint(
+        session,
+        workflow,
+        productionProfiles(this.options.video, session.plan!.clips, this.options.videoProviders),
+      )
     )
       throw new ApiError(
         409,
         'CREATOR_QUOTE_STALE',
         'The plan, reference assets or provider changed. Review a new quote.',
       );
-    if (!this.options.video.configured || !this.options.auditor.configured)
+    for (const clip of session.plan!.clips)
+      resolveCreatorVideoProvider(
+        clip,
+        this.options.video,
+        this.options.videoProviders ?? new Map(),
+      );
+    if (session.plan?.brandSnapshot)
+      await this.options.branding?.verifySnapshot(session.plan.brandSnapshot);
+    if (!this.options.auditor.configured)
       throw new ApiError(
         503,
         'CREATOR_PRODUCTION_NOT_CONFIGURED',
@@ -543,6 +569,10 @@ export class CreatorJobs {
           ? await writeCreatorSubtitles(
               directory,
               createSubtitleSnapshot(plan, workflow, narrationWindows),
+              {
+                ...resolveOutputProfile(plan),
+                ...(plan.brandSnapshot ? { brand: plan.brandSnapshot } : {}),
+              },
             )
           : undefined;
         for (const clip of plan.clips) {
@@ -588,7 +618,31 @@ export class CreatorJobs {
               'No spending reservation exists for this clip.',
             );
           const asset = workflow.assets.find((value) => value.id === clip.assetId);
-          const image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
+          let image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
+          if (clip.storyboardFrameId) {
+            if (!this.options.loadStoryboard || clip.assetId)
+              throw new ApiError(
+                409,
+                'CREATOR_IMAGE_SOURCE',
+                'Choose one verified image source for this shot.',
+              );
+            const frame = await this.options.loadStoryboard(session.id, clip.storyboardFrameId);
+            if (
+              !clip.storyboardFrameSha256 ||
+              frame.record.output?.sha256 !== clip.storyboardFrameSha256
+            )
+              throw new ApiError(
+                409,
+                'CREATOR_IMAGE_SOURCE_CHANGED',
+                'The storyboard source changed. Review a new quote.',
+              );
+            image = frame.bytes;
+          }
+          const video = resolveCreatorVideoProvider(
+            clip,
+            this.options.video,
+            this.options.videoProviders ?? new Map(),
+          );
           await this.current(session, workflow);
           signal.throwIfAborted();
           await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
@@ -604,6 +658,16 @@ export class CreatorJobs {
                 audit: null,
                 prompt: clip.prompt,
                 reservationId,
+                ...(clip.videoProfileId
+                  ? {
+                      provider: item.provider,
+                      model: item.model,
+                      videoProfileId: clip.videoProfileId,
+                      ratio: item.ratio,
+                      nativeWidth: item.nativeWidth,
+                      nativeHeight: item.nativeHeight,
+                    }
+                  : {}),
               },
             ],
           }));
@@ -632,7 +696,7 @@ export class CreatorJobs {
           );
           await this.current(session, workflow);
           signal.throwIfAborted();
-          const bytes = await this.options.video.generate({
+          const bytes = await video.generate({
             clip,
             ...(image ? { image } : {}),
             signal,
@@ -653,7 +717,7 @@ export class CreatorJobs {
             'Inspecting decoded video and frames for clip ' + (plan.clips.indexOf(clip) + 1) + '.',
             'auditing',
           );
-          const technical = await inspectCreatorClip(path, clip, signal);
+          const technical = await inspectCreatorClip(path, clip, signal, video.profile);
           let audit = technical.audit;
           if (technical.audit.technicalPassed) {
             await this.current(session, workflow);
@@ -702,6 +766,17 @@ export class CreatorJobs {
           signal,
           soundtrack,
           Boolean(subtitles),
+          {
+            ...resolveOutputProfile(plan),
+            ...(plan.brandSnapshot
+              ? {
+                  brand: await this.options.branding!.verifySnapshot(plan.brandSnapshot),
+                  ...(plan.brandSnapshot.logo
+                    ? { logoPath: this.options.branding!.logoPath(plan.brandSnapshot.logo) }
+                    : {}),
+                }
+              : {}),
+          },
         );
         if (output.hasAudio !== plan.hasAudio)
           throw new ApiError(
@@ -713,7 +788,25 @@ export class CreatorJobs {
         signal.throwIfAborted();
         await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
           ...current,
-          output: { ...output, ...(subtitles ? { subtitles } : {}) },
+          output: {
+            ...output,
+            outputProfileId: resolveOutputProfile(plan).id,
+            resized:
+              resolveOutputProfile(plan).resized ||
+              plan.clips.some((clip) => {
+                const source = resolveCreatorVideoProvider(
+                  clip,
+                  this.options.video,
+                  this.options.videoProviders ?? new Map(),
+                ).profile;
+                return (
+                  !clip.videoProfileId ||
+                  source?.nativeWidth !== output.width ||
+                  source?.nativeHeight !== output.height
+                );
+              }),
+            ...(subtitles ? { subtitles } : {}),
+          },
         }));
         const sound =
           soundtrack.voices.length > 0

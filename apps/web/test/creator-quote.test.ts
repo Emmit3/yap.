@@ -19,6 +19,8 @@ import {
   readSavedQuote,
   saveQuote,
 } from '../src/creator/quote.js';
+import { planDraft } from '../src/creator/model.js';
+import { brandSnapshotSchema } from '@yap/contracts/production';
 
 function fixture() {
   const now = Date.parse('2026-11-14T12:00:00.000Z'),
@@ -115,6 +117,104 @@ function fixture() {
   });
   return { now, workflow, session, quote };
 }
+
+function overriddenFixture(landscape = false) {
+  const value = fixture();
+  const profile = landscape
+    ? ('runway-gen4.5-landscape' as const)
+    : ('runway-gen4.5-portrait' as const);
+  assert.ok(value.session.plan);
+  for (const clip of value.session.plan.clips) clip.videoProfileId = profile;
+  value.session.plan.outputProfileId = landscape ? 'landscape-720' : 'portrait-720';
+  value.quote.provider = 'runway';
+  value.quote.model = 'gen4.5';
+  value.quote.outputProfileId = value.session.plan.outputProfileId;
+  value.quote.ratio = landscape ? '1280:720' : '720:1280';
+  value.quote.clips = value.quote.clips.map((clip) => ({
+    ...clip,
+    videoProfileId: profile,
+    provider: 'runway',
+    model: 'gen4.5',
+    ratio: value.quote.ratio,
+    nativeWidth: landscape ? 1280 : 720,
+    nativeHeight: landscape ? 720 : 1280,
+  }));
+  return value;
+}
+
+test('per-shot Runway quotes remain current over historical fal plan metadata only for exact saved choices', () => {
+  const { session, workflow, quote, now } = overriddenFixture();
+  assert.equal(session.plan!.provider, 'fal');
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+  for (const invalid of [
+    { ...quote, provider: 'fal' as const, model: 'seedance-v1.5-pro' as const },
+    {
+      ...quote,
+      clips: quote.clips.map((clip, index) =>
+        index === 0 ? { ...clip, videoProfileId: 'runway-gen4turbo-portrait' as const } : clip,
+      ),
+    },
+    {
+      ...quote,
+      clips: quote.clips.map((clip, index) =>
+        index === 0 ? { ...clip, videoProfileId: undefined } : clip,
+      ),
+    },
+    {
+      ...quote,
+      clips: quote.clips.map((clip, index) =>
+        index === 0
+          ? { ...clip, provider: 'fal' as const, model: 'seedance-v1.5-pro' as const }
+          : clip,
+      ),
+    },
+  ])
+    assert.equal(quoteIsCurrent(invalid, session, workflow, now), false);
+  session.plan!.clips[1]!.videoProfileId = 'runway-gen4turbo-portrait';
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), false);
+});
+
+test('landscape quote delivery and brand identity match the exact saved output and frozen snapshot', () => {
+  const { session, workflow, quote, now } = overriddenFixture(true);
+  const brand = brandSnapshotSchema.parse({
+    name: 'Mori',
+    font: 'sans',
+    inkColor: '#171717',
+    paperColor: '#ffffff',
+    accentColor: '#247b58',
+    endCard: { enabled: false, title: '', detail: '', seconds: 1 },
+    version: 1,
+    updatedAt: new Date(now).toISOString(),
+    logo: null,
+    sha256: 'c'.repeat(64),
+  });
+  session.plan!.brandSnapshot = brand;
+  quote.brandSnapshot = structuredClone(brand);
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+  for (const invalid of [
+    { ...quote, ratio: '720:1280' as const },
+    { ...quote, outputProfileId: 'portrait-720' as const },
+    { ...quote, brandSnapshot: { ...brand, sha256: 'd'.repeat(64) } },
+    { ...quote, brandSnapshot: null },
+  ])
+    assert.equal(quoteIsCurrent(invalid, session, workflow, now), false);
+  session.plan!.outputProfileId = 'portrait-1080';
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), false);
+});
+
+test('draft saves retain explicit output, brand and per-shot choices without inventing historical fields', () => {
+  const historical = fixture().session.plan;
+  assert.ok(historical);
+  assert.equal('outputProfileId' in planDraft(historical)!, false);
+  assert.equal('brandSnapshot' in planDraft(historical)!, false);
+  const { session } = overriddenFixture(true);
+  session.plan!.brandSnapshot = null;
+  const saved = planDraft(session.plan);
+  assert.equal(saved?.outputProfileId, 'landscape-720');
+  assert.equal(saved?.brandSnapshot, null);
+  assert.equal(saved?.clips[0]?.videoProfileId, 'runway-gen4.5-landscape');
+  assert.equal('outputProfileId' in historical, false);
+});
 
 test('subtitle choices must match the saved quote, including historical omission', () => {
   const { session, workflow, quote, now } = fixture();

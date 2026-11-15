@@ -4,6 +4,14 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./production": {
+      "types": "./src/production.ts",
+      "import": "./dist/production.js"
+    },
+    "./reference-assets": {
+      "types": "./src/reference-assets.ts",
+      "import": "./dist/reference-assets.js"
+    },
     "./posters": {
       "types": "./src/posters.ts",
       "import": "./dist/posters.js"

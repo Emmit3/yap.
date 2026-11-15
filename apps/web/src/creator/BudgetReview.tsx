@@ -24,11 +24,24 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
   const available = c.capabilities?.configured && c.capabilities.visionConfigured;
   const provider = plan.provider ?? (plan.model === 'seedance-v1.5-pro' ? 'fal' : 'runway');
   const model = plan.model;
-  const modelLabel = model === 'seedance-v1.5-pro' ? 'Seedance 1.5 Pro' : 'Gen 4.5';
+  const overrides = plan.clips.some((clip) => clip.videoProfileId);
+  const modelLabel = overrides
+    ? 'Profiles selected per shot'
+    : model === 'seedance-v1.5-pro'
+      ? 'Seedance 1.5 Pro (retired)'
+      : model === 'gen4_turbo'
+        ? 'Gen 4 Turbo'
+        : 'Gen 4.5';
   const minimumSeconds = provider === 'fal' || model === 'seedance-v1.5-pro' ? 4 : 2;
-  const invalidDuration = plan.clips.some(
-    (clip) => !Number.isInteger(clip.seconds) || clip.seconds < minimumSeconds || clip.seconds > 10,
-  );
+  const invalidDuration = plan.clips.some((clip) => {
+    const profile = c.capabilities?.videoProfiles?.find((item) => item.id === clip.videoProfileId);
+    return (
+      !Number.isInteger(clip.seconds) ||
+      clip.seconds < (profile?.minSeconds ?? minimumSeconds) ||
+      clip.seconds > (profile?.maxSeconds ?? 10) ||
+      Boolean(profile?.allowedSeconds && !profile.allowedSeconds.includes(clip.seconds))
+    );
+  });
   const blocked =
     Boolean(c.busy) || c.dirty || c.needsReload || active || !currentPlan || invalidDuration;
   const canApprove = Boolean(
@@ -103,7 +116,13 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
       <dl className="creator-generation-spec">
         <div>
           <dt>Provider</dt>
-          <dd>{provider === 'fal' ? 'fal.ai' : 'Runway'}</dd>
+          <dd>
+            {overrides
+              ? 'Listed for each shot below'
+              : provider === 'fal'
+                ? 'fal.ai (retired model)'
+                : 'Runway'}
+          </dd>
         </div>
         <div>
           <dt>Model</dt>
@@ -111,7 +130,14 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
         </div>
         <div>
           <dt>Clip format</dt>
-          <dd>720 × 1280 / silent clips</dd>
+          <dd>
+            {plan.outputProfileId === 'landscape-720'
+              ? '1280 × 720 landscape'
+              : plan.outputProfileId === 'portrait-720'
+                ? '720 × 1280 portrait'
+                : '1080 × 1920 portrait, resized'}{' '}
+            / silent source clips
+          </dd>
         </div>
         <div>
           <dt>Sound</dt>
@@ -224,6 +250,14 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
                       <th scope="row">
                         Shot {index >= 0 ? index + 1 : 'from earlier plan'}
                         <small>{clip.seconds}s</small>
+                        {clip.videoProfileId && (
+                          <small>
+                            {c.capabilities?.videoProfiles?.find(
+                              (profile) => profile.id === clip.videoProfileId,
+                            )?.label ?? clip.videoProfileId}{' '}
+                            / {clip.nativeWidth} × {clip.nativeHeight}
+                          </small>
+                        )}
                       </th>
                       <td>
                         {clip.reuse

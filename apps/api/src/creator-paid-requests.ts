@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import type { CreatorBudgetLedger, CreatorReservation } from './creator-budget.js';
 import type { CreatorAnalyzer } from './creator-jobs.js';
 import { readBounded } from './creator-video-provider.js';
@@ -16,6 +16,21 @@ const MAX_OUTPUT_TOKENS = 8000;
 // Luna's full 1.05M context, long-context/cache-write premiums and capped output
 // fit below this hold at Standard pricing. Never enable paid built-in tools here.
 const OPENAI_RESERVATION_CENTS = 50;
+export interface ApprovedImageQuote {
+  model: string;
+  size: string;
+  quality: string;
+  promptHash: string;
+  maxCostCents: number;
+}
+const IMAGE_MODEL = 'gpt-image-2-2026-04-21';
+interface ImageApproval {
+  quote: ApprovedImageQuote;
+  submitted: boolean;
+  closed: boolean;
+  rejected: boolean;
+  beforeSubmit?: () => Promise<void>;
+}
 interface CoveredRequest {
   submitted: number;
   speech: number;
@@ -27,6 +42,13 @@ interface CoveredRequest {
 export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = globalThis.fetch) {
   let ledger: CreatorBudgetLedger | undefined;
   const covered = new AsyncLocalStorage<CoveredRequest>();
+  const imageApprovals = new AsyncLocalStorage<ImageApproval>();
+  const imageRequests = new Set<string>();
+  const referenceApprovals = new AsyncLocalStorage<{
+    beforeSubmit: () => Promise<void>;
+    calls: number;
+    closed: boolean;
+  }>();
   const requireLedger = () => {
     if (!ledger)
       throw new ApiError(
@@ -81,6 +103,36 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
   const fetch: typeof globalThis.fetch = async (input, init) => {
     const request = new Request(input, init);
     const url = new URL(request.url);
+    const scopedImage = imageApprovals.getStore(),
+      scopedReference = referenceApprovals.getStore();
+    if (
+      scopedImage &&
+      !(
+        url.protocol === 'https:' &&
+        url.hostname === 'api.openai.com' &&
+        url.pathname === '/v1/images/generations' &&
+        request.method === 'POST'
+      )
+    )
+      throw new ApiError(
+        409,
+        'CREATOR_IMAGE_QUOTE_MISMATCH',
+        'An image approval covers its one official image endpoint only.',
+      );
+    if (
+      scopedReference &&
+      !(
+        url.protocol === 'https:' &&
+        url.hostname === 'api.openai.com' &&
+        url.pathname === '/v1/responses' &&
+        request.method === 'POST'
+      )
+    )
+      throw new ApiError(
+        409,
+        'REFERENCE_ANALYSIS_APPROVAL',
+        'A reference approval covers one bounded visual analysis only.',
+      );
     if (['api.x.ai', 'api.x.com', 'api.twitter.com'].includes(url.hostname))
       throw new ApiError(
         503,
@@ -113,6 +165,63 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
         'The paid request could not be safely estimated.',
       );
     }
+    const image = openai && url.pathname === '/v1/images/generations';
+    const imageApproval = imageApprovals.getStore();
+    if (image) {
+      const keys = new Set(['model', 'prompt', 'size', 'quality', 'n', 'output_format']);
+      if (!imageApproval || imageApproval.closed || imageApproval.submitted || covered.getStore())
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_APPROVAL_REQUIRED',
+          'Approve a current image quote before generating one frame.',
+        );
+      const quote = imageApproval.quote;
+      if (
+        Object.keys(body).some((key) => !keys.has(key)) ||
+        body.model !== IMAGE_MODEL ||
+        body.model !== quote.model ||
+        body.size !== '1024x1536' ||
+        body.size !== quote.size ||
+        body.quality !== 'medium' ||
+        body.quality !== quote.quality ||
+        body.n !== 1 ||
+        body.output_format !== 'png' ||
+        typeof body.prompt !== 'string' ||
+        Buffer.byteLength(body.prompt, 'utf8') < 1 ||
+        Buffer.byteLength(body.prompt, 'utf8') > 2000 ||
+        createHash('sha256').update(body.prompt).digest('hex') !== quote.promptHash ||
+        quote.maxCostCents !== 10
+      )
+        throw new ApiError(
+          400,
+          'CREATOR_IMAGE_QUOTE_MISMATCH',
+          'The image request does not match its approved model, prompt, size or ceiling.',
+        );
+      await imageApproval.beforeSubmit?.();
+      request.signal.throwIfAborted();
+      if (imageApproval.closed || imageApproval.submitted)
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_REQUEST_CONFLICT',
+          'This image request already finished.',
+        );
+      imageApproval.submitted = true;
+      const response = await delegate(request.url, {
+        method: 'POST',
+        headers: request.headers,
+        body: JSON.stringify(body),
+        signal: request.signal,
+        redirect: 'error',
+      });
+      imageApproval.rejected = [400, 401, 403, 404, 429].includes(response.status);
+      return response;
+    }
+    if (imageApproval)
+      throw new ApiError(
+        409,
+        'CREATOR_IMAGE_QUOTE_MISMATCH',
+        'An image approval covers one image request only.',
+      );
     let amountCents: number;
     const speech = openai && url.pathname === '/v1/audio/speech';
     if (speech) {
@@ -218,6 +327,16 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
     else if (parent) parent.submitted++;
     try {
       await parent?.beforeSubmit?.();
+      if (scopedReference) {
+        await scopedReference.beforeSubmit();
+        if (scopedReference.closed || scopedReference.calls >= 1)
+          throw new ApiError(
+            409,
+            'REFERENCE_ANALYSIS_APPROVAL',
+            'This reference analysis operation already finished.',
+          );
+        scopedReference.calls++;
+      }
       request.signal.throwIfAborted();
     } catch (error) {
       if (reservation) await settle(reservation, 0);
@@ -239,6 +358,103 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
     fetch,
     attach(value: CreatorBudgetLedger) {
       ledger = value;
+    },
+    /** One explicitly approved storyboard request. Unknown transport outcomes keep its ceiling. */
+    async approvedImage<T>(
+      quote: ApprovedImageQuote,
+      requestId: string,
+      operation: () => Promise<T>,
+      beforeSubmit?: () => Promise<void>,
+    ): Promise<T> {
+      if (
+        !/^[0-9a-f-]{36}$/i.test(requestId) ||
+        imageRequests.has(requestId) ||
+        imageApprovals.getStore() ||
+        covered.getStore()
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_REQUEST_CONFLICT',
+          'Use a new reviewed image request; completed requests are not automatically repeated.',
+        );
+      if (
+        quote.model !== IMAGE_MODEL ||
+        quote.size !== '1024x1536' ||
+        quote.quality !== 'medium' ||
+        quote.maxCostCents !== 10 ||
+        !/^[0-9a-f]{64}$/.test(quote.promptHash)
+      )
+        throw new ApiError(
+          400,
+          'CREATOR_IMAGE_PRICE',
+          'This image quote has no supported price model.',
+        );
+      imageRequests.add(requestId);
+      const reservation = await requireLedger().reserve(
+        {
+          idempotencyKey: `image:${requestId}`,
+          category: 'image',
+          sourceId: `openai:${quote.model}:${quote.promptHash}`,
+          amountCents: quote.maxCostCents,
+        },
+        { requireNew: true },
+      );
+      const context: ImageApproval = {
+        quote,
+        submitted: false,
+        closed: false,
+        rejected: false,
+        beforeSubmit,
+      };
+      return imageApprovals.run(context, async () => {
+        try {
+          const result = await operation();
+          context.closed = true;
+          if (!context.submitted)
+            throw new ApiError(
+              503,
+              'CREATOR_IMAGE_UNGATED',
+              'The image adapter did not submit through the approved spending gate.',
+            );
+          await requireLedger().settle(reservation.id, context.rejected ? 0 : quote.maxCostCents);
+          return result;
+        } catch (error) {
+          context.closed = true;
+          if (!context.submitted || context.rejected) await settle(reservation, 0);
+          throw error;
+        } finally {
+          context.closed = true;
+        }
+      });
+    },
+    /** Keeps ordinary per-request accounting, with a last-moment reference revision check. */
+    async approvedReference<T>(
+      approval: { reviewed: true; costReviewed: true; maxCostCents: 50; sourceHash: string },
+      operation: () => Promise<T>,
+      beforeSubmit: () => Promise<void>,
+    ): Promise<T> {
+      if (
+        !approval.reviewed ||
+        !approval.costReviewed ||
+        approval.maxCostCents !== 50 ||
+        !/^[0-9a-f]{64}$/.test(approval.sourceHash) ||
+        referenceApprovals.getStore() ||
+        imageApprovals.getStore() ||
+        covered.getStore()
+      )
+        throw new ApiError(
+          409,
+          'REFERENCE_ANALYSIS_APPROVAL',
+          'Review the exact reference analysis and its cost ceiling.',
+        );
+      const scope = { beforeSubmit, calls: 0, closed: false };
+      return referenceApprovals.run(scope, async () => {
+        try {
+          return await operation();
+        } finally {
+          scope.closed = true;
+        }
+      });
     },
     /** Runs calls already covered by an approved hold: one visual audit, or `speechLimit` narration lines. */
     async prepaid<T>(

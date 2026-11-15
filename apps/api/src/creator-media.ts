@@ -7,6 +7,8 @@ import { z } from 'zod';
 import sharp from 'sharp';
 import { creatorClipSchema, type CreatorAudit, type CreatorClip } from '@yap/contracts/creator';
 import { ApiError } from './errors.js';
+import type { BrandSnapshot } from '@yap/contracts/production';
+import { renderBrandMovie } from './creator-brand.js';
 import { readBounded } from './creator-video-provider.js';
 
 const installed: unknown = createRequire(import.meta.url)('ffmpeg-static');
@@ -72,6 +74,7 @@ export async function inspectCreatorClip(
   path: string,
   clip: CreatorClip,
   signal: AbortSignal,
+  profile?: { nativeWidth?: number; nativeHeight?: number; ratio?: string },
 ): Promise<{ frames: Buffer[]; audit: CreatorAudit }> {
   const info = await stat(path);
   if (info.size < 1000 || info.size > 100 * 1024 * 1024)
@@ -106,16 +109,17 @@ export async function inspectCreatorClip(
     seconds > clip.seconds + 1 ||
     !width ||
     !height ||
-    Math.abs(width / height - 9 / 16) > 0.03
+    Math.abs(width / height - (profile?.ratio === '1280:720' ? 16 / 9 : 9 / 16)) > 0.03 ||
+    (clip.videoProfileId && (width !== profile?.nativeWidth || height !== profile?.nativeHeight))
   )
     return {
       frames: [],
       audit: {
         technicalPassed: false,
         visionPassed: null,
-        summary: 'The generated video did not match the approved duration or portrait dimensions.',
+        summary: 'The generated video did not match the approved duration or native dimensions.',
         issues: [
-          `Requested ${clip.seconds}s portrait; received ${Number.isFinite(seconds) ? seconds : 'unknown'}s, ${width || '?'}×${height || '?'}.`,
+          `Requested ${clip.seconds}s ${profile?.ratio ?? '720:1280'}; received ${Number.isFinite(seconds) ? seconds : 'unknown'}s, ${width || '?'}×${height || '?'}.`,
         ],
       },
     };
@@ -512,16 +516,20 @@ export async function assembleCreatorClips(
   signal: AbortSignal,
   soundtrack?: CreatorSoundtrack,
   subtitles = false,
+  delivery?: { width: number; height: number; brand?: BrandSnapshot; logoPath?: string },
 ): Promise<{
   bytes: number;
   sha256: string;
   duration: number;
-  width: 1080;
-  height: 1920;
+  width: number;
+  height: number;
   hasAudio: boolean;
 }> {
   const hasAudio = Boolean(soundtrack && (soundtrack.voices.length > 0 || soundtrack.music));
-  const finalBase = subtitles ? join(directory, 'unsubtitled.mp4') : output;
+  const width = delivery?.width ?? 1080,
+    height = delivery?.height ?? 1920;
+  const styledBase = subtitles ? join(directory, 'unsubtitled.mp4') : output;
+  const finalBase = delivery?.brand ? join(directory, 'unbranded.mp4') : styledBase;
   const silent = hasAudio ? join(directory, 'silent.mp4') : finalBase;
   if (
     paths.length !== durations.length ||
@@ -544,7 +552,7 @@ export async function assembleCreatorClips(
         '-map',
         '0:v:0',
         '-vf',
-        'scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,tpad=stop_mode=clone:stop_duration=1,fps=24',
+        `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,tpad=stop_mode=clone:stop_duration=1,fps=24`,
         '-t',
         String(durations[index]),
         '-an',
@@ -603,6 +611,16 @@ export async function assembleCreatorClips(
     signal,
   );
   if (hasAudio) await mixCreatorAudio(silent, finalBase, soundtrack!, duration, signal);
+  if (delivery?.brand)
+    await renderBrandMovie({
+      input: finalBase,
+      output: styledBase,
+      directory,
+      brand: delivery.brand,
+      ...(delivery.logoPath ? { logoPath: delivery.logoPath } : {}),
+      signal,
+      metadata: { width, height, duration, hasAudio },
+    });
   if (subtitles) {
     // The filename and style are server constants. Running inside the job directory
     // avoids filter parsing of Windows drive letters, apostrophes or user paths.
@@ -613,7 +631,7 @@ export async function assembleCreatorClips(
         '-protocol_whitelist',
         'file,pipe',
         '-i',
-        finalBase,
+        styledBase,
         '-vf',
         'ass=filename=subtitles.ass',
         '-map',
@@ -674,7 +692,7 @@ export async function assembleCreatorClips(
   if (
     !Number.isFinite(measured) ||
     Math.abs(measured - duration) > 1 / 24 ||
-    !/Video:[^\r\n]*? 1080x1920/.test(log) ||
+    !new RegExp(`Video:[^\\r\\n]*? ${width}x${height}`).test(log) ||
     (hasAudio
       ? audioStreams.length !== 1 || !/Audio: aac[^\r\n]*48000 Hz, stereo/.test(audioStreams[0]!)
       : audioStreams.length !== 0)
@@ -689,8 +707,8 @@ export async function assembleCreatorClips(
     bytes: bytes.length,
     sha256: createHash('sha256').update(bytes).digest('hex'),
     duration: measured,
-    width: 1080,
-    height: 1920,
+    width,
+    height,
     hasAudio,
   };
 }

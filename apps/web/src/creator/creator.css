@@ -2376,3 +2376,74 @@
   height: 36px;
   margin-top: 8px;
 }
+.creator-production-tools {
+  display: grid;
+  gap: var(--space-4, 16px);
+  margin-top: var(--space-6, 24px);
+  padding-block: var(--space-6, 24px);
+  border-top: 1px solid var(--creator-line);
+  min-width: 0;
+}
+.creator-production-tools > h2 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 32px;
+  font-weight: 600;
+}
+.creator-production-tools > details {
+  min-width: 0;
+  border-top: 1px solid var(--creator-line);
+  padding-block: var(--space-4, 16px);
+}
+.creator-production-tools > details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 16px;
+  line-height: 24px;
+}
+.creator-production-tools .creator-inspector {
+  margin-top: var(--space-4, 16px);
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+.creator-production-tools :is(fieldset, table, video) {
+  min-width: 0;
+  max-width: 100%;
+}
+.creator-production-tools fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.creator-production-tools :is(label, .creator-field) {
+  display: grid;
+  gap: var(--space-2, 8px);
+  margin-block: var(--space-3, 12px);
+  font-size: 14px;
+  line-height: 20px;
+}
+.creator-production-tools :is(input:not([type='checkbox']):not([type='color']), textarea, select) {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  padding: var(--space-2, 8px);
+  border: 1px solid var(--creator-line);
+  border-radius: 4px;
+  background: var(--creator-paper, #fff);
+  color: var(--creator-ink);
+}
+.creator-production-tools .creator-review-checkbox {
+  display: flex;
+  align-items: center;
+}
+.creator-production-tools video {
+  width: 100%;
+  max-height: 560px;
+  background: #111;
+}
+.creator-production-tools :is(p, small) {
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}

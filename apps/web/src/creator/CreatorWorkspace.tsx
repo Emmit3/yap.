@@ -46,6 +46,13 @@ import {
 } from './model';
 import { ReferenceBoard } from './ReferenceBoard';
 import { BudgetReview } from './BudgetReview';
+import { BrandControls } from './BrandControls';
+import { TimelineEditor } from './TimelineEditor';
+import { StoryboardPanel } from './StoryboardPanel';
+import { ReferenceAnalysisPanel } from './ReferenceAnalysisPanel';
+import { ClipProviderControl } from './ClipProviderControl';
+import { OutputProfileControl } from './OutputProfileControl';
+import './reference-assets.css';
 import { useCreatorSession, type CreatorController, type SourceForm } from './useCreatorSession';
 import './creator.css';
 
@@ -99,7 +106,18 @@ function moveTab(
 }
 
 export function CreatorWorkspace(props: CreatorWorkspaceProps) {
-  const c = useCreatorSession(props);
+  const [coreDirty, setCoreDirty] = useState(false);
+  const [toolDirty, setToolDirty] = useState<Record<string, boolean>>({});
+  const c = useCreatorSession({ ...props, onDirty: setCoreDirty });
+  useEffect(
+    () => props.onDirty(coreDirty || Object.values(toolDirty).some(Boolean)),
+    [coreDirty, toolDirty, props.onDirty],
+  );
+  useEffect(() => setToolDirty({}), [c.state?.session.id]);
+  const markToolDirty = (tool: string) => (dirty: boolean) =>
+    setToolDirty((previous) =>
+      previous[tool] === dirty ? previous : { ...previous, [tool]: dirty },
+    );
   const contextCallback = useRef(props.onContextChange);
   contextCallback.current = props.onContextChange;
   const context = {
@@ -556,6 +574,105 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
         <BudgetReview c={c} onOpenPromo={() => props.onOpenPromo(state.workflow.id)} />
       )}
       {c.job && <JobPanel c={c} job={c.job} />}
+      {state && (
+        <section className="creator-production-tools" aria-label="Additional production tools">
+          <h2>Production tools</h2>
+          <p className="creator-fineprint">
+            Choose your look, build frames and study references. New generation still needs its own
+            cost approval.
+          </p>
+          {c.plan && (
+            <details>
+              <summary>Brand and end card</summary>
+              <BrandControls
+                key={state.session.id}
+                sessionId={state.session.id}
+                onDirty={markToolDirty('brand')}
+                onApply={async (brandSnapshot) => {
+                  c.setPlan((previous) => (previous ? { ...previous, brandSnapshot } : null));
+                }}
+              />
+            </details>
+          )}
+          <details>
+            <summary>Storyboard and keyframes</summary>
+            <StoryboardPanel
+              key={state.session.id}
+              sessionId={state.session.id}
+              disabled={locked || active}
+              onDirty={markToolDirty('storyboard')}
+              onSelect={async (frameId) => {
+                if (!c.plan?.clips[selectedShot])
+                  throw new Error(
+                    'Prepare a shot plan and select a shot before choosing its keyframe.',
+                  );
+                c.setPlan((previous) =>
+                  previous
+                    ? {
+                        ...previous,
+                        clips: previous.clips.map((clip, index) => {
+                          if (index !== selectedShot) return clip;
+                          const { assetId: _asset, storyboardFrameSha256: _hash, ...rest } = clip;
+                          return { ...rest, storyboardFrameId: frameId };
+                        }),
+                      }
+                    : null,
+                );
+              }}
+            />
+          </details>
+          <details>
+            <summary>Reference transcripts and scenes</summary>
+            <ReferenceAnalysisPanel
+              key={state.session.id}
+              sessionId={state.session.id}
+              disabled={locked || active}
+              onDirty={markToolDirty('references')}
+              onUseReference={async (reference) => {
+                c.selectExternal({
+                  id: `analysis-${reference.id}`,
+                  title: reference.title,
+                  url: reference.sourceUrl,
+                  watchUrl: reference.sourceUrl,
+                  techniques: reference.observations
+                    .slice(0, 12)
+                    .map((note) =>
+                      `${note.atSeconds === undefined ? '' : `[${note.atSeconds}s] `}${note.text}`.slice(
+                        0,
+                        500,
+                      ),
+                    ),
+                  whyItFits: (
+                    reference.analysis?.summary ??
+                    'Imported transcript and supplied reference frames. Review these observations as creative context.'
+                  ).slice(0, 2000),
+                  evidence:
+                    reference.cues
+                      .slice(0, 4)
+                      .map((cue) => `[${cue.start}–${cue.end}s] ${cue.text}`)
+                      .join('\n')
+                      .slice(0, 2000) ||
+                    'Attributed external reference; no creator facts were added.',
+                  usage: 'external_reference',
+                });
+              }}
+            />
+          </details>
+          {c.job?.kind === 'production' &&
+            c.job.status === 'succeeded' &&
+            outputIsCurrent(c.job, state.session, state.workflow) && (
+              <details>
+                <summary>Edit the finished film</summary>
+                <TimelineEditor
+                  key={`${state.session.id}:${c.job.id}`}
+                  sessionId={state.session.id}
+                  jobId={c.job.id}
+                  onDirty={markToolDirty('timeline')}
+                />
+              </details>
+            )}
+        </section>
+      )}
       {state && !state.session.plan && (
         <div className="creator-alternative">
           <p>Prefer a simple film made from your photos?</p>
@@ -1258,7 +1375,7 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
     <section className="creator-scene-preview" aria-label="Selected shot preview">
       <div className="creator-stage-top">
         <span>Portrait canvas</span>
-        <span>9:16 / silent clip</span>
+        <span>{clip?.videoProfileId?.endsWith('landscape') ? '16:9' : '9:16'} / silent clip</span>
       </div>
       <div className="creator-film-stage">
         {receipt && c.job ? (
@@ -1270,13 +1387,25 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
             preload="metadata"
             aria-label="Generated clip preview"
           />
-        ) : asset && c.state ? (
+        ) : (asset || clip?.storyboardFrameId) && c.state ? (
           <>
             <img
-              src={promoApi.assetUrl(c.state.workflow.id, asset.id)}
-              alt={asset.description || asset.filename}
+              src={
+                clip?.storyboardFrameId
+                  ? creatorApi.storyboardImageUrl(c.state.session.id, clip.storyboardFrameId)
+                  : promoApi.assetUrl(c.state.workflow.id, asset!.id)
+              }
+              alt={
+                clip?.storyboardFrameId
+                  ? 'Generated storyboard frame selected for this shot'
+                  : asset!.description || asset!.filename
+              }
             />
-            <span className="creator-preview-label">Source photo / scene direction preview</span>
+            <span className="creator-preview-label">
+              {clip?.storyboardFrameId
+                ? 'Generated keyframe / direction preview'
+                : 'Source photo / scene direction preview'}
+            </span>
           </>
         ) : (
           <div className="creator-canvas-empty">
@@ -1423,16 +1552,22 @@ function ShotInspector({
         <label>
           Source photo
           <select
-            value={clip.assetId ?? ''}
+            value={clip.assetId ?? (clip.storyboardFrameId ? '__storyboard__' : '')}
             onChange={(event) => {
               const value = event.target.value;
+              if (value === '__storyboard__') return;
               c.setPlan((previous) =>
                 previous
                   ? {
                       ...previous,
                       clips: previous.clips.map((item, i) => {
                         if (i !== index) return item;
-                        const { assetId: _old, ...rest } = item;
+                        const {
+                          assetId: _old,
+                          storyboardFrameId: _frame,
+                          storyboardFrameSha256: _hash,
+                          ...rest
+                        } = item;
                         return value ? { ...rest, assetId: value } : rest;
                       }),
                     }
@@ -1441,6 +1576,9 @@ function ShotInspector({
             }}
           >
             <option value="">Text direction only</option>
+            {clip.storyboardFrameId && (
+              <option value="__storyboard__">Selected generated keyframe</option>
+            )}
             {c.state?.workflow.assets.map((asset) => (
               <option key={asset.id} value={asset.id}>
                 {asset.filename}
@@ -1462,6 +1600,34 @@ function ShotInspector({
         </label>
       </fieldset>
       <SoundControls c={c} disabled={disabled} />
+      <ClipProviderControl
+        clip={clip}
+        profiles={c.capabilities?.videoProfiles ?? []}
+        disabled={disabled}
+        onChange={(videoProfileId) =>
+          c.setPlan((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  clips: previous.clips.map((item, i) => {
+                    if (i !== index) return item;
+                    const { videoProfileId: _old, ...rest } = item;
+                    return videoProfileId ? { ...rest, videoProfileId } : rest;
+                  }),
+                }
+              : null,
+          )
+        }
+      />
+      <OutputProfileControl
+        value={c.plan?.outputProfileId}
+        disabled={disabled}
+        onChange={(outputProfileId) =>
+          c.setPlan((previous) =>
+            previous ? { ...previous, outputProfileId: outputProfileId ?? 'portrait-1080' } : null,
+          )
+        }
+      />
       <fieldset className="creator-subtitle-controls" disabled={disabled}>
         <legend>Subtitles for the whole film</legend>
         <label className="creator-review-checkbox">

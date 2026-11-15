@@ -5,10 +5,17 @@ import type {
   CreatorJob,
   CreatorQuote,
   CreatorBudgetSnapshot,
+  CreatorClip,
 } from '@yap/contracts/creator';
-import { creatorQuoteSchema } from '@yap/contracts/creator';
+import { creatorQuoteSchema, creatorVideoModelSchema } from '@yap/contracts/creator';
 import type { Workflow } from '@yap/contracts/workflow';
 import { creatorVideoPrompt } from './creator-video-provider.js';
+import type { CreatorVideoProvider } from './creator-video-provider.js';
+import {
+  resolveCreatorVideoProvider,
+  type CreatorVideoProviderRegistry,
+} from './creator-video-factory.js';
+import { resolveOutputProfile } from './creator-output-profiles.js';
 import { ApiError } from './errors.js';
 import { createSubtitleSnapshot, sceneSubtitleWindows } from './creator-subtitles.js';
 import {
@@ -23,7 +30,7 @@ export const creatorReservationSchema = z
   .object({
     id: z.uuid(),
     idempotencyKey: z.string().min(1).max(300),
-    category: z.enum(['video', 'vision', 'research', 'drafting', 'audio']),
+    category: z.enum(['video', 'vision', 'research', 'drafting', 'audio', 'image']),
     sourceId: z.string().min(1).max(300),
     amountCents: z.number().int().positive().max(3000),
     chargedCents: z.number().int().nonnegative().max(3000).nullable(),
@@ -45,7 +52,10 @@ export type CreatorReservationInput = Pick<
 /** Reserve before a billable call; settle only a known charge. Unknown outcomes retain the full hold. */
 export interface CreatorBudgetLedger {
   budget(): Promise<CreatorBudgetSnapshot>;
-  reserve(input: CreatorReservationInput): Promise<CreatorReservation>;
+  reserve(
+    input: CreatorReservationInput,
+    options?: { requireNew?: boolean },
+  ): Promise<CreatorReservation>;
   settle(reservationId: string, chargedCents: number): Promise<CreatorReservation>;
 }
 export function budgetSnapshot(state: CreatorBudgetState): CreatorBudgetSnapshot {
@@ -66,9 +76,16 @@ export function budgetSnapshot(state: CreatorBudgetState): CreatorBudgetSnapshot
 export function reserveBudget(
   state: CreatorBudgetState,
   input: CreatorReservationInput,
+  options: { requireNew?: boolean } = {},
 ): CreatorReservation {
   const previous = state.reservations.find((item) => item.idempotencyKey === input.idempotencyKey);
   if (previous) {
+    if (options.requireNew)
+      throw new ApiError(
+        409,
+        'CREATOR_BUDGET_REQUEST_USED',
+        'This paid request has already been admitted. Use a new reviewed request, never replay an uncertain submission.',
+      );
     if (
       previous.amountCents !== input.amountCents ||
       previous.category !== input.category ||
@@ -126,15 +143,26 @@ export function settleBudget(
 const profileSchema = z
   .object({
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: creatorVideoModelSchema,
     minSeconds: z.number().int().min(2).max(10),
     maxSeconds: z.number().int().min(2).max(10),
     rateCentsPerSecond: z.number().int().positive().max(1000),
     priceSourceUrl: z.string().optional(),
     pricingCheckedAt: z.string().optional(),
+    id: z.string().optional(),
+    label: z.string().optional(),
+    ratio: z.enum(['720:1280', '1280:720']).optional(),
+    nativeWidth: z.number().int().positive().optional(),
+    nativeHeight: z.number().int().positive().optional(),
+    requiresImage: z.boolean().optional(),
+    allowedSeconds: z.array(z.number().int().positive()).optional(),
+    retired: z.boolean().optional(),
+    unavailableReason: z.string().optional(),
   })
   .strict();
-export type CreatorProductionProfile = z.infer<typeof profileSchema>;
+export type CreatorProductionProfile = z.infer<typeof profileSchema> & {
+  clipProfiles?: Record<string, z.infer<typeof profileSchema>>;
+};
 export function productionProfile(video: object): CreatorProductionProfile {
   const profile = profileSchema.parse(
     ('profile' in video ? video.profile : undefined) ?? {
@@ -148,7 +176,7 @@ export function productionProfile(video: object): CreatorProductionProfile {
   if (
     (profile.provider === 'fal' &&
       (profile.model !== 'seedance-v1.5-pro' || profile.minSeconds < 4)) ||
-    (profile.provider === 'runway' && profile.model !== 'gen4.5') ||
+    (profile.provider === 'runway' && !['gen4.5', 'gen4_turbo'].includes(profile.model)) ||
     profile.maxSeconds < profile.minSeconds
   )
     throw new ApiError(
@@ -158,7 +186,32 @@ export function productionProfile(video: object): CreatorProductionProfile {
     );
   return {
     ...profile,
-    rateCentsPerSecond: Math.max(profile.rateCentsPerSecond, profile.provider === 'fal' ? 5 : 16),
+    rateCentsPerSecond: Math.max(
+      profile.rateCentsPerSecond,
+      profile.model === 'gen4_turbo' ? 5 : profile.provider === 'fal' ? 5 : 16,
+    ),
+  };
+}
+/** Resolve only explicit overrides; an unavailable default never silently switches vendors. */
+export function productionProfiles(
+  video: CreatorVideoProvider,
+  clips: CreatorClip[],
+  registry?: CreatorVideoProviderRegistry,
+): CreatorProductionProfile {
+  const base = productionProfile(video);
+  if (!clips.some((clip) => clip.videoProfileId)) return base;
+  return {
+    ...base,
+    clipProfiles: Object.fromEntries(
+      clips.map((clip) => [
+        clip.id,
+        productionProfile(
+          resolveCreatorVideoProvider(clip, video, registry ?? new Map(), {
+            requireConfigured: false,
+          }),
+        ),
+      ]),
+    ),
   };
 }
 export function quoteFingerprint(
@@ -177,6 +230,8 @@ export function quoteFingerprint(
         provider: profile.provider,
         model: profile.model,
         ratio: '720:1280',
+        ...(plan?.outputProfileId ? { outputProfileId: plan.outputProfileId } : {}),
+        ...(plan?.brandSnapshot ? { brandSnapshot: plan.brandSnapshot } : {}),
         hasAudio: plan?.hasAudio ?? false,
         ...(plan?.subtitlesEnabled === undefined
           ? {}
@@ -216,7 +271,11 @@ export function buildCreatorQuote(
   visionCentsPerClip = 10,
 ): CreatorQuote {
   const plan = session.plan;
-  if (!plan || plan.model !== profile.model || (plan.provider ?? 'runway') !== profile.provider)
+  if (
+    !plan ||
+    (!plan.clips.every((clip) => clip.videoProfileId) &&
+      (plan.model !== profile.model || (plan.provider ?? 'runway') !== profile.provider))
+  )
     throw new ApiError(
       409,
       'CREATOR_PROVIDER_CHANGED',
@@ -224,15 +283,47 @@ export function buildCreatorQuote(
     );
   const jobs = planHistory(history, session);
   const clips = plan.clips.map((clip) => {
-    if (clip.seconds < profile.minSeconds || clip.seconds > profile.maxSeconds)
+    const selected = profile.clipProfiles?.[clip.id] ?? profile;
+    if (selected.retired)
+      throw new ApiError(
+        503,
+        'CREATOR_PROVIDER_RETIRED',
+        selected.unavailableReason ??
+          'This model is no longer available. Choose a supported shot provider.',
+      );
+    if (
+      clip.seconds < selected.minSeconds ||
+      clip.seconds > selected.maxSeconds ||
+      (selected.allowedSeconds && !selected.allowedSeconds.includes(clip.seconds))
+    )
       throw new ApiError(
         400,
         'CREATOR_CLIP_DURATION',
-        `This provider supports clips from ${profile.minSeconds} to ${profile.maxSeconds} seconds.`,
+        `This shot provider supports ${selected.allowedSeconds?.join(' or ') ?? `${selected.minSeconds} to ${selected.maxSeconds}`} seconds.`,
       );
+    if (selected.requiresImage && !clip.assetId && !clip.storyboardFrameId)
+      throw new ApiError(
+        400,
+        'CREATOR_IMAGE_REQUIRED',
+        'Choose an uploaded photo or storyboard frame for this shot provider.',
+      );
+    const identity = clip.videoProfileId
+      ? {
+          provider: selected.provider,
+          model: selected.model,
+          videoProfileId: clip.videoProfileId,
+          ratio: selected.ratio ?? '720:1280',
+          nativeWidth: selected.nativeWidth ?? 720,
+          nativeHeight: selected.nativeHeight ?? 1280,
+        }
+      : {};
     const previous = jobs.flatMap((job) =>
       job.clips
-        .filter((receipt) => receipt.clipId === clip.id)
+        .filter(
+          (receipt) =>
+            receipt.clipId === clip.id &&
+            (!clip.videoProfileId || receipt.videoProfileId === clip.videoProfileId),
+        )
         .map((receipt) => ({ job, receipt })),
     );
     const passed = previous.find(({ receipt }) => receipt.status === 'passed' && receipt.output);
@@ -244,6 +335,7 @@ export function buildCreatorQuote(
         videoCents: 0,
         visionCents: 0,
         costCents: 0,
+        ...identity,
         reuse: {
           jobId: passed.job.id,
           attempt: passed.receipt.attempt,
@@ -257,7 +349,7 @@ export function buildCreatorQuote(
         'CREATOR_ATTEMPTS_EXHAUSTED',
         'This plan has used both paid attempts for a clip. Edit and explicitly review a new plan before further generation.',
       );
-    const videoCents = clip.seconds * profile.rateCentsPerSecond;
+    const videoCents = clip.seconds * selected.rateCentsPerSecond;
     return {
       clipId: clip.id,
       seconds: clip.seconds,
@@ -266,6 +358,7 @@ export function buildCreatorQuote(
       visionCents: visionCentsPerClip,
       costCents: videoCents + visionCentsPerClip,
       reuse: null,
+      ...identity,
     };
   });
   assertVoiceoverContiguous(plan, workflow);
@@ -284,9 +377,11 @@ export function buildCreatorQuote(
     workflowVersion: workflow.version,
     planId: plan.id,
     fingerprint: quoteFingerprint(session, workflow, profile),
-    provider: profile.provider,
-    model: profile.model,
-    ratio: '720:1280',
+    provider: (profile.clipProfiles?.[plan.clips[0]!.id] ?? profile).provider,
+    model: (profile.clipProfiles?.[plan.clips[0]!.id] ?? profile).model,
+    ratio: resolveOutputProfile(plan).ratio,
+    ...(plan.outputProfileId ? { outputProfileId: plan.outputProfileId } : {}),
+    ...(plan.brandSnapshot ? { brandSnapshot: plan.brandSnapshot } : {}),
     hasAudio: plan.hasAudio,
     ...(plan.audio ? { audio: plan.audio } : {}),
     ...(plan.subtitlesEnabled === undefined ? {} : { subtitlesEnabled: plan.subtitlesEnabled }),

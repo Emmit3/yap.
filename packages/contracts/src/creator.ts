@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { workflowSchema } from './workflow.js';
 import { socialHandoffSchema } from './social.js';
 import { durationSchema, platformSchema, toneSchema } from './index.js';
+import { brandSnapshotSchema } from './production.js';
 
 const version = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const text = (max: number) => z.string().trim().min(1).max(max);
@@ -86,6 +87,39 @@ export const creatorExternalReferenceSchema = z
     verifiedAt: z.iso.datetime().optional(),
   })
   .strict();
+export const creatorVideoModelSchema = z.enum(['gen4.5', 'gen4_turbo', 'seedance-v1.5-pro']);
+export const creatorVideoRatioSchema = z.enum(['720:1280', '1280:720']);
+export const creatorVideoProfileIdSchema = z.enum([
+  'runway-gen4.5-portrait',
+  'runway-gen4.5-landscape',
+  'runway-gen4turbo-portrait',
+  'runway-gen4turbo-landscape',
+  'fal-seedance-v1.5-portrait',
+]);
+export const creatorOutputProfileIdSchema = z.enum([
+  'portrait-720',
+  'landscape-720',
+  'portrait-1080',
+]);
+export const creatorVideoProfileOptionSchema = z
+  .object({
+    id: creatorVideoProfileIdSchema,
+    label: text(200),
+    provider: z.enum(['runway', 'fal']),
+    model: creatorVideoModelSchema,
+    ratio: creatorVideoRatioSchema,
+    nativeWidth: z.number().int().positive().max(3840),
+    nativeHeight: z.number().int().positive().max(3840),
+    minSeconds: z.number().int().min(2).max(10),
+    maxSeconds: z.number().int().min(2).max(10),
+    allowedSeconds: z.array(z.number().int().min(2).max(10)).min(1).max(9).optional(),
+    requiresImage: z.boolean(),
+    configured: z.boolean(),
+    retired: z.boolean().optional(),
+    unavailableReason: text(1000).optional(),
+    rateCentsPerSecond: z.number().int().positive().max(1000),
+  })
+  .strict();
 export const creatorClipSchema = z
   .object({
     id: z.uuid(),
@@ -95,6 +129,12 @@ export const creatorClipSchema = z
     camera: text(1000),
     lighting: text(1000),
     assetId: z.uuid().optional(),
+    storyboardFrameId: z.uuid().optional(),
+    storyboardFrameSha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
+    videoProfileId: creatorVideoProfileIdSchema.optional(),
     referenceIds: z.array(text(120)).max(12).optional(),
   })
   .strict();
@@ -128,8 +168,10 @@ export const creatorPlanSchema = z
     caption: z.string().max(3000),
     clips: z.array(creatorClipSchema).min(1).max(12),
     provider: z.enum(['runway', 'fal']).optional(),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
-    ratio: z.literal('720:1280'),
+    model: creatorVideoModelSchema,
+    ratio: creatorVideoRatioSchema,
+    outputProfileId: creatorOutputProfileIdSchema.optional(),
+    brandSnapshot: brandSnapshotSchema.nullable().optional(),
     // Generated clips stay silent. This describes the assembled film's added soundtrack.
     hasAudio: z.boolean(),
     audio: creatorAudioSchema.optional(),
@@ -182,6 +224,12 @@ export const creatorClipReceiptSchema = z
     audit: creatorAuditSchema.nullable(),
     prompt: z.string().max(1000).optional(),
     reservationId: z.uuid().optional(),
+    provider: z.enum(['runway', 'fal']).optional(),
+    model: creatorVideoModelSchema.optional(),
+    videoProfileId: creatorVideoProfileIdSchema.optional(),
+    ratio: creatorVideoRatioSchema.optional(),
+    nativeWidth: z.number().int().positive().max(3840).optional(),
+    nativeHeight: z.number().int().positive().max(3840).optional(),
     output: z
       .object({ bytes: version, sha256: z.string().regex(/^[a-f0-9]{64}$/) })
       .strict()
@@ -212,8 +260,10 @@ export const creatorJobSchema = z
         bytes: version,
         sha256: z.string().regex(/^[a-f0-9]{64}$/),
         duration: z.number().positive(),
-        width: z.literal(1080),
-        height: z.literal(1920),
+        width: z.number().int().positive().max(3840),
+        height: z.number().int().positive().max(3840),
+        outputProfileId: creatorOutputProfileIdSchema.optional(),
+        resized: z.boolean().optional(),
         hasAudio: z.boolean(),
         subtitles: z
           .object({
@@ -231,6 +281,13 @@ export const creatorJobSchema = z
           .optional(),
       })
       .strict()
+      .refine((output) => {
+        if (output.outputProfileId === 'portrait-720')
+          return output.width === 720 && output.height === 1280 && output.resized !== true;
+        if (output.outputProfileId === 'landscape-720')
+          return output.width === 1280 && output.height === 720 && output.resized !== true;
+        return output.width === 1080 && output.height === 1920 && output.resized !== false;
+      }, 'The output dimensions must match its delivery profile.')
       .nullable(),
     error: z
       .object({ code: text(120), message: text(2000) })
@@ -266,6 +323,8 @@ export const creatorUpdatePlanSchema = creatorPrepareSchema.extend({
   caption: z.string().max(3000),
   audio: creatorAudioSchema.optional(),
   subtitlesEnabled: z.boolean().optional(),
+  outputProfileId: creatorOutputProfileIdSchema.optional(),
+  brandSnapshot: brandSnapshotSchema.nullable().optional(),
 });
 export const creatorApproveSchema = creatorPrepareSchema.extend({
   planId: z.uuid(),
@@ -293,7 +352,8 @@ export const creatorCapabilitiesSchema = z
     researchConfigured: z.boolean(),
     visionConfigured: z.boolean(),
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: creatorVideoModelSchema,
+    videoProfiles: z.array(creatorVideoProfileOptionSchema).max(12).optional(),
     hasAudio: z.boolean(),
     voiceoverConfigured: z.boolean(),
     voices: z.array(creatorVoiceSchema).max(13),
@@ -337,8 +397,10 @@ export const creatorQuoteSchema = z
     planId: z.uuid(),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
-    ratio: z.literal('720:1280'),
+    model: creatorVideoModelSchema,
+    ratio: creatorVideoRatioSchema,
+    outputProfileId: creatorOutputProfileIdSchema.optional(),
+    brandSnapshot: brandSnapshotSchema.nullable().optional(),
     hasAudio: z.boolean(),
     audio: creatorAudioSchema.optional(),
     subtitlesEnabled: z.boolean().optional(),
@@ -357,6 +419,12 @@ export const creatorQuoteSchema = z
           .object({
             clipId: z.uuid(),
             seconds: z.number().int().min(2).max(10),
+            provider: z.enum(['runway', 'fal']).optional(),
+            model: creatorVideoModelSchema.optional(),
+            videoProfileId: creatorVideoProfileIdSchema.optional(),
+            ratio: creatorVideoRatioSchema.optional(),
+            nativeWidth: z.number().int().positive().max(3840).optional(),
+            nativeHeight: z.number().int().positive().max(3840).optional(),
             attempt: z.number().int().min(1).max(2),
             videoCents: cents,
             visionCents: cents,
@@ -391,6 +459,11 @@ export type CreatorReference = z.infer<typeof creatorReferenceSchema>;
 export type CreatorExternalReference = z.infer<typeof creatorExternalReferenceSchema>;
 export type CreatorResearch = z.infer<typeof creatorResearchSchema>;
 export type CreatorClip = z.infer<typeof creatorClipSchema>;
+export type CreatorVideoModel = z.infer<typeof creatorVideoModelSchema>;
+export type CreatorVideoRatio = z.infer<typeof creatorVideoRatioSchema>;
+export type CreatorVideoProfileId = z.infer<typeof creatorVideoProfileIdSchema>;
+export type CreatorVideoProfileOption = z.infer<typeof creatorVideoProfileOptionSchema>;
+export type CreatorOutputProfileId = z.infer<typeof creatorOutputProfileIdSchema>;
 export type CreatorVoice = z.infer<typeof creatorVoiceSchema>;
 export type CreatorAudio = z.infer<typeof creatorAudioSchema>;
 export type CreatorPlan = z.infer<typeof creatorPlanSchema>;
