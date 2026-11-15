@@ -14,7 +14,7 @@ Yap should be easy for a business such as a matcha shop: supply photos of the sh
 
 The backend prepares the brief, script, and scenes beneath this simple flow. Defaults keep setup short; refinement questions help when useful. A query endpoint explains the saved idea, open questions, script, and scenes. Detailed stage approval endpoints remain available, while one final approval supports the main product flow.
 
-The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Output is silent; the business downloads a video and caption for posting. Social account posting, background music, billing, and accounts are not implemented.
+The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Photo promo output is silent; the creator studio can add AI narration and bundled music to generated films. The business downloads a video and caption for posting. Social account posting, billing, and accounts are not implemented.
 
 ## Acceptance criteria for this implementation
 
@@ -42,6 +42,6 @@ Backend promo acceptance criteria:
 
 ## Decisions still needed before expanding
 
-Choose user identity, deployment storage, music or voiceover, brand controls, and social publishing integrations before expanding beyond the local service. Developer collaboration in this repository is separate from multiple businesses having isolated accounts.
+Choose user identity, deployment storage, brand controls, and social publishing integrations before expanding beyond the local service. Developer collaboration in this repository is separate from multiple businesses having isolated accounts.
 
 See [research](docs/product-research.md) for source evidence and [architecture](docs/architecture.md) for implementation boundaries.

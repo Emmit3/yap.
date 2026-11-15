@@ -10,13 +10,14 @@ import { creatorQuoteSchema } from '@yap/contracts/creator';
 import type { Workflow } from '@yap/contracts/workflow';
 import { creatorVideoPrompt } from './creator-video-provider.js';
 import { ApiError } from './errors.js';
+import { VOICEOVER_CENTS_PER_LINE, assertVoiceoverFits, voiceoverLines } from './creator-audio.js';
 
 export const CREATOR_BUDGET_LIMIT_CENTS = 3000;
 export const creatorReservationSchema = z
   .object({
     id: z.uuid(),
     idempotencyKey: z.string().min(1).max(300),
-    category: z.enum(['video', 'vision', 'research', 'drafting']),
+    category: z.enum(['video', 'vision', 'research', 'drafting', 'audio']),
     sourceId: z.string().min(1).max(300),
     amountCents: z.number().int().positive().max(3000),
     chargedCents: z.number().int().nonnegative().max(3000).nullable(),
@@ -170,7 +171,9 @@ export function quoteFingerprint(
         provider: profile.provider,
         model: profile.model,
         ratio: '720:1280',
-        hasAudio: false,
+        hasAudio: plan?.hasAudio ?? false,
+        // Editing a spoken line, its timing, the voice or the music needs a new quote.
+        ...(plan?.hasAudio ? { audio: plan.audio, narration: voiceoverLines(plan, workflow) } : {}),
         profile,
         clips: plan?.clips.map((clip) => ({ ...clip, providerPrompt: creatorVideoPrompt(clip) })),
         assets: workflow.assets.map(({ id, sha256, bytes, mimeType, description }) => ({
@@ -253,6 +256,12 @@ export function buildCreatorQuote(
       reuse: null,
     };
   });
+  const narration = voiceoverLines(plan, workflow);
+  assertVoiceoverFits(
+    narration,
+    plan.clips.reduce((sum, clip) => sum + clip.seconds, 0),
+  );
+  const audioCents = narration.length * VOICEOVER_CENTS_PER_LINE;
   return creatorQuoteSchema.parse({
     estimateKind: 'conservative_ceiling',
     id: randomUUID(),
@@ -264,10 +273,13 @@ export function buildCreatorQuote(
     provider: profile.provider,
     model: profile.model,
     ratio: '720:1280',
-    hasAudio: false,
+    hasAudio: plan.hasAudio,
+    ...(plan.audio ? { audio: plan.audio } : {}),
+    audioCents,
+    narratedSegments: narration.length,
     currency: 'USD',
     clips,
-    maxCostCents: clips.reduce((sum, clip) => sum + clip.costCents, 0),
+    maxCostCents: clips.reduce((sum, clip) => sum + clip.costCents, 0) + audioCents,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
     approvedApprovalId: null,

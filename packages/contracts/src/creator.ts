@@ -98,6 +98,27 @@ export const creatorClipSchema = z
     referenceIds: z.array(text(120)).max(12).optional(),
   })
   .strict();
+export const creatorVoiceSchema = z.enum([
+  'alloy',
+  'ash',
+  'ballad',
+  'coral',
+  'echo',
+  'fable',
+  'nova',
+  'onyx',
+  'sage',
+  'shimmer',
+  'verse',
+  'marin',
+  'cedar',
+]);
+/** Narration voice and bundled music bed. Null means that layer is off. */
+export const creatorAudioSchema = z
+  .object({ voice: creatorVoiceSchema.nullable(), musicTrackId: text(80).nullable() })
+  .strict();
+const audioConsistent = (value: { hasAudio: boolean; audio?: CreatorAudio | undefined }) =>
+  value.hasAudio === Boolean(value.audio?.voice || value.audio?.musicTrackId);
 export const creatorPlanSchema = z
   .object({
     id: z.uuid(),
@@ -109,12 +130,15 @@ export const creatorPlanSchema = z
     provider: z.enum(['runway', 'fal']).optional(),
     model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
     ratio: z.literal('720:1280'),
-    hasAudio: z.literal(false),
+    // Generated clips stay silent. This describes the assembled film's added soundtrack.
+    hasAudio: z.boolean(),
+    audio: creatorAudioSchema.optional(),
     maxAttemptsPerClip: z.literal(2),
     maxGeneratedSeconds: z.number().int().positive().max(120),
     createdAt: z.iso.datetime(),
   })
-  .strict();
+  .strict()
+  .refine(audioConsistent, 'The audio settings do not match hasAudio.');
 export const creatorApprovalSchema = z
   .object({
     id: z.uuid(),
@@ -177,6 +201,9 @@ export const creatorJobSchema = z
     quoteId: z.uuid().optional(),
     planId: z.uuid().optional(),
     reservationIds: z.array(z.uuid()).max(12).optional(),
+    audioReservationId: z.uuid().optional(),
+    // Set before the first narration request so an untouched hold can be released.
+    audioStarted: z.boolean().optional(),
     clips: z.array(creatorClipReceiptSchema).max(24),
     events: z.array(z.object({ at: z.iso.datetime(), message: text(1000) }).strict()).max(100),
     output: z
@@ -186,7 +213,7 @@ export const creatorJobSchema = z
         duration: z.number().positive(),
         width: z.literal(1080),
         height: z.literal(1920),
-        hasAudio: z.literal(false),
+        hasAudio: z.boolean(),
       })
       .strict()
       .nullable(),
@@ -222,6 +249,7 @@ export const creatorPrepareSchema = z
 export const creatorUpdatePlanSchema = creatorPrepareSchema.extend({
   clips: z.array(creatorClipSchema).min(1).max(12),
   caption: z.string().max(3000),
+  audio: creatorAudioSchema.optional(),
 });
 export const creatorApproveSchema = creatorPrepareSchema.extend({
   planId: z.uuid(),
@@ -250,7 +278,22 @@ export const creatorCapabilitiesSchema = z
     visionConfigured: z.boolean(),
     provider: z.enum(['runway', 'fal']),
     model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
-    hasAudio: z.literal(false),
+    hasAudio: z.boolean(),
+    voiceoverConfigured: z.boolean(),
+    voices: z.array(creatorVoiceSchema).max(13),
+    musicTracks: z
+      .array(
+        z
+          .object({
+            id: text(80),
+            title: text(200),
+            mood: text(40),
+            description: text(200),
+            seconds: z.number().positive(),
+          })
+          .strict(),
+      )
+      .max(20),
     maxAttemptsPerClip: z.literal(2),
     maxGeneratedSeconds: z.literal(120),
     reason: z.string().max(1000),
@@ -280,7 +323,11 @@ export const creatorQuoteSchema = z
     provider: z.enum(['runway', 'fal']),
     model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
     ratio: z.literal('720:1280'),
-    hasAudio: z.literal(false),
+    hasAudio: z.boolean(),
+    audio: creatorAudioSchema.optional(),
+    // Narration ceiling for the whole film. Bundled music is free. Absent on older quotes.
+    audioCents: cents.default(0),
+    narratedSegments: z.number().int().nonnegative().max(60).default(0),
     currency: z.literal('USD'),
     maxCostCents: cents,
     createdAt: z.iso.datetime(),
@@ -327,6 +374,8 @@ export type CreatorReference = z.infer<typeof creatorReferenceSchema>;
 export type CreatorExternalReference = z.infer<typeof creatorExternalReferenceSchema>;
 export type CreatorResearch = z.infer<typeof creatorResearchSchema>;
 export type CreatorClip = z.infer<typeof creatorClipSchema>;
+export type CreatorVoice = z.infer<typeof creatorVoiceSchema>;
+export type CreatorAudio = z.infer<typeof creatorAudioSchema>;
 export type CreatorPlan = z.infer<typeof creatorPlanSchema>;
 export type CreatorApproval = z.infer<typeof creatorApprovalSchema>;
 export type CreatorSession = z.infer<typeof creatorSessionSchema>;

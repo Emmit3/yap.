@@ -22,6 +22,7 @@ import { createCreatorRouter, type CreatorRouterOptions } from './creator-router
 import { createCreatorPaidRequests, BUDGET_OPENAI_MODEL } from './creator-paid-requests.js';
 import { createCreatorResearch, creatorResearchConfigFromEnv } from './creator-research.js';
 import { createCreatorVisionAuditor } from './creator-media.js';
+import { createCreatorVoiceover } from './creator-audio.js';
 import { createPosterRouter } from './poster-router.js';
 
 export interface AppOptions {
@@ -45,7 +46,15 @@ export interface AppOptions {
   creatorOptions?: Partial<
     Pick<
       CreatorRouterOptions,
-      'videoConfig' | 'video' | 'auditor' | 'analyze' | 'fetch' | 'withBudget' | 'budgetLimitCents'
+      | 'videoConfig'
+      | 'video'
+      | 'auditor'
+      | 'voiceover'
+      | 'music'
+      | 'analyze'
+      | 'fetch'
+      | 'withBudget'
+      | 'budgetLimitCents'
     >
   >;
 }
@@ -281,6 +290,9 @@ export async function createApp(options: AppOptions = {}) {
         },
         creatorSpending.fetch,
       );
+    const rawVoiceover =
+      options.creatorOptions?.voiceover ??
+      createCreatorVoiceover({ apiKey: process.env.OPENAI_API_KEY }, creatorSpending.fetch);
     const supportedAudit =
       Boolean(options.creatorOptions?.auditor) ||
       !process.env.OPENAI_MODEL?.trim() ||
@@ -313,6 +325,12 @@ export async function createApp(options: AppOptions = {}) {
       auditor: {
         configured: rawAuditor.configured && supportedAudit,
         audit: (...args) => creatorSpending.prepaid(() => rawAuditor.audit(...args), args[4]),
+      },
+      voiceover: {
+        configured: rawVoiceover.configured,
+        // The production job's approved audio hold covers exactly one request per line.
+        narrate: (...args) =>
+          creatorSpending.prepaid(() => rawVoiceover.narrate(...args), args[4], args[0].length),
       },
       withBudget(ledger) {
         workflowSpending.attach(ledger);

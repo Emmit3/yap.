@@ -11,6 +11,8 @@ import {
   creatorApproveSchema,
   creatorProduceSchema,
   creatorPlanSchema,
+  creatorVoiceSchema,
+  type CreatorAudio,
   type CreatorSession,
   type CreatorPlan,
   type CreatorClip,
@@ -37,6 +39,14 @@ import {
 } from './creator-video-factory.js';
 import { createCreatorVisionAuditor, type CreatorVisionAuditor } from './creator-media.js';
 import { analyzeCreator } from './creator-research.js';
+import {
+  DEFAULT_CREATOR_VOICE,
+  createCreatorVoiceover,
+  defaultMusicTrack,
+  loadCreatorMusic,
+  type CreatorMusicLibrary,
+  type CreatorVoiceover,
+} from './creator-audio.js';
 import type { WorkflowRepository } from './workflow-repository.js';
 import type { WorkflowAssetStore } from './workflow-assets.js';
 import type { VideoWorkflowProvider } from './workflow-provider.js';
@@ -59,6 +69,8 @@ export interface CreatorRouterOptions {
   videoConfig?: CreatorVideoConfig;
   video?: CreatorVideoProvider;
   auditor?: CreatorVisionAuditor;
+  voiceover?: CreatorVoiceover;
+  music?: CreatorMusicLibrary;
   analyze?: CreatorAnalyzer;
   fetch?: typeof globalThis.fetch;
   onError?: (error: unknown) => void;
@@ -127,10 +139,25 @@ function validateClips(clips: CreatorClip[], workflow: Workflow): void {
       );
   }
 }
+function checkAudio(
+  audio: CreatorAudio,
+  voiceover: CreatorVoiceover,
+  music: CreatorMusicLibrary,
+): CreatorAudio {
+  if (audio.voice && !voiceover.configured)
+    throw new ApiError(
+      400,
+      'CREATOR_VOICEOVER_NOT_CONFIGURED',
+      'Narration needs OPENAI_API_KEY on the server. Turn narration off or configure it.',
+    );
+  if (audio.musicTrackId) music.path(audio.musicTrackId);
+  return audio;
+}
 function makePlan(
   session: CreatorSession,
   workflow: Workflow,
   profile: CreatorProductionProfile,
+  audio: CreatorAudio,
 ): CreatorPlan {
   if (!workflow.script || !workflow.scenes)
     throw new ApiError(409, 'CREATOR_SCRIPT_REQUIRED', 'Prepare a script and scene plan first.');
@@ -220,7 +247,8 @@ function makePlan(
     provider: profile.provider,
     model: profile.model,
     ratio: '720:1280',
-    hasAudio: false,
+    hasAudio: Boolean(audio.voice || audio.musicTrackId),
+    audio,
     maxAttemptsPerClip: 2,
     maxGeneratedSeconds: total * 2,
     createdAt: new Date().toISOString(),
@@ -244,6 +272,10 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL },
       options.fetch,
     );
+  const voiceover =
+    options.voiceover ??
+    createCreatorVoiceover({ apiKey: process.env.OPENAI_API_KEY }, options.fetch);
+  const music = options.music ?? (await loadCreatorMusic());
   const jobs = new CreatorJobs({
     repository,
     workflows: options.workflows,
@@ -251,6 +283,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     directory: resolve(options.directory),
     video,
     auditor,
+    voiceover,
+    music,
     analyze:
       budgeted?.analyze ??
       options.analyze ??
@@ -290,7 +324,10 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       visionConfigured: auditor.configured,
       provider: productionProfile(video).provider,
       model: productionProfile(video).model,
-      hasAudio: false,
+      hasAudio: voiceover.configured || music.tracks.length > 0,
+      voiceoverConfigured: voiceover.configured,
+      voices: voiceover.configured ? creatorVoiceSchema.options : [],
+      musicTracks: music.tracks,
       maxAttemptsPerClip: 2,
       maxGeneratedSeconds: 120,
       reason: !video.configured
@@ -300,6 +337,15 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           : 'Paid generation and sampled-frame review are configured. Cancellation is best effort; submitted provider tasks may continue and be billed.',
     }),
   );
+  router.get('/music/:trackId', (request, response, next) => {
+    const id = validate(z.string().regex(/^[a-z0-9-]{1,80}$/), request.params.trackId);
+    response
+      .type('audio/mp4')
+      .set('Cache-Control', 'private, max-age=3600')
+      .sendFile(music.path(id), (error) => {
+        if (error && !response.headersSent) next(error);
+      });
+  });
   router.get('/sessions', async (_request, response) =>
     response.json({ sessions: await repository.list() }),
   );
@@ -540,7 +586,17 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       await checkCurrent();
       let plan: CreatorPlan;
       try {
-        plan = makePlan(session, candidate, profile);
+        // A re-prepared plan keeps the creator's earlier sound choices when still available.
+        const previous = session.plan?.audio;
+        plan = makePlan(session, candidate, profile, {
+          voice: voiceover.configured ? (previous ? previous.voice : DEFAULT_CREATOR_VOICE) : null,
+          musicTrackId:
+            previous &&
+            (previous.musicTrackId === null ||
+              music.tracks.some((track) => track.id === previous.musicTrackId))
+              ? previous.musicTrackId
+              : defaultMusicTrack(music, candidate.brief.tone),
+        });
       } catch (error) {
         if (error instanceof ApiError && error.status < 500) throw needsReview(error.message);
         throw error;
@@ -579,6 +635,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       const timingChanged = workflow.scenes!.scenes.some(
         (scene) => secondsByScene.get(scene.id) !== scene.seconds,
       );
+      const audio = input.audio ? checkAudio(input.audio, voiceover, music) : plan.audio;
       if (input.caption !== workflow.script!.caption || timingChanged) {
         workflow = await options.workflows.update(workflow.id, workflow.version, (current) => {
           const scenes = current.scenes!.scenes.map((scene) => ({
@@ -619,6 +676,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           sourceScenesId: workflow.scenes!.id,
           caption: input.caption,
           clips: input.clips,
+          hasAudio: Boolean(audio?.voice || audio?.musicTrackId),
+          ...(audio ? { audio } : {}),
           maxGeneratedSeconds: input.clips.reduce((total, clip) => total + clip.seconds, 0) * 2,
         },
       }));

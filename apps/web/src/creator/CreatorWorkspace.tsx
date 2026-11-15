@@ -1246,7 +1246,7 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
     <section className="creator-scene-preview" aria-label="Selected shot preview">
       <div className="creator-stage-top">
         <span>Portrait canvas</span>
-        <span>9:16 / silent</span>
+        <span>9:16 / silent clip</span>
       </div>
       <div className="creator-film-stage">
         {receipt && c.job ? (
@@ -1449,6 +1449,7 @@ function ShotInspector({
           />
         </label>
       </fieldset>
+      <SoundControls c={c} disabled={disabled} />
       <button
         className="creator-primary-button"
         disabled={disabled || !c.planDirty || c.inputDirty || c.scriptDirty}
@@ -1864,7 +1865,8 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
               </div>
             )}
             <span>
-              {job.output.width} × {job.output.height} / {job.output.duration}s / Silent
+              {job.output.width} × {job.output.height} / {job.output.duration}s /{' '}
+              {job.output.hasAudio ? 'With sound' : 'Silent'}
             </span>
           </div>
           <div>
@@ -1969,5 +1971,90 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
         </button>
       )}
     </section>
+  );
+}
+
+function SoundControls({ c, disabled }: { c: CreatorController; disabled: boolean }) {
+  const audio = c.plan?.audio;
+  const tracks = c.capabilities?.musicTracks ?? [];
+  const voices = c.capabilities?.voices ?? [];
+  if (!audio || !c.capabilities) return null;
+  const track = tracks.find((item) => item.id === audio.musicTrackId);
+  return (
+    <fieldset className="creator-sound-controls" disabled={disabled}>
+      <legend>Sound for the whole film</legend>
+      <label>
+        Narration voice
+        <select
+          value={audio.voice ?? ''}
+          disabled={voices.length === 0}
+          onChange={(event) =>
+            c.setPlan((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    audio: {
+                      ...previous.audio,
+                      voice: (event.target.value || null) as typeof audio.voice,
+                    },
+                  }
+                : null,
+            )
+          }
+        >
+          <option value="">No narration</option>
+          {voices.map((voice) => (
+            <option key={voice} value={voice}>
+              {voice[0]!.toUpperCase() + voice.slice(1)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <p className="creator-fineprint">
+        {voices.length === 0
+          ? 'Narration needs an OpenAI key on the server.'
+          : 'An AI voice reads the script moments in time with their shots. It is priced in the quote.'}
+      </p>
+      <label>
+        Background music
+        <select
+          value={audio.musicTrackId ?? ''}
+          disabled={tracks.length === 0}
+          onChange={(event) =>
+            c.setPlan((previous) =>
+              previous
+                ? {
+                    ...previous,
+                    audio: { ...previous.audio, musicTrackId: event.target.value || null },
+                  }
+                : null,
+            )
+          }
+        >
+          <option value="">No music</option>
+          {tracks.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.mood[0]!.toUpperCase() + item.mood.slice(1)}: {item.title}
+            </option>
+          ))}
+        </select>
+      </label>
+      {track && (
+        <>
+          <p className="creator-fineprint">{track.description}</p>
+          <audio
+            key={track.id}
+            className="creator-sound-preview"
+            controls
+            preload="none"
+            src={creatorApi.musicUrl(track.id)}
+            aria-label={`Preview ${track.title}`}
+          />
+        </>
+      )}
+      <p className="creator-fineprint">
+        Bundled music is free and lowers itself while the voice speaks.
+      </p>
+    </fieldset>
   );
 }

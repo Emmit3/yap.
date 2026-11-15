@@ -291,6 +291,14 @@ test(
       creatorOptions: {
         fetch: transport,
         videoConfig: { pollMs: 1, timeoutMs: 15_000 },
+        // This test covers the silent video path; sound has its own production tests.
+        voiceover: { configured: false, narrate: async () => [] },
+        music: {
+          tracks: [],
+          path() {
+            throw new Error('No music is offered in this test.');
+          },
+        },
         withBudget(value) {
           ledger = value;
           return {};

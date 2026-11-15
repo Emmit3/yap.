@@ -230,3 +230,78 @@ test('a prepaid audit runs its final approval check after request preparation an
   });
   assert.equal(calls, 1);
 });
+
+const speechEndpoint = 'https://api.openai.com/v1/audio/speech';
+const speech = (extra: object = {}): RequestInit => ({
+  method: 'POST',
+  headers: { Authorization: 'Bearer never-log-this', 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    model: 'gpt-4o-mini-tts',
+    input: 'Fresh matcha, whisked to order.',
+    voice: 'marin',
+    response_format: 'wav',
+    ...extra,
+  }),
+});
+const audio = () => new Response(Buffer.from('RIFF'), { headers: { 'Content-Type': 'audio/wav' } });
+
+test('narration is priced only for the bounded speech model and keeps its hold without usage', async (t) => {
+  const { ledger } = await fixture(t);
+  let sent: Record<string, unknown> = {},
+    calls = 0;
+  const gate = createCreatorPaidRequests(async (_input, init) => {
+    calls++;
+    sent = JSON.parse(String(init?.body));
+    return audio();
+  });
+  gate.attach(ledger);
+  for (const extra of [
+    { model: 'tts-1-hd' },
+    { model: 'gpt-6-luna' },
+    { input: 'x'.repeat(1001) },
+    { response_format: 'mp3' },
+    { stream_format: 'sse' },
+  ])
+    await assert.rejects(gate.fetch(speechEndpoint, speech(extra)), ApiError);
+  assert.equal(calls, 0);
+  assert.equal((await gate.fetch(speechEndpoint, speech())).status, 200);
+  assert.equal(sent.max_output_tokens, undefined, 'text-model limits are not injected');
+  assert.equal(sent.service_tier, undefined);
+  assert.deepEqual(
+    [(await ledger.budget()).reservedCents, (await ledger.budget()).chargedCents],
+    [10, 0],
+  );
+});
+
+test('a definite narration rejection releases its hold, and an approved hold covers exactly its lines', async (t) => {
+  const { ledger } = await fixture(t);
+  let status = 401,
+    calls = 0;
+  const gate = createCreatorPaidRequests(async () => {
+    calls++;
+    return status === 200 ? audio() : new Response('{}', { status });
+  });
+  gate.attach(ledger);
+  assert.equal((await gate.fetch(speechEndpoint, speech())).status, 401);
+  assert.equal((await ledger.budget()).availableCents, 3000);
+  status = 200;
+  await gate.prepaid(
+    async () => {
+      await gate.fetch(speechEndpoint, speech());
+      await gate.fetch(speechEndpoint, speech());
+      await assert.rejects(
+        gate.fetch(speechEndpoint, speech()),
+        (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_BUDGET_AUDIT',
+      );
+      await assert.rejects(gate.fetch(endpoint, payload()), ApiError);
+    },
+    undefined,
+    2,
+  );
+  assert.equal(calls, 3);
+  assert.equal(
+    (await ledger.budget()).availableCents,
+    3000,
+    'covered lines draw on the production hold, not new reservations',
+  );
+});
