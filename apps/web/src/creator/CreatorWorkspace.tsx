@@ -46,6 +46,8 @@ import {
 } from './model';
 import { ReferenceBoard } from './ReferenceBoard';
 import { BudgetReview } from './BudgetReview';
+import { ClipQualityFindings, PromptReview } from './QualityReview';
+import { KeyframeStudio } from './KeyframeStudio';
 import { useCreatorSession, type CreatorController, type SourceForm } from './useCreatorSession';
 import './creator.css';
 
@@ -64,8 +66,10 @@ export interface CreatorWorkspaceProps {
     isBusy?: boolean;
   }): void;
   onOpenPromo(workflowId: string): void;
+  onOpenResearch?(): void;
 }
 type View = 'guided' | 'director';
+type WorkspaceStep = 'frames' | 'story' | 'video';
 const viewKey = 'yap.creator.view';
 function initialView(): View {
   try {
@@ -114,6 +118,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const contextKey = JSON.stringify(context);
   useEffect(() => contextCallback.current?.(contextRef.current), [contextKey]);
   const [view, setView] = useState<View>(initialView);
+  const [step, setStep] = useState<WorkspaceStep>('frames');
   const [selectedShot, setSelectedShot] = useState(0);
   const [inspector, setInspector] = useState<'shots' | 'script'>('shots');
   const fileInput = useRef<HTMLInputElement>(null);
@@ -121,9 +126,9 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const scriptTimingInput = useRef<HTMLInputElement>(null);
   const state = c.state;
-  const active = isActiveJob(c.job);
-  const production = active && c.job?.kind === 'production';
-  const locked = Boolean(c.busy) || c.needsReload || production;
+  const active = isActiveJob(c.job) || c.imageWorkActive;
+  const production = isActiveJob(c.job) && c.job?.kind === 'production';
+  const locked = Boolean(c.busy) || c.needsReload || production || c.imageWorkActive;
   const edits =
     c.inputDirty ||
     c.planDirty ||
@@ -163,7 +168,12 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
     }
     if (focusPanel) requestAnimationFrame(() => panelHeading.current?.focus());
   }
+  function openStep(next: WorkspaceStep) {
+    setStep(next);
+    requestAnimationFrame(() => document.getElementById(`creator-step-${next}`)?.focus());
+  }
   function reviewSavedTiming() {
+    setStep('story');
     setInspector('script');
     changeView('director', false);
     requestAnimationFrame(() => (scriptTimingInput.current ?? panelHeading.current)?.focus());
@@ -215,24 +225,65 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
           <button className="creator-back" onClick={props.onBack}>
             <ArrowLeft size={16} /> Your workspace
           </button>
-          <h1>{state ? state.workflow.title : 'Make room for your next idea.'}</h1>
-          <p>
-            {state
-              ? 'One film. Two ways to shape it.'
-              : 'A few photos. A little direction. Something worth watching.'}
-          </p>
+          <h1 title={state?.workflow.title}>
+            {state ? state.workflow.title : 'Make room for your next idea.'}
+          </h1>
         </div>
         <div className="creator-head-controls">
+          {props.onOpenResearch && (
+            <button className="creator-text-button" onClick={props.onOpenResearch}>
+              Research <ArrowUpRight size={15} />
+            </button>
+          )}
+          {isActiveJob(c.job) && (
+            <button className="creator-text-button" onClick={() => setStep('video')}>
+              {c.job?.kind === 'analysis' ? 'Research running' : 'Video generating'}{' '}
+              <ArrowUpRight size={15} />
+            </button>
+          )}
           <span className={`creator-save-state ${c.dirty ? 'is-unsaved' : ''}`}>
             <span />
-            {c.busy
-              ? c.busy
-              : c.dirty
-                ? 'Local changes'
-                : state
-                  ? 'Saved to your studio'
-                  : 'Your starting point'}
+            {c.busy ? c.busy : c.dirty ? 'Local changes' : state ? 'Saved' : 'Draft'}
           </span>
+        </div>
+      </header>
+
+      {state && (
+        <div
+          className="creator-step-tabs"
+          role="tablist"
+          aria-label="Studio steps"
+          onKeyDown={(event) =>
+            moveTab(event, ['frames', 'story', 'video'].indexOf(step), (index) =>
+              setStep((['frames', 'story', 'video'] as const)[index] ?? 'frames'),
+            )
+          }
+        >
+          {(['frames', 'story', 'video'] as const).map((item) => (
+            <button
+              key={item}
+              role="tab"
+              id={`creator-step-${item}`}
+              aria-selected={step === item}
+              tabIndex={step === item ? 0 : -1}
+              aria-controls={`creator-${item}-panel`}
+              onClick={() => setStep(item)}
+            >
+              {item === 'frames' ? (
+                <ImageSquare size={17} />
+              ) : item === 'story' ? (
+                <TextT size={17} />
+              ) : (
+                <FilmSlate size={17} />
+              )}
+              {item === 'frames' ? 'Frames' : item === 'story' ? 'Story' : 'Video'}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="creator-step-panel" hidden={Boolean(state && step !== 'story')}>
+        <div className="creator-story-toolbar">
           <div
             className="creator-view-switch"
             role="tablist"
@@ -265,7 +316,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
             </button>
           </div>
         </div>
-      </header>
+      </div>
 
       {c.error && (
         <div className="creator-feedback creator-feedback-error" role="alert">
@@ -316,100 +367,80 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
       )}
       {state && edits && (
         <div className="creator-draft-bar">
-          <span>Save your local changes before preparing or approving a film.</span>
+          <span>Unsaved changes in Story.</span>
+          {step !== 'story' && (
+            <button className="creator-text-button" onClick={() => setStep('story')}>
+              Review changes <ArrowUpRight size={15} />
+            </button>
+          )}
           <button className="creator-text-button" onClick={c.useSaved} disabled={Boolean(c.busy)}>
-            Use saved text, answers, descriptions and plan
+            Discard changes
           </button>
         </div>
       )}
-      {state?.workflow.script && !state.session.plan && (
-        <aside className="creator-feedback">
-          <TextT size={20} />
-          <div>
-            <p>
-              <strong>Your saved script is ready to edit.</strong>
-            </p>
-            <p>
-              Review the timing, save your changes, then prepare again. Your existing words are
-              kept; preparing resumes from the saved drafting progress.
-            </p>
-            <button className="creator-text-button" onClick={reviewSavedTiming}>
-              Edit saved script timing <ArrowUpRight size={16} />
-            </button>
-          </div>
-        </aside>
-      )}
+      <div
+        id="creator-story-panel"
+        className="creator-step-panel"
+        role={state ? 'tabpanel' : undefined}
+        aria-labelledby={state ? 'creator-step-story' : undefined}
+        hidden={Boolean(state && step !== 'story')}
+      >
+        {state?.workflow.script && !state.session.plan && (
+          <aside className="creator-feedback">
+            <TextT size={20} />
+            <div>
+              <p>
+                <strong>Your saved script is ready to edit.</strong>
+              </p>
+              <p>
+                Review the timing, save your changes, then prepare again. Your existing words are
+                kept; preparing resumes from the saved drafting progress.
+              </p>
+              <button className="creator-text-button" onClick={reviewSavedTiming}>
+                Edit saved script timing <ArrowUpRight size={16} />
+              </button>
+            </div>
+          </aside>
+        )}
 
-      <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
-        {view === 'guided' ? (
-          <div className="creator-guided-layout">
-            <div className="creator-guided-main">
-              <h2 ref={panelHeading} tabIndex={-1} className="creator-panel-title">
-                {state ? 'Let’s find the story.' : 'What are we making?'}
-              </h2>
-              {state && <Conversation c={c} />}
-              <SourceComposer
-                c={c}
-                fileInput={fileInput}
-                promptInput={promptInput}
-                locked={sourceLocked}
-                active={active}
-              />
-              {state && <QuestionComposer c={c} disabled={answerLocked} />}
-              {state && (
-                <div className="creator-next-step">
-                  <div>
-                    <span className="creator-kicker">When the direction feels right</span>
-                    <h3>Give it a script. Then a shot.</h3>
-                    <p>Prepare an editable proposal from your saved sources and answers.</p>
-                  </div>
-                  <button
-                    className="creator-primary-button"
-                    onClick={c.prepare}
-                    disabled={locked || active || c.dirty}
-                  >
-                    {state.session.plan ? 'Refresh the proposal' : 'Prepare script and shots'}
-                    <ArrowRight size={17} />
-                  </button>
-                  {state.session.plan && (
-                    <button className="creator-text-button" onClick={() => changeView('director')}>
-                      Review in Director <ArrowUpRight size={16} />
+        <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
+          {view === 'guided' ? (
+            <div className="creator-guided-layout">
+              <div className="creator-guided-main">
+                <h2 ref={panelHeading} tabIndex={-1} className="creator-panel-title">
+                  {state ? 'Let’s find the story.' : 'What are we making?'}
+                </h2>
+                {state && <Conversation c={c} />}
+                <SourceComposer
+                  c={c}
+                  fileInput={fileInput}
+                  promptInput={promptInput}
+                  locked={sourceLocked}
+                  active={active}
+                />
+                {state && <QuestionComposer c={c} disabled={answerLocked} />}
+                {state && (
+                  <div className="creator-next-step">
+                    <button
+                      className="creator-primary-button"
+                      onClick={c.prepare}
+                      disabled={locked || active || c.dirty}
+                    >
+                      {state.session.plan ? 'Update shots' : 'Plan shots'}
+                      <ArrowRight size={17} />
                     </button>
-                  )}
-                </div>
-              )}
-            </div>
-            <aside className="creator-guided-aside">
-              <SourceBin
-                c={c}
-                onAdd={() => fileInput.current?.click()}
-                disabled={sourceLocked}
-                savedPhotoDisabled={savedPhotoLocked}
-              />
-              <WorkflowProgress c={c} />
-            </aside>
-          </div>
-        ) : (
-          <>
-            <div className="creator-director-heading">
-              <h2 ref={panelHeading} tabIndex={-1}>
-                Your director’s desk.
-              </h2>
-              <span className="creator-fineprint">
-                Sources, words and every shot. All in one place.
-              </span>
-            </div>
-            {(!state?.session.plan || c.photos.length > 0 || c.inputDirty) && (
-              <SourceComposer
-                c={c}
-                fileInput={fileInput}
-                promptInput={promptInput}
-                locked={sourceLocked}
-                active={active}
-              />
-            )}
-            <div className="creator-director-layout">
-              <aside className="creator-source-pane">
+                    {state.session.plan && (
+                      <button
+                        className="creator-text-button"
+                        onClick={() => changeView('director')}
+                      >
+                        Edit shots <ArrowUpRight size={16} />
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+              <aside className="creator-guided-aside">
                 <SourceBin
                   c={c}
                   onAdd={() => fileInput.current?.click()}
@@ -418,149 +449,239 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
                 />
                 <WorkflowProgress c={c} />
               </aside>
-              <div className="creator-stage-pane">
-                <ScenePreview c={c} clip={c.plan?.clips[selectedShot]} />
-                <ShotStrip c={c} selected={selectedShot} onSelect={setSelectedShot} />
-                {state && !state.session.plan && (
-                  <div className="creator-empty-plan">
-                    <h3>The first frame is a plan.</h3>
-                    <p>
-                      Save your sources, then prepare the script and shots. You’ll review everything
-                      here before any paid generation.
-                    </p>
-                    <button
-                      className="creator-primary-button"
-                      disabled={locked || active || c.dirty}
-                      onClick={c.prepare}
-                    >
-                      Prepare my proposal <ArrowRight size={17} />
-                    </button>
-                  </div>
-                )}
+            </div>
+          ) : (
+            <>
+              <div className="creator-director-heading">
+                <h2 ref={panelHeading} tabIndex={-1}>
+                  Story
+                </h2>
               </div>
-              <aside className="creator-inspector">
-                <div
-                  className="creator-inspector-tabs"
-                  role="tablist"
-                  aria-label="Director tools"
-                  onKeyDown={(event) =>
-                    moveTab(event, inspector === 'shots' ? 0 : 1, (index) =>
-                      setInspector(index === 0 ? 'shots' : 'script'),
-                    )
-                  }
-                >
-                  <button
-                    role="tab"
-                    id="creator-shots-tab"
-                    aria-selected={inspector === 'shots'}
-                    tabIndex={inspector === 'shots' ? 0 : -1}
-                    aria-controls="creator-inspector-panel"
-                    onClick={() => setInspector('shots')}
-                  >
-                    <SlidersHorizontal size={16} /> Shot direction
-                  </button>
-                  <button
-                    role="tab"
-                    id="creator-script-tab"
-                    aria-selected={inspector === 'script'}
-                    tabIndex={inspector === 'script' ? 0 : -1}
-                    aria-controls="creator-inspector-panel"
-                    onClick={() => setInspector('script')}
-                  >
-                    <TextT size={16} /> Script
-                  </button>
-                </div>
-                <div
-                  id="creator-inspector-panel"
-                  role="tabpanel"
-                  aria-labelledby={`creator-${inspector}-tab`}
-                >
-                  {inspector === 'shots' ? (
-                    <ShotInspector
+              {(!state?.session.plan || c.photos.length > 0 || c.inputDirty) && (
+                <SourceComposer
+                  c={c}
+                  fileInput={fileInput}
+                  promptInput={promptInput}
+                  locked={sourceLocked}
+                  active={active}
+                />
+              )}
+              <div className="creator-director-layout">
+                <details className="creator-source-pane creator-optional-section">
+                  <summary>Sources & progress</summary>
+                  <div className="creator-source-overview">
+                    <SourceBin
                       c={c}
-                      index={selectedShot}
-                      disabled={
-                        locked ||
-                        active ||
-                        c.inputDirty ||
-                        c.scriptDirty ||
-                        c.answersDirty ||
-                        c.photoEditsDirty ||
-                        Boolean(c.reply.trim()) ||
-                        c.photos.length > 0
-                      }
+                      onAdd={() => fileInput.current?.click()}
+                      disabled={sourceLocked}
+                      savedPhotoDisabled={savedPhotoLocked}
                     />
-                  ) : (
-                    <ScriptInspector
-                      c={c}
-                      timingInputRef={scriptTimingInput}
-                      disabled={
-                        locked ||
-                        active ||
-                        c.inputDirty ||
-                        c.planDirty ||
-                        c.answersDirty ||
-                        c.photoEditsDirty ||
-                        Boolean(c.reply.trim()) ||
-                        c.photos.length > 0
-                      }
-                    />
+                    <WorkflowProgress c={c} />
+                  </div>
+                </details>
+                <div className="creator-stage-pane">
+                  <ScenePreview c={c} clip={c.plan?.clips[selectedShot]} />
+                  <ShotStrip c={c} selected={selectedShot} onSelect={setSelectedShot} />
+                  {state && !state.session.plan && (
+                    <div className="creator-empty-plan">
+                      <h3>The first frame is a plan.</h3>
+                      <p>
+                        Save your sources, then prepare the script and shots. You’ll review
+                        everything here before any paid generation.
+                      </p>
+                      <button
+                        className="creator-primary-button"
+                        disabled={locked || active || c.dirty}
+                        onClick={c.prepare}
+                      >
+                        Prepare my proposal <ArrowRight size={17} />
+                      </button>
+                    </div>
                   )}
                 </div>
-              </aside>
-            </div>
-            {state && <QuestionComposer c={c} disabled={answerLocked} />}
-            {state && (
-              <SavedAnswers
-                c={c}
-                disabled={
-                  locked ||
-                  c.inputDirty ||
-                  c.planDirty ||
-                  c.scriptDirty ||
-                  c.photoEditsDirty ||
-                  Boolean(c.reply.trim()) ||
-                  c.photos.length > 0
-                }
-              />
-            )}
-          </>
-        )}
-      </section>
+                <aside className="creator-inspector">
+                  <div
+                    className="creator-inspector-tabs"
+                    role="tablist"
+                    aria-label="Director tools"
+                    onKeyDown={(event) =>
+                      moveTab(event, inspector === 'shots' ? 0 : 1, (index) =>
+                        setInspector(index === 0 ? 'shots' : 'script'),
+                      )
+                    }
+                  >
+                    <button
+                      role="tab"
+                      id="creator-shots-tab"
+                      aria-selected={inspector === 'shots'}
+                      tabIndex={inspector === 'shots' ? 0 : -1}
+                      aria-controls="creator-inspector-panel"
+                      onClick={() => setInspector('shots')}
+                    >
+                      <SlidersHorizontal size={16} /> Shot direction
+                    </button>
+                    <button
+                      role="tab"
+                      id="creator-script-tab"
+                      aria-selected={inspector === 'script'}
+                      tabIndex={inspector === 'script' ? 0 : -1}
+                      aria-controls="creator-inspector-panel"
+                      onClick={() => setInspector('script')}
+                    >
+                      <TextT size={16} /> Script
+                    </button>
+                  </div>
+                  <div
+                    id="creator-inspector-panel"
+                    role="tabpanel"
+                    aria-labelledby={`creator-${inspector}-tab`}
+                  >
+                    {inspector === 'shots' ? (
+                      <ShotInspector
+                        c={c}
+                        index={selectedShot}
+                        disabled={
+                          locked ||
+                          active ||
+                          c.inputDirty ||
+                          c.scriptDirty ||
+                          c.answersDirty ||
+                          c.photoEditsDirty ||
+                          Boolean(c.reply.trim()) ||
+                          c.photos.length > 0
+                        }
+                      />
+                    ) : (
+                      <ScriptInspector
+                        c={c}
+                        timingInputRef={scriptTimingInput}
+                        disabled={
+                          locked ||
+                          active ||
+                          c.inputDirty ||
+                          c.planDirty ||
+                          c.answersDirty ||
+                          c.photoEditsDirty ||
+                          Boolean(c.reply.trim()) ||
+                          c.photos.length > 0
+                        }
+                      />
+                    )}
+                  </div>
+                </aside>
+              </div>
+              {state && (
+                <details className="creator-optional-section">
+                  <summary>Refine the brief</summary>
+                  <QuestionComposer c={c} disabled={answerLocked} />
+                  <SavedAnswers
+                    c={c}
+                    disabled={
+                      locked ||
+                      c.inputDirty ||
+                      c.planDirty ||
+                      c.scriptDirty ||
+                      c.photoEditsDirty ||
+                      Boolean(c.reply.trim()) ||
+                      c.photos.length > 0
+                    }
+                  />
+                </details>
+              )}
+            </>
+          )}
+        </section>
 
-      {state && <ResearchPanel c={c} disabled={locked || edits || Boolean(c.reply.trim())} />}
-      <details className="creator-reference-disclosure">
-        <summary>
-          <FilmSlate size={21} />
-          <span>
-            <strong>Open the reference room</strong>
-            <small>
-              Professional product films. Original sources. Techniques to make your own.
-            </small>
-          </span>
-          <Plus size={20} />
-        </summary>
-        <ReferenceBoard
-          selected={c.externalReferences}
-          onSelect={c.selectExternal}
-          onRemove={c.removeExternal}
-          disabled={locked || Boolean(state && (edits || c.reply.trim()))}
-        />
-      </details>
-      {state?.session.plan && (
-        <BudgetReview c={c} onOpenPromo={() => props.onOpenPromo(state.workflow.id)} />
+        {state && (
+          <details className="creator-optional-section">
+            <summary>Research</summary>
+            <ResearchPanel c={c} disabled={locked || edits || Boolean(c.reply.trim())} />
+          </details>
+        )}
+        <details className="creator-reference-disclosure">
+          <summary>
+            <FilmSlate size={21} />
+            <span>
+              <strong>Film references</strong>
+            </span>
+            <Plus size={20} />
+          </summary>
+          <ReferenceBoard
+            selected={c.externalReferences}
+            onSelect={c.selectExternal}
+            onRemove={c.removeExternal}
+            disabled={locked || Boolean(state && (edits || c.reply.trim()))}
+          />
+        </details>
+        {state && !state.session.plan && (
+          <div className="creator-alternative">
+            <button
+              className="creator-text-button"
+              disabled={Boolean(c.busy) || production || c.dirty}
+              onClick={() => props.onOpenPromo(state.workflow.id)}
+            >
+              Open photo editor <ArrowUpRight size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {state && (
+        <div
+          id="creator-frames-panel"
+          className="creator-step-panel"
+          role="tabpanel"
+          aria-labelledby="creator-step-frames"
+          hidden={step !== 'frames'}
+        >
+          <KeyframeStudio c={c} selectedShot={selectedShot} onSelectShot={setSelectedShot} />
+          <div className="creator-step-next">
+            <button
+              className="creator-text-button"
+              onClick={() => openStep(state.session.plan ? 'video' : 'story')}
+            >
+              {state.session.plan ? 'Make video' : 'Plan the story'} <ArrowRight size={17} />
+            </button>
+          </div>
+        </div>
       )}
-      {c.job && <JobPanel c={c} job={c.job} />}
-      {state && !state.session.plan && (
-        <div className="creator-alternative">
-          <p>Prefer a simple film made from your photos?</p>
-          <button
-            className="creator-text-button"
-            disabled={Boolean(c.busy) || production || c.dirty}
-            onClick={() => props.onOpenPromo(state.workflow.id)}
-          >
-            Continue in the photo editor <ArrowUpRight size={16} />
-          </button>
+
+      {state && (
+        <div
+          id="creator-video-panel"
+          className="creator-step-panel"
+          role="tabpanel"
+          aria-labelledby="creator-step-video"
+          hidden={step !== 'video'}
+        >
+          {state?.session.plan && (
+            <BudgetReview
+              c={c}
+              onChooseFrames={() => openStep('frames')}
+              onOpenPromo={() => props.onOpenPromo(state.workflow.id)}
+            />
+          )}
+          {!state.session.plan && (
+            <div className="creator-empty-plan">
+              <h2>Plan your shots first.</h2>
+              <button className="creator-primary-button" onClick={() => setStep('story')}>
+                Plan the story <ArrowRight size={17} />
+              </button>
+            </div>
+          )}
+          {c.job && (
+            <JobPanel
+              c={c}
+              job={c.job}
+              onStageClip={(clipId) => {
+                setStep('story');
+                const index = c.plan?.clips.findIndex((clip) => clip.id === clipId) ?? -1;
+                if (index >= 0) setSelectedShot(index);
+                setInspector('shots');
+                changeView('director');
+              }}
+            />
+          )}
         </div>
       )}
     </div>
@@ -1258,6 +1379,16 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
             preload="metadata"
             aria-label="Generated clip preview"
           />
+        ) : clip?.keyframeId && c.state ? (
+          <>
+            <img
+              src={creatorApi.imageUrl(c.state.session.id, clip.keyframeId)}
+              alt="Selected generated image for this shot"
+            />
+            <span className="creator-preview-label">
+              Generated keyframe / not generated footage
+            </span>
+          </>
         ) : asset && c.state ? (
           <>
             <img
@@ -1314,7 +1445,9 @@ function ShotStrip({
             }}
           >
             <div>
-              {asset && c.state ? (
+              {clip.keyframeId && c.state ? (
+                <img src={creatorApi.imageUrl(c.state.session.id, clip.keyframeId)} alt="" />
+              ) : asset && c.state ? (
                 <img src={promoApi.assetUrl(c.state.workflow.id, asset.id)} alt="" />
               ) : (
                 <FilmSlate size={24} weight="light" />
@@ -1341,10 +1474,13 @@ function ShotInspector({
 }) {
   const clip = c.plan?.clips[index];
   const minimumSeconds =
-    c.state?.session.plan?.provider === 'fal' ||
-    c.state?.session.plan?.model === 'seedance-v1.5-pro'
-      ? 4
-      : 2;
+    c.state?.session.plan?.model === 'minimax-h3-max'
+      ? 2
+      : c.state?.session.plan?.provider === 'fal' ||
+          c.state?.session.plan?.model === 'seedance-v1.5-pro'
+        ? 4
+        : 2;
+  const maximumSeconds = 10;
   if (!clip)
     return (
       <div className="creator-inspector-empty">
@@ -1399,13 +1535,13 @@ function ShotInspector({
           <input
             type="number"
             min={minimumSeconds}
-            max={10}
+            max={maximumSeconds}
             step={1}
             value={clip.seconds}
             onChange={(event) => update('seconds', Number(event.target.value))}
           />
           <small className="creator-fineprint">
-            This model accepts {minimumSeconds} to 10 seconds per clip.
+            This model accepts {minimumSeconds} to {maximumSeconds} seconds per clip.
           </small>
         </label>
         <label>
@@ -1420,7 +1556,12 @@ function ShotInspector({
                       ...previous,
                       clips: previous.clips.map((item, i) => {
                         if (i !== index) return item;
-                        const { assetId: _old, ...rest } = item;
+                        const {
+                          assetId: _old,
+                          keyframeId: _frame,
+                          keyframeSha256: _hash,
+                          ...rest
+                        } = item;
                         return value ? { ...rest, assetId: value } : rest;
                       }),
                     }
@@ -1428,7 +1569,11 @@ function ShotInspector({
               );
             }}
           >
-            <option value="">Text direction only</option>
+            <option value="">
+              {clip.keyframeId
+                ? 'Generated frame selected in Visual studio'
+                : 'Text direction only'}
+            </option>
             {c.state?.workflow.assets.map((asset) => (
               <option key={asset.id} value={asset.id}>
                 {asset.filename}
@@ -1457,6 +1602,7 @@ function ShotInspector({
         Save shot changes <Check size={16} />
       </button>
       <p className="creator-fineprint">Saving changes clears the previous approval.</p>
+      <PromptReview c={c} clipId={clip.id} disabled={disabled} />
     </div>
   );
 }
@@ -1487,7 +1633,7 @@ function ScriptInspector({
         {totalSeconds} seconds in this script
         {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.
         {c.capabilities &&
-          ` Each moment needs at least ${c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
+          ` Each moment needs at least ${c.capabilities.model === 'minimax-h3-max' ? 2 : c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.model === 'minimax-h3-max' ? 'MiniMax H3 Max' : c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
       </p>
       <fieldset disabled={disabled}>
         <label>
@@ -1598,7 +1744,15 @@ function ScriptInspector({
   );
 }
 
-function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
+function JobPanel({
+  c,
+  job,
+  onStageClip,
+}: {
+  c: CreatorController;
+  job: CreatorJob;
+  onStageClip(clipId: string): void;
+}) {
   const current = c.state && outputIsCurrent(job, c.state.session, c.state.workflow);
   const caption = current ? (c.state?.session.plan?.caption ?? '') : '';
   const captionInput = useRef<HTMLTextAreaElement>(null);
@@ -1800,6 +1954,7 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
                       ))}
                     </ul>
                   )}
+                  <ClipQualityFindings c={c} job={job} receipt={receipt} onStage={onStageClip} />
                 </>
               )}
               {receipt.status === 'passed' && (

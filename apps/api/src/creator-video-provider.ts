@@ -20,7 +20,7 @@ export interface CreatorVideoProvider {
 }
 export interface CreatorVideoProfile {
   provider: 'fal' | 'runway';
-  model: 'seedance-v1.5-pro' | 'gen4.5';
+  model: 'seedance-v1.5-pro' | 'gen4.5' | 'minimax-h3-max';
   minSeconds: number;
   maxSeconds: number;
   /** Conservative reservation ceiling, not the provider's final invoice. */
@@ -30,6 +30,7 @@ export interface CreatorVideoProfile {
 }
 export interface CreatorVideoConfig {
   provider?: 'fal' | 'runway';
+  model?: 'seedance-v1.5-pro' | 'gen4.5' | 'minimax-h3-max';
   apiKey?: string;
   timeoutMs?: number;
   pollMs?: number;

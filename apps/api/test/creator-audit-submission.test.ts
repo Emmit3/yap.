@@ -145,7 +145,7 @@ test(
         '-f',
         'lavfi',
         '-i',
-        'testsrc2=size=360x640:rate=24',
+        'testsrc2=size=720x1280:rate=24',
         '-t',
         '5',
         '-an',

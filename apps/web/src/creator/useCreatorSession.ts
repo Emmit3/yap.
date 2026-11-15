@@ -105,6 +105,7 @@ export function useCreatorSession(options: {
   const [watching, setWatching] = useState(false);
   const [loading, setLoading] = useState(Boolean(options.id));
   const [busy, setBusy] = useState('');
+  const [imageWorkActive, setImageWorkActive] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
   const [needsReload, setNeedsReload] = useState(false);
@@ -365,6 +366,12 @@ export function useCreatorSession(options: {
 
   async function run(label: string, work: (signal: AbortSignal) => Promise<void>) {
     if (operation.current) return;
+    if (imageWorkActive) {
+      setError(
+        'Wait for the image job to finish, or cancel it in the visual studio, before changing saved film material.',
+      );
+      return;
+    }
     operation.current = true;
     const active = new AbortController();
     controller.current = active;
@@ -711,6 +718,44 @@ export function useCreatorSession(options: {
     });
   }
 
+  function selectKeyframe(clipId: string, variantId: string | null) {
+    const saved = current.current;
+    if (
+      !saved?.session.plan ||
+      dirty ||
+      needsReload ||
+      isActiveJob(job) ||
+      imageWorkActive ||
+      !planCurrent(saved.session, saved.workflow)
+    ) {
+      setError(
+        'Save all edits and finish active work before choosing a frame for the current shot plan.',
+      );
+      return;
+    }
+    void run('Saving the selected shot frame', async (signal) => {
+      guardDrafts('none');
+      accept(
+        await creatorApi.selectKeyframe(
+          saved.session.id,
+          {
+            expectedVersion: saved.session.version,
+            expectedWorkflowVersion: saved.workflow.version,
+            planId: saved.session.plan!.id,
+            clipId,
+            variantId,
+          },
+          signal,
+        ),
+        true,
+      );
+      acceptQuote(null);
+      setNotice(
+        'Shot frame saved. Review the new plan and quote before approving video generation.',
+      );
+    });
+  }
+
   function saveScript() {
     const saved = current.current;
     if (!saved || !script) return;
@@ -1028,6 +1073,9 @@ export function useCreatorSession(options: {
     watching,
     loading,
     busy,
+    imageWorkActive,
+    setImageWorkActive,
+    selectKeyframe,
     error,
     notice,
     needsReload,

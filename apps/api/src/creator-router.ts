@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
 import express, { type Request, type Response, type RequestHandler } from 'express';
 import { z } from 'zod';
 import {
@@ -37,6 +37,10 @@ import {
 } from './creator-video-factory.js';
 import { createCreatorVisionAuditor, type CreatorVisionAuditor } from './creator-media.js';
 import { analyzeCreator } from './creator-research.js';
+import { reviewCreatorPrompts } from './creator-prompt-review.js';
+import { creatorSelectKeyframeSchema } from '@yap/contracts/creator-images';
+import { createCreatorImageProvider, type CreatorImageProvider } from './creator-image-provider.js';
+import { createCreatorImagesRouter } from './creator-images-router.js';
 import type { WorkflowRepository } from './workflow-repository.js';
 import type { WorkflowAssetStore } from './workflow-assets.js';
 import type { VideoWorkflowProvider } from './workflow-provider.js';
@@ -59,6 +63,7 @@ export interface CreatorRouterOptions {
   videoConfig?: CreatorVideoConfig;
   video?: CreatorVideoProvider;
   auditor?: CreatorVisionAuditor;
+  imageProvider?: CreatorImageProvider;
   analyze?: CreatorAnalyzer;
   fetch?: typeof globalThis.fetch;
   onError?: (error: unknown) => void;
@@ -244,6 +249,29 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       { apiKey: process.env.OPENAI_API_KEY, model: process.env.OPENAI_MODEL },
       options.fetch,
     );
+  const images = await createCreatorImagesRouter({
+    repository,
+    workflows: options.workflows,
+    assets: options.assets,
+    imageDirectory: join(resolve(options.directory), 'keyframes'),
+    provider:
+      options.imageProvider ?? createCreatorImageProvider({ apiKey: process.env.OPENAI_API_KEY }),
+    onError: options.onError,
+  });
+  const loadKeyframe = async (sessionId: string, keyframeId: string, sha256: string) => {
+    const variant = await repository.imageVariant(sessionId, keyframeId);
+    if (variant.media.sha256 !== sha256)
+      throw new ApiError(
+        409,
+        'CREATOR_KEYFRAME_CHANGED',
+        'The selected keyframe changed. Choose it again and review a new quote.',
+      );
+    return images.load(sessionId, keyframeId);
+  };
+  const validateKeyframes = async (sessionId: string, clips: CreatorClip[]) => {
+    for (const clip of clips)
+      if (clip.keyframeId) await loadKeyframe(sessionId, clip.keyframeId, clip.keyframeSha256!);
+  };
   const jobs = new CreatorJobs({
     repository,
     workflows: options.workflows,
@@ -251,6 +279,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     directory: resolve(options.directory),
     video,
     auditor,
+    loadKeyframe,
     analyze:
       budgeted?.analyze ??
       options.analyze ??
@@ -266,6 +295,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     onError: options.onError,
   });
   const router = express.Router();
+  router.use(images.router);
   const envelope = async (session: CreatorSession) => ({
     session,
     workflow: await options.workflows.get(session.workflowId),
@@ -563,6 +593,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       options.workflows.checkVersion(workflow, input.expectedWorkflowVersion);
       const plan = ensurePlan(session, workflow);
       validateClips(input.clips, workflow);
+      await validateKeyframes(session.id, input.clips);
       const allowedReferences = new Set([
         ...session.selectedReferenceIds,
         ...session.externalReferences.map((reference) => reference.id),
@@ -625,6 +656,60 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       response.json({ session: saved, workflow });
     }),
   );
+  router.post(
+    '/sessions/:id/keyframe',
+    locked(async (request, response) => {
+      const input = validate(creatorSelectKeyframeSchema, request.body);
+      const session = await repository.get(idOf(request));
+      repository.checkVersion(session, input.expectedVersion);
+      const workflow = await options.workflows.get(session.workflowId);
+      options.workflows.checkVersion(workflow, input.expectedWorkflowVersion);
+      const plan = ensurePlan(session, workflow);
+      if (plan.id !== input.planId || !plan.clips.some((clip) => clip.id === input.clipId))
+        throw new ApiError(409, 'CREATOR_PLAN_STALE', 'Select a shot from the current saved plan.');
+      const active = (await repository.jobs(session.id)).some(
+        (job) => job.status === 'queued' || job.status === 'running',
+      );
+      if (active)
+        throw new ApiError(
+          409,
+          'CREATOR_JOB_ACTIVE',
+          'Finish the current run before changing the selected keyframe.',
+        );
+      const variant = input.variantId
+        ? await repository.imageVariant(session.id, input.variantId)
+        : null;
+      if (variant) await images.load(session.id, variant.id);
+      const selected = plan.clips.find((clip) => clip.id === input.clipId)!;
+      if (
+        (variant &&
+          selected.keyframeId === variant.id &&
+          selected.keyframeSha256 === variant.media.sha256) ||
+        (!variant && !selected.keyframeId)
+      ) {
+        response.json({ session, workflow });
+        return;
+      }
+      const clips = plan.clips.map((clip) => {
+        if (clip.id !== input.clipId) return clip;
+        const { keyframeId: _old, keyframeSha256: _hash, ...rest } = clip;
+        if (!variant) return rest;
+        const { assetId: _photo, ...withoutPhoto } = rest;
+        return { ...withoutPhoto, keyframeId: variant.id, keyframeSha256: variant.media.sha256 };
+      });
+      const saved = await repository.update(session.id, session.version, (current) => ({
+        ...current,
+        approval: null,
+        plan: { ...plan, id: randomUUID(), clips },
+      }));
+      response.json({ session: saved, workflow });
+    }),
+  );
+  router.get('/sessions/:id/plan/review', async (request, response) => {
+    const session = await repository.get(idOf(request));
+    const workflow = await options.workflows.get(session.workflowId);
+    response.json(reviewCreatorPrompts(ensurePlan(session, workflow)));
+  });
   router.get('/budget', async (_request, response) =>
     response.json({ budget: await repository.budget() }),
   );
@@ -638,6 +723,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       options.workflows.checkVersion(workflow, input.expectedWorkflowVersion);
       ensurePlan(session, workflow);
       validateClips(session.plan!.clips, workflow);
+      await validateKeyframes(session.id, session.plan!.clips);
       const history = await repository.jobs(session.id);
       if (history.some((job) => job.status === 'queued' || job.status === 'running'))
         throw new ApiError(
@@ -684,6 +770,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       )
         throw new ApiError(409, 'CREATOR_QUOTE_EXPIRED', 'Request and review a fresh cost quote.');
       validateClips(plan.clips, workflow);
+      await validateKeyframes(session.id, plan.clips);
       if (quote.maxCostCents > (await repository.budget()).availableCents)
         throw new ApiError(
           409,
@@ -803,6 +890,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     repository,
     budget: repository as CreatorBudgetLedger,
     jobs,
-    close: () => jobs.close(),
+    close: async () => {
+      await Promise.all([jobs.close(), images.close()]);
+    },
   };
 }

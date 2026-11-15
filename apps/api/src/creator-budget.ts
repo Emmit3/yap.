@@ -16,7 +16,7 @@ export const creatorReservationSchema = z
   .object({
     id: z.uuid(),
     idempotencyKey: z.string().min(1).max(300),
-    category: z.enum(['video', 'vision', 'research', 'drafting']),
+    category: z.enum(['video', 'vision', 'research', 'drafting', 'image']),
     sourceId: z.string().min(1).max(300),
     amountCents: z.number().int().positive().max(3000),
     chargedCents: z.number().int().nonnegative().max(3000).nullable(),
@@ -27,6 +27,8 @@ export const creatorBudgetStateSchema = z
   .object({
     limitCents: z.number().int().positive().max(CREATOR_BUDGET_LIMIT_CENTS),
     reservations: z.array(creatorReservationSchema).max(20000),
+    overrunCents: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+    pausedReason: z.string().max(1500).optional(),
   })
   .strict();
 export type CreatorBudgetState = z.infer<typeof creatorBudgetStateSchema>;
@@ -46,14 +48,20 @@ export function budgetSnapshot(state: CreatorBudgetState): CreatorBudgetSnapshot
     (sum, item) => sum + (item.chargedCents === null ? item.amountCents : 0),
     0,
   );
-  const chargedCents = state.reservations.reduce((sum, item) => sum + (item.chargedCents ?? 0), 0);
+  const chargedCents = state.reservations.reduce(
+    (sum, item) => sum + (item.chargedCents ?? 0),
+    state.overrunCents ?? 0,
+  );
   return {
     scope: 'creator_app',
     currency: 'USD',
     limitCents: state.limitCents,
     reservedCents,
     chargedCents,
-    availableCents: Math.max(0, state.limitCents - reservedCents - chargedCents),
+    availableCents: state.pausedReason
+      ? 0
+      : Math.max(0, state.limitCents - reservedCents - chargedCents),
+    ...(state.pausedReason ? { pausedReason: state.pausedReason } : {}),
   };
 }
 export function reserveBudget(
@@ -74,6 +82,7 @@ export function reserveBudget(
       );
     return previous;
   }
+  if (state.pausedReason) throw new ApiError(409, 'CREATOR_BUDGET_PAUSED', state.pausedReason);
   if (input.amountCents > budgetSnapshot(state).availableCents)
     throw new ApiError(
       409,
@@ -119,7 +128,7 @@ export function settleBudget(
 const profileSchema = z
   .object({
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro', 'minimax-h3-max']),
     minSeconds: z.number().int().min(2).max(10),
     maxSeconds: z.number().int().min(2).max(10),
     rateCentsPerSecond: z.number().int().positive().max(1000),
@@ -140,7 +149,8 @@ export function productionProfile(video: object): CreatorProductionProfile {
   );
   if (
     (profile.provider === 'fal' &&
-      (profile.model !== 'seedance-v1.5-pro' || profile.minSeconds < 4)) ||
+      (!['seedance-v1.5-pro', 'minimax-h3-max'].includes(profile.model) ||
+        (profile.model === 'seedance-v1.5-pro' && profile.minSeconds < 4))) ||
     (profile.provider === 'runway' && profile.model !== 'gen4.5') ||
     profile.maxSeconds < profile.minSeconds
   )
@@ -151,7 +161,10 @@ export function productionProfile(video: object): CreatorProductionProfile {
     );
   return {
     ...profile,
-    rateCentsPerSecond: Math.max(profile.rateCentsPerSecond, profile.provider === 'fal' ? 5 : 16),
+    rateCentsPerSecond: Math.max(
+      profile.rateCentsPerSecond,
+      profile.model === 'minimax-h3-max' ? 10 : profile.provider === 'fal' ? 5 : 16,
+    ),
   };
 }
 export function quoteFingerprint(
@@ -209,6 +222,12 @@ export function buildCreatorQuote(
     );
   const jobs = planHistory(history, session);
   const clips = plan.clips.map((clip) => {
+    if (plan.model === 'minimax-h3-max' && !clip.assetId && !clip.keyframeId)
+      throw new ApiError(
+        400,
+        'CREATOR_KEYFRAME_REQUIRED',
+        'Choose an uploaded photo or generated keyframe for every H3 Max shot before reviewing the video quote.',
+      );
     if (clip.seconds < profile.minSeconds || clip.seconds > profile.maxSeconds)
       throw new ApiError(
         400,

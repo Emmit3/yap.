@@ -10,6 +10,7 @@ import {
   creatorSessionResponseSchema,
   creatorJobResponseSchema,
   creatorQuoteResponseSchema,
+  creatorPromptReviewSchema,
   type CreatorResearch,
   type CreatorSessionResponse,
 } from '@yap/contracts/creator';
@@ -191,6 +192,20 @@ test('creator session persists explicit interview/references, prepares bounded e
     ),
   );
   assert.equal(current.session.plan?.clips.length, 3);
+  const beforeReview = JSON.stringify(current);
+  const budgetBeforeReview = await (await f.request('/creator/budget')).json();
+  const promptResponse = await f.request(`/creator/sessions/${id}/plan/review`);
+  assert.equal(promptResponse.status, 200);
+  const promptReview = creatorPromptReviewSchema.parse(await promptResponse.json());
+  assert.equal(promptReview.planId, current.session.plan!.id);
+  assert.equal(promptReview.workflowVersion, current.workflow.version);
+  assert.equal(promptReview.clips.length, 3);
+  assert.match(promptReview.clips[0]!.compiledPrompt, /One continuous cinematic shot/);
+  assert.deepEqual(await (await f.request('/creator/budget')).json(), budgetBeforeReview);
+  assert.equal(
+    JSON.stringify(await session(await f.request(`/creator/sessions/${id}`))),
+    beforeReview,
+  );
   assert.equal(current.session.plan?.maxGeneratedSeconds, 30);
   assert.equal(current.session.approval, null);
   assert.equal(current.workflow.approvals.script, null);

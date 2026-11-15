@@ -36,10 +36,10 @@ function invalidResponse(): ApiError {
   );
 }
 
-function taskUuid(id: string): string {
-  if (!id.startsWith(TASK_PREFIX))
+function taskUuid(id: string, prefix: string): string {
+  if (!id.startsWith(prefix))
     throw new ApiError(400, 'CREATOR_TASK_ID_INVALID', 'Invalid fal video task identity.');
-  const result = z.uuid().safeParse(id.slice(TASK_PREFIX.length));
+  const result = z.uuid().safeParse(id.slice(prefix.length));
   if (!result.success)
     throw new ApiError(400, 'CREATOR_TASK_ID_INVALID', 'Invalid fal video task identity.');
   return result.data;
@@ -89,11 +89,18 @@ function artifactUrl(value: string): URL {
   return url;
 }
 
-/** Seedance 1.5 Pro, 720p, silent. Submission is never automatically replayed. */
+/** Explicit Seedance or H3 Max queue adapters. Submission is never automatically replayed. */
 export function createFalCreatorVideoProvider(
   config: CreatorVideoConfig = {},
   fetcher: typeof globalThis.fetch = globalThis.fetch,
 ): CreatorVideoProvider {
+  const h3 = config.model === 'minimax-h3-max';
+  if (config.model && !['seedance-v1.5-pro', 'minimax-h3-max'].includes(config.model))
+    throw new ApiError(503, 'CREATOR_CONFIGURATION', 'Choose a supported fal video model.');
+  const modelPath = h3 ? 'minimax/h3-max' : MODEL;
+  const taskBase = h3 ? `${QUEUE}/minimax/h3-max/requests/` : TASK_ROOT;
+  const taskPrefix = h3 ? 'fal:h3-max:' : TASK_PREFIX;
+  const minSeconds = h3 ? 2 : 4;
   const apiKey = config.apiKey?.trim(),
     timeout = config.timeoutMs ?? 15 * 60 * 1000,
     pollMs = config.pollMs ?? 5000;
@@ -109,6 +116,7 @@ export function createFalCreatorVideoProvider(
   const headers = {
     Authorization: `Key ${apiKey}`,
     'Content-Type': 'application/json',
+    'X-Fal-No-Retry': '1',
   };
 
   async function json(
@@ -139,11 +147,11 @@ export function createFalCreatorVideoProvider(
   }
 
   async function cancel(id: string): Promise<void> {
-    const uuid = taskUuid(id);
+    const uuid = taskUuid(id, taskPrefix);
     if (!apiKey) return;
     try {
       const signal = AbortSignal.timeout(10_000);
-      const response = await fetcher(`${TASK_ROOT}${uuid}/cancel`, {
+      const response = await fetcher(`${taskBase}${uuid}/cancel`, {
         method: 'PUT',
         headers,
         signal,
@@ -168,11 +176,13 @@ export function createFalCreatorVideoProvider(
     configured: Boolean(apiKey),
     profile: {
       provider: 'fal',
-      model: 'seedance-v1.5-pro',
-      minSeconds: 4,
+      model: h3 ? 'minimax-h3-max' : 'seedance-v1.5-pro',
+      minSeconds,
       maxSeconds: 10,
-      rateCentsPerSecond: 5,
-      priceSourceUrl: 'https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
+      rateCentsPerSecond: h3 ? 10 : 5,
+      priceSourceUrl: h3
+        ? 'https://fal.ai/models/minimax/h3-max/image-to-video'
+        : 'https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video',
       pricingCheckedAt: '2026-11-14',
     },
     cancel,
@@ -190,13 +200,13 @@ export function createFalCreatorVideoProvider(
         signal.throwIfAborted();
         if (
           !Number.isInteger(request.clip.seconds) ||
-          request.clip.seconds < 4 ||
+          request.clip.seconds < minSeconds ||
           request.clip.seconds > 10
         )
           throw new ApiError(
             400,
             'CREATOR_CLIP_DURATION',
-            'Use a clip duration from 4 to 10 seconds.',
+            `Use a clip duration from ${minSeconds} to 10 seconds.`,
           );
         const prompt = creatorVideoPrompt(request.clip);
         if (!prompt.trim() || prompt.length > 1000)
@@ -236,28 +246,42 @@ export function createFalCreatorVideoProvider(
               'Resize this reference image before generation.',
             );
         }
+        if (h3 && !imageUrl)
+          throw new ApiError(
+            400,
+            'CREATOR_KEYFRAME_REQUIRED',
+            'Choose a source photo or generated keyframe before animating with H3 Max.',
+          );
         signal.throwIfAborted();
         // Recheck current approval after asynchronous image preparation, just before billing.
         await request.beforeSubmit?.();
         signal.throwIfAborted();
         const rawSubmission = await json(
-          `${QUEUE}/${MODEL}/${imageUrl ? 'image-to-video' : 'text-to-video'}`,
+          `${QUEUE}/${modelPath}/${imageUrl ? 'image-to-video' : 'text-to-video'}`,
           'POST',
           signal,
-          {
-            prompt,
-            aspect_ratio: '9:16',
-            resolution: '720p',
-            duration: String(request.clip.seconds),
-            generate_audio: false,
-            enable_safety_checker: true,
-            ...(imageUrl ? { image_url: imageUrl } : {}),
-          },
+          h3
+            ? {
+                prompt,
+                image_url: imageUrl,
+                duration: request.clip.seconds,
+                resolution: '768P',
+                prompt_expansion_mode: 'disabled',
+              }
+            : {
+                prompt,
+                aspect_ratio: '9:16',
+                resolution: '720p',
+                duration: String(request.clip.seconds),
+                generate_audio: false,
+                enable_safety_checker: true,
+                ...(imageUrl ? { image_url: imageUrl } : {}),
+              },
         );
         const identifier = z.object({ request_id: z.uuid() }).safeParse(rawSubmission);
         if (!identifier.success) throw invalidResponse();
-        const taskRoot = `${TASK_ROOT}${identifier.data.request_id}`;
-        taskId = `${TASK_PREFIX}${identifier.data.request_id}`;
+        const taskRoot = `${taskBase}${identifier.data.request_id}`;
+        taskId = `${taskPrefix}${identifier.data.request_id}`;
         // Persist even if the supplied operation URLs are malformed: paid task may exist.
         await request.onSubmitted(taskId);
         persisted = true;

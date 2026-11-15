@@ -7,6 +7,7 @@ import {
   creatorSessionSchema,
   creatorBudgetResponseSchema,
   creatorQuoteResponseSchema,
+  creatorPromptReviewSchema,
   type CreateCreatorSessionInput,
   type CreatorApproveInput,
   type CreatorJob,
@@ -15,6 +16,13 @@ import {
   type CreatorUpdatePlanInput,
   type PatchCreatorSessionInput,
 } from '@yap/contracts/creator';
+import {
+  creatorImageLibrarySchema,
+  creatorImageJobResponseSchema,
+  creatorImageQuoteResponseSchema,
+  type CreatorImageQuoteRequest,
+  type CreatorImageStart,
+} from '@yap/contracts/creator-images';
 
 export class CreatorApiError extends Error {
   constructor(
@@ -158,6 +166,57 @@ export function createCreatorApi(origin = '', transport: typeof fetch = fetch) {
         `${sessionPath(id)}/plan`,
         creatorSessionResponseSchema,
         json('PATCH', input),
+        signal,
+      ),
+    reviewPlan: (id: string, signal?: AbortSignal) =>
+      request(`${sessionPath(id)}/plan/review`, creatorPromptReviewSchema, {}, signal),
+    images: (id: string, signal?: AbortSignal) =>
+      request(`${sessionPath(id)}/images`, creatorImageLibrarySchema, {}, signal),
+    imageQuote: (id: string, input: CreatorImageQuoteRequest, signal?: AbortSignal) =>
+      request(
+        `${sessionPath(id)}/images/quote`,
+        creatorImageQuoteResponseSchema,
+        json('POST', input),
+        signal,
+      ),
+    createImage: (id: string, input: CreatorImageStart, signal?: AbortSignal) =>
+      request(
+        `${sessionPath(id)}/images/jobs`,
+        creatorImageJobResponseSchema,
+        json('POST', input),
+        signal,
+      ),
+    imageJob: (id: string, jobId: string, signal?: AbortSignal) =>
+      request(
+        `${sessionPath(id)}/images/jobs/${encodeURIComponent(jobId)}`,
+        creatorImageJobResponseSchema,
+        {},
+        signal,
+      ),
+    cancelImage: (id: string, jobId: string, signal?: AbortSignal) =>
+      request(
+        `${sessionPath(id)}/images/jobs/${encodeURIComponent(jobId)}`,
+        creatorImageJobResponseSchema,
+        { method: 'DELETE' },
+        signal,
+      ),
+    imageUrl: (id: string, variantId: string) =>
+      `${base}${sessionPath(id)}/images/${encodeURIComponent(variantId)}/file`,
+    selectKeyframe: (
+      id: string,
+      input: {
+        expectedVersion: number;
+        expectedWorkflowVersion: number;
+        planId: string;
+        clipId: string;
+        variantId: string | null;
+      },
+      signal?: AbortSignal,
+    ) =>
+      request(
+        `${sessionPath(id)}/keyframe`,
+        creatorSessionResponseSchema,
+        json('POST', input),
         signal,
       ),
     quote: (id: string, input: CreatorPrepareInput, signal?: AbortSignal) =>

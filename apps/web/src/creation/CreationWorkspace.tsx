@@ -178,53 +178,56 @@ export function CreationWorkspace({
     }
   }
   const editorKey = `${kind}-${id ?? 'new'}-${editorEpoch}`;
+  const compactEditor = kind === 'video' && Boolean(resourceId) && view === 'create';
   return (
     <section className="creation-workspace" aria-label="Creation and research workspace">
-      <header className="creation-controls">
-        <div>
-          <p className="creation-kicker">One idea. Your creative workspace.</p>
-          <h1 ref={paneHeading} tabIndex={-1}>
-            {view === 'analytics'
-              ? 'Research that shapes the story.'
-              : id
-                ? 'Keep shaping your creation.'
-                : 'What will you make?'}
-          </h1>
-        </div>
-        <div className="creation-view-tabs" role="tablist" aria-label="Creation views">
-          {(['create', 'analytics'] as const).map((pane) => (
-            <button
-              key={pane}
-              id={`${tabs}-${pane}`}
-              type="button"
-              role="tab"
-              aria-selected={view === pane}
-              aria-controls={`${tabs}-${pane}-panel`}
-              tabIndex={view === pane ? 0 : -1}
-              disabled={applying}
-              onClick={() => openView(pane)}
-              onKeyDown={(event) => {
-                if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
-                  event.preventDefault();
-                  const next =
-                    event.key === 'Home'
-                      ? 'create'
-                      : event.key === 'End'
-                        ? 'analytics'
-                        : pane === 'create'
+      {!compactEditor && (
+        <header className="creation-controls">
+          <div>
+            <p className="creation-kicker">One idea. Your creative workspace.</p>
+            <h1 ref={paneHeading} tabIndex={-1}>
+              {view === 'analytics'
+                ? 'Research that shapes the story.'
+                : id
+                  ? 'Keep shaping your creation.'
+                  : 'What will you make?'}
+            </h1>
+          </div>
+          <div className="creation-view-tabs" role="tablist" aria-label="Creation views">
+            {(['create', 'analytics'] as const).map((pane) => (
+              <button
+                key={pane}
+                id={`${tabs}-${pane}`}
+                type="button"
+                role="tab"
+                aria-selected={view === pane}
+                aria-controls={`${tabs}-${pane}-panel`}
+                tabIndex={view === pane ? 0 : -1}
+                disabled={applying}
+                onClick={() => openView(pane)}
+                onKeyDown={(event) => {
+                  if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) {
+                    event.preventDefault();
+                    const next =
+                      event.key === 'Home'
+                        ? 'create'
+                        : event.key === 'End'
                           ? 'analytics'
-                          : 'create';
-                  openView(next);
-                  document.getElementById(`${tabs}-${next}`)?.focus();
-                }
-              }}
-            >
-              {pane === 'create' ? <PencilSimple size={18} /> : <ChartBar size={18} />}
-              {pane === 'create' ? 'Create' : 'View analytics'}
-            </button>
-          ))}
-        </div>
-      </header>
+                          : pane === 'create'
+                            ? 'analytics'
+                            : 'create';
+                    openView(next);
+                    document.getElementById(`${tabs}-${next}`)?.focus();
+                  }
+                }}
+              >
+                {pane === 'create' ? <PencilSimple size={18} /> : <ChartBar size={18} />}
+                {pane === 'create' ? 'Editor' : 'Research'}
+              </button>
+            ))}
+          </div>
+        </header>
+      )}
       {error && (
         <p className="creation-message creation-message-error" role="alert">
           {error}
@@ -260,8 +263,9 @@ export function CreationWorkspace({
       )}
       <div
         id={`${tabs}-create-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabs}-create`}
+        role={compactEditor ? 'region' : 'tabpanel'}
+        aria-label={compactEditor ? 'Editor' : undefined}
+        aria-labelledby={compactEditor ? undefined : `${tabs}-create`}
         hidden={view !== 'create'}
         inert={applying}
       >
@@ -286,7 +290,7 @@ export function CreationWorkspace({
             </button>
           </div>
         )}
-        {research && (
+        {research && !(kind === 'video' && resourceId) && (
           <div className="creation-research-link">
             <div>
               <strong>{research.topic}</strong>
@@ -315,6 +319,7 @@ export function CreationWorkspace({
             initialExternalReferences={id ? undefined : references}
             onContextChange={changeContext}
             onOpenPromo={onOpenPromo}
+            onOpenResearch={resourceId ? () => openView('analytics', true) : undefined}
           />
         ) : (
           <PromoWorkspace

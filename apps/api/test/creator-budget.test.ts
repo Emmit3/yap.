@@ -102,6 +102,35 @@ function production(session: CreatorSession, requestId = randomUUID()) {
   });
 }
 
+test('H3 Max quotes require a selected source and bind the generated keyframe hash', () => {
+  const { workflow, session } = creation();
+  session.plan!.provider = 'fal';
+  session.plan!.model = 'minimax-h3-max';
+  const profile = productionProfile({
+    profile: {
+      provider: 'fal',
+      model: 'minimax-h3-max',
+      minSeconds: 2,
+      maxSeconds: 10,
+      rateCentsPerSecond: 10,
+    },
+  });
+  assert.throws(() => buildCreatorQuote(session, workflow, profile, []), {
+    code: 'CREATOR_KEYFRAME_REQUIRED',
+  });
+  session.plan!.clips = session.plan!.clips.map((clip) => ({
+    ...clip,
+    keyframeId: randomUUID(),
+    keyframeSha256: 'a'.repeat(64),
+  }));
+  const quote = buildCreatorQuote(session, workflow, profile, []);
+  assert.equal(quote.maxCostCents, 180);
+  const original = quote.fingerprint;
+  session.plan!.clips[0]!.keyframeSha256 = 'b'.repeat(64);
+  assert.notEqual(quoteFingerprint(session, workflow, profile), original);
+  assert.equal(session.approval, null);
+});
+
 test('shared durable ledger serializes concurrent spend, holds unknown cost, and settles only known charges', async (t) => {
   const { file, repository } = await storage(t);
   const requests = Array.from({ length: 7 }, (_, index) => ({

@@ -11,6 +11,14 @@ import {
   type CreatorQuote,
   type CreatorBudgetSnapshot,
 } from '@yap/contracts/creator';
+import {
+  creatorImageJobSchema,
+  creatorImageQuoteSchema,
+  creatorImageVariantSchema,
+  type CreatorImageJob,
+  type CreatorImageQuote,
+  type CreatorImageVariant,
+} from '@yap/contracts/creator-images';
 import { ApiError, StorageError } from './errors.js';
 import {
   creatorBudgetStateSchema,
@@ -29,6 +37,9 @@ const stateSchema = z
     sessions: z.array(creatorSessionSchema).max(1000),
     jobs: z.array(creatorJobSchema).max(5000),
     quotes: z.array(creatorQuoteSchema).max(5000).default([]),
+    imageQuotes: z.array(creatorImageQuoteSchema).max(5000).default([]),
+    imageJobs: z.array(creatorImageJobSchema).max(5000).default([]),
+    imageVariants: z.array(creatorImageVariantSchema).max(5000).default([]),
     budget: creatorBudgetStateSchema.default(() => ({
       limitCents: CREATOR_BUDGET_LIMIT_CENTS,
       reservations: [],
@@ -105,6 +116,20 @@ export class CreatorRepository implements CreatorBudgetLedger {
               message:
                 'The server restarted. Provider tasks may still be billed; no generation was automatically repeated.',
             };
+          }
+      });
+    if (state.imageJobs.some((job) => job.status === 'queued' || job.status === 'running'))
+      await repository.mutate((next) => {
+        for (const job of next.imageJobs)
+          if (job.status === 'queued' || job.status === 'running') {
+            job.status = 'failed';
+            job.updatedAt = new Date().toISOString();
+            job.error = {
+              code: 'CREATOR_IMAGE_INTERRUPTED',
+              message:
+                'The server restarted. Submitted image work may still be billed; no request was repeated.',
+            };
+            if (!job.submittedAt) settleBudget(next.budget, job.reservationId, 0);
           }
       });
     return repository;
@@ -356,6 +381,218 @@ export class CreatorRepository implements CreatorBudgetLedger {
       });
       state.jobs[index] = next;
       return next;
+    });
+  }
+  async imageVariants(sessionId: string): Promise<CreatorImageVariant[]> {
+    await this.pending;
+    this.find(this.state, sessionId);
+    return structuredClone(this.state.imageVariants.filter((item) => item.sessionId === sessionId));
+  }
+  async imageVariant(sessionId: string, id: string): Promise<CreatorImageVariant> {
+    const variant = (await this.imageVariants(sessionId)).find((item) => item.id === id);
+    if (!variant)
+      throw new ApiError(
+        404,
+        'CREATOR_IMAGE_NOT_FOUND',
+        'This saved image was not found in this creation.',
+      );
+    return variant;
+  }
+  async imageJobs(sessionId: string): Promise<CreatorImageJob[]> {
+    await this.pending;
+    this.find(this.state, sessionId);
+    return structuredClone(this.state.imageJobs.filter((item) => item.sessionId === sessionId));
+  }
+  async imageJob(sessionId: string, id: string): Promise<CreatorImageJob> {
+    const job = (await this.imageJobs(sessionId)).find((item) => item.id === id);
+    if (!job)
+      throw new ApiError(
+        404,
+        'CREATOR_IMAGE_JOB_NOT_FOUND',
+        'This image job was not found in this creation.',
+      );
+    return job;
+  }
+  async imageQuote(sessionId: string, id: string): Promise<CreatorImageQuote> {
+    await this.pending;
+    this.find(this.state, sessionId);
+    const quote = this.state.imageQuotes.find(
+      (item) => item.id === id && item.sessionId === sessionId,
+    );
+    if (!quote)
+      throw new ApiError(
+        404,
+        'CREATOR_IMAGE_QUOTE_NOT_FOUND',
+        'This image cost quote was not found.',
+      );
+    return structuredClone(quote);
+  }
+  async addImageQuote(quote: CreatorImageQuote): Promise<CreatorImageQuote> {
+    return this.mutate((state) => {
+      this.checkVersion(this.find(state, quote.sessionId), quote.sessionVersion);
+      if (state.imageQuotes.length >= 5000)
+        throw new ApiError(409, 'CREATOR_IMAGE_QUOTE_LIMIT', 'Image quote storage is full.');
+      if (quote.maxCostCents > budgetSnapshot(state.budget).availableCents)
+        throw new ApiError(
+          409,
+          'CREATOR_BUDGET_EXCEEDED',
+          'This image estimate exceeds the available creator budget.',
+        );
+      state.imageQuotes.push(creatorImageQuoteSchema.parse(quote));
+      return quote;
+    });
+  }
+  async addImageJob(
+    job: Omit<CreatorImageJob, 'reservationId'>,
+    expectedVersion: number,
+  ): Promise<CreatorImageJob> {
+    return this.mutate((state) => {
+      const existing = state.imageJobs.find(
+        (item) => item.sessionId === job.sessionId && item.requestId === job.requestId,
+      );
+      if (existing) {
+        if (existing.quoteId !== job.quoteId)
+          throw new ApiError(
+            409,
+            'CREATOR_IMAGE_REQUEST_CONFLICT',
+            'This request ID belongs to another image quote.',
+          );
+        return existing;
+      }
+      this.checkVersion(this.find(state, job.sessionId), expectedVersion);
+      const jobs = state.imageJobs.filter((item) => item.sessionId === job.sessionId);
+      if (jobs.some((item) => item.status === 'queued' || item.status === 'running'))
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_JOB_ACTIVE',
+          'This creation already has an active image job.',
+        );
+      if (
+        jobs.length >= 120 ||
+        state.imageVariants.filter((item) => item.sessionId === job.sessionId).length >= 120 ||
+        state.imageJobs.length >= 5000 ||
+        state.imageVariants.length >= 5000
+      )
+        throw new ApiError(409, 'CREATOR_IMAGE_LIMIT', 'The saved image library is full.');
+      const quote = state.imageQuotes.find(
+        (item) => item.id === job.quoteId && item.sessionId === job.sessionId,
+      );
+      if (
+        !quote ||
+        quote.consumedByJobId ||
+        quote.sessionVersion !== expectedVersion ||
+        quote.sessionVersion !== job.sourceVersion ||
+        quote.workflowVersion !== job.workflowVersion ||
+        quote.maxCostCents !== job.maxCostCents ||
+        JSON.stringify(quote.settings) !== JSON.stringify(job.settings)
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_QUOTE_STALE',
+          'Review a current quote for this exact image request.',
+        );
+      if (Date.parse(quote.expiresAt) <= Date.now())
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_QUOTE_EXPIRED',
+          'This image cost quote expired. Review a new quote.',
+        );
+      const reservation = reserveBudget(state.budget, {
+        idempotencyKey: `image:${job.id}`,
+        category: 'image',
+        sourceId: `image:${job.id}:${job.settings.model}`,
+        amountCents: quote.maxCostCents,
+      });
+      const saved = creatorImageJobSchema.parse({ ...job, reservationId: reservation.id });
+      quote.consumedByJobId = saved.id;
+      state.imageJobs.push(saved);
+      return saved;
+    });
+  }
+  async recordImageCostOverrun(
+    sessionId: string,
+    jobId: string,
+    reportedCents: number,
+  ): Promise<void> {
+    return this.mutate((state) => {
+      const job = state.imageJobs.find((item) => item.id === jobId && item.sessionId === sessionId);
+      if (!job || !Number.isSafeInteger(reportedCents) || reportedCents <= job.maxCostCents)
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_COST_INVALID',
+          'The image usage could not be reconciled.',
+        );
+      if (job.reportedCostCents !== undefined) return;
+      settleBudget(state.budget, job.reservationId, job.maxCostCents);
+      const excess = (state.budget.overrunCents ?? 0) + reportedCents - job.maxCostCents;
+      if (!Number.isSafeInteger(excess))
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_COST_INVALID',
+          'The image usage could not be reconciled.',
+        );
+      state.budget.overrunCents = excess;
+      job.reportedCostCents = reportedCents;
+      job.costWarning = `Reported image usage exceeded the $${(job.maxCostCents / 100).toFixed(2)} app estimate. Paid work is paused until spending is reconciled.`;
+      state.budget.pausedReason = job.costWarning;
+    });
+  }
+  async updateImageJob(
+    sessionId: string,
+    id: string,
+    change: (job: CreatorImageJob) => CreatorImageJob,
+  ): Promise<CreatorImageJob> {
+    return this.mutate((state) => {
+      const index = state.imageJobs.findIndex(
+        (item) => item.id === id && item.sessionId === sessionId,
+      );
+      const previous = state.imageJobs[index];
+      if (!previous)
+        throw new ApiError(404, 'CREATOR_IMAGE_JOB_NOT_FOUND', 'This image job was not found.');
+      const next = creatorImageJobSchema.parse({
+        ...change(structuredClone(previous)),
+        id,
+        sessionId,
+        createdAt: previous.createdAt,
+        updatedAt: new Date().toISOString(),
+      });
+      state.imageJobs[index] = next;
+      return next;
+    });
+  }
+  async completeImageJob(
+    sessionId: string,
+    jobId: string,
+    variant: CreatorImageVariant,
+  ): Promise<CreatorImageJob> {
+    return this.mutate((state) => {
+      const job = state.imageJobs.find((item) => item.id === jobId && item.sessionId === sessionId);
+      const quote = job && state.imageQuotes.find((item) => item.id === job.quoteId);
+      if (!job || job.status !== 'running' || !job.submittedAt)
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_JOB_CHANGED',
+          'This image job no longer accepts a result.',
+        );
+      if (
+        !quote ||
+        variant.sessionId !== sessionId ||
+        variant.jobId !== jobId ||
+        JSON.stringify(variant.settings) !== JSON.stringify(job.settings) ||
+        variant.sourceSha256 !== quote.sourceSha256 ||
+        state.imageVariants.some((item) => item.id === variant.id)
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_RESULT_CONFLICT',
+          'This image result does not match its saved request.',
+        );
+      state.imageVariants.push(creatorImageVariantSchema.parse(variant));
+      job.status = 'succeeded';
+      job.variantId = variant.id;
+      job.error = null;
+      job.updatedAt = new Date().toISOString();
+      return job;
     });
   }
   private async mutate<T>(operation: (state: State) => T): Promise<T> {

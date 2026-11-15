@@ -1,0 +1,65 @@
+.creator-prompt-review {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--creator-line);
+}
+.creator-prompt-review h4,
+.creator-revision-suggestion h4 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.creator-prompt-review .creator-secondary-button {
+  width: 100%;
+  margin: 12px 0 8px;
+}
+.creator-prompt-review-result {
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 20px;
+}
+.creator-compiled-prompt {
+  margin: 12px 0;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--creator-soft);
+  color: var(--creator-ink);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.creator-workspace .creator-quality-findings {
+  padding-left: 24px;
+  margin: 12px 0;
+}
+.creator-quality-findings li + li {
+  margin-top: 16px;
+}
+.creator-workspace .creator-quality-findings p {
+  margin: 4px 0;
+}
+.creator-clip-quality {
+  font-size: 14px;
+  line-height: 24px;
+}
+.creator-revision-suggestion {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--creator-line);
+}
+.creator-revision-suggestion details {
+  margin: 12px 0;
+}
+.creator-revision-suggestion dl {
+  margin: 12px 0;
+}
+.creator-revision-suggestion dt {
+  font-weight: 600;
+}
+.creator-revision-suggestion dd {
+  margin: 4px 0 12px;
+  overflow-wrap: anywhere;
+}
+.creator-revision-suggestion .creator-fineprint {
+  margin-top: 8px;
+}

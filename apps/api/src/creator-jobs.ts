@@ -17,6 +17,7 @@ import { type CreatorVideoProvider } from './creator-video-provider.js';
 import {
   inspectCreatorClip,
   assembleCreatorClips,
+  silenceCreatorClip,
   type CreatorVisionAuditor,
 } from './creator-media.js';
 import { verifyWorkflow } from './workflow-engine.js';
@@ -36,6 +37,7 @@ export interface CreatorJobsOptions {
   analyze: CreatorAnalyzer;
   video: CreatorVideoProvider;
   auditor: CreatorVisionAuditor;
+  loadKeyframe?: (sessionId: string, keyframeId: string, sha256: string) => Promise<Buffer>;
   onError?: (error: unknown) => void;
 }
 const terminal = (job: CreatorJob) =>
@@ -273,6 +275,8 @@ export class CreatorJobs {
     }));
   }
   private async current(session: CreatorSession, workflow: Workflow): Promise<void> {
+    const budget = await this.options.repository.budget();
+    if (budget.pausedReason) throw new ApiError(409, 'CREATOR_BUDGET_PAUSED', budget.pausedReason);
     const latest = await this.options.repository.get(session.id),
       source = await this.options.workflows.get(workflow.id);
     if (latest.version !== session.version || source.version !== workflow.version)
@@ -447,7 +451,17 @@ export class CreatorJobs {
               'No spending reservation exists for this clip.',
             );
           const asset = workflow.assets.find((value) => value.id === clip.assetId);
-          const image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
+          const image = clip.keyframeId
+            ? await this.options.loadKeyframe?.(session.id, clip.keyframeId, clip.keyframeSha256!)
+            : asset
+              ? await this.options.assets.load(workflow.id, asset)
+              : undefined;
+          if (clip.keyframeId && !image)
+            throw new ApiError(
+              409,
+              'CREATOR_KEYFRAME_MISSING',
+              'The selected generated keyframe could not be loaded. Choose it again before production.',
+            );
           await this.current(session, workflow);
           signal.throwIfAborted();
           await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
@@ -491,7 +505,7 @@ export class CreatorJobs {
           );
           await this.current(session, workflow);
           signal.throwIfAborted();
-          const bytes = await this.options.video.generate({
+          const generatedBytes = await this.options.video.generate({
             clip,
             ...(image ? { image } : {}),
             signal,
@@ -505,7 +519,9 @@ export class CreatorJobs {
           });
           signal.throwIfAborted();
           const path = this.clipPath(job.id, clip.id, number);
-          await writeFile(path, bytes);
+          await writeFile(path, generatedBytes);
+          await silenceCreatorClip(path, signal);
+          const bytes = await readFile(path);
           await update((receipt) => ({ ...receipt, status: 'auditing' }));
           await this.event(
             job,

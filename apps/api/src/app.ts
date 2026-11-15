@@ -42,7 +42,14 @@ export interface AppOptions {
   creatorOptions?: Partial<
     Pick<
       CreatorRouterOptions,
-      'videoConfig' | 'video' | 'auditor' | 'analyze' | 'fetch' | 'withBudget' | 'budgetLimitCents'
+      | 'videoConfig'
+      | 'video'
+      | 'auditor'
+      | 'imageProvider'
+      | 'analyze'
+      | 'fetch'
+      | 'withBudget'
+      | 'budgetLimitCents'
     >
   >;
 }

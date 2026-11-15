@@ -1,15 +1,16 @@
 # Connecting the creator APIs
 
-The default generated-video path uses **fal.ai Seedance 1.5 Pro**, with **OpenAI gpt-6-luna** for required visual review. Firecrawl adds live public research. The adapters are implemented and covered by injected HTTP tests; live credentials, account entitlement, generated quality, and provider invoices have not been verified by those tests.
+The configuration template selects **fal.ai MiniMax H3 Max** for image-first animation, with **OpenAI gpt-6-luna** for required visual review. The Visual studio uses direct GPT Image 2.6 generation/editing; the existing Seedance 1.5 Pro path remains available. Firecrawl adds live public research. The adapters are covered by injected HTTP tests; live credentials, account entitlement, generated quality, and provider invoices are not established by those tests. See [image versions and animation](creator-keyframes.md) for the connected workflow and image-cost controls.
 
 ## Required accounts and settings
 
-| Service                                                                           | What it enables                                                              | Server setting                                           |
-| --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------- |
-| [fal.ai](https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video) | Original silent 720p image-to-video or text-to-video clips                   | `FAL_KEY` and `CREATOR_VIDEO_PROVIDER=fal`               |
-| [OpenAI API](https://developers.openai.com/api/docs/models/gpt-6-luna)            | Required sampled-frame review; optional editable script/photo interpretation | `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna`              |
-| [Firecrawl](https://www.firecrawl.dev/pricing)                                    | Optional live cinematography and indexed X/TikTok/Instagram discovery        | `FIRECRAWL_API_KEY`                                      |
-| LangChain Deep Agents                                                             | Optional real SDK evidence review using the configured OpenAI account        | `DEEPAGENTS_MODEL=gpt-6-luna`; no separate LangChain key |
+| Service                                                                         | What it enables                                                              | Server setting                                                                |
+| ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [fal.ai H3 Max](https://fal.ai/models/minimax/h3-max/image-to-video)            | Image-first animation from a selected frame; silent app output               | `FAL_KEY`, `CREATOR_VIDEO_PROVIDER=fal`, `CREATOR_VIDEO_MODEL=minimax-h3-max` |
+| [OpenAI images](https://developers.openai.com/api/docs/guides/image-generation) | Portrait image creation, editing and saved versions                          | `OPENAI_API_KEY`; model and quality selected in Visual studio                 |
+| [OpenAI API](https://developers.openai.com/api/docs/models/gpt-6-luna)          | Required sampled-frame review; optional editable script/photo interpretation | `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna`                                   |
+| [Firecrawl](https://www.firecrawl.dev/pricing)                                  | Optional live cinematography and indexed X/TikTok/Instagram discovery        | `FIRECRAWL_API_KEY`                                                           |
+| LangChain Deep Agents                                                           | Optional real SDK evidence review using the configured OpenAI account        | `DEEPAGENTS_MODEL=gpt-6-luna`; no separate LangChain key                      |
 
 Use a user-owned API key with access to the selected model. A consumer video subscription or a connected chat plugin does not establish API access for this server. Higgsfield is a separate developer service and is **not an implemented video adapter** here. No X, Meta, AWS, or Higgsfield account is required for the selected stack.
 
@@ -22,6 +23,7 @@ Use a user-owned API key with access to the selected model. A consumer video sub
 
 ```dotenv
 CREATOR_VIDEO_PROVIDER=fal
+CREATOR_VIDEO_MODEL=minimax-h3-max
 FAL_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
@@ -43,9 +45,11 @@ Without external keys, guided preparation, the existing photo renderer, and labe
 
 The default app cap is **USD 30**, leaving USD 5 outside the app for checkout charges, pricing differences, or other use. It can be lowered with `CREATOR_BUDGET_LIMIT_USD`, never raised above 30. Use small prepaid balances where supported and disable provider auto-recharge. Provider balances, purchases, taxes, and activity using the same keys elsewhere remain your responsibility; the local ledger is not an account-wide billing limit.
 
-The current [fal model page](https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video) lists silent output at **USD 1.20 per million video tokens**, with an approximately **USD 0.13 example for five seconds at 720p**. That is roughly USD 0.026 per second for the example, rather than a universal flat per-second price. The app explicitly disables generated audio and quotes a conservative **USD 0.05 per clip-second plus USD 0.10 visual-review allowance per new clip**. Three new five-second clips therefore reserve **USD 1.05** for production. This ceiling is an app estimate, not a provider invoice or guaranteed price.
+The H3 Max app profile reserves **USD 0.10 per generated second plus USD 0.10 for each new clip's review**: three five-second shots reserve USD 1.80. It uses regular pricing rather than an expiring promotion. Each image creation/editing job separately reserves a conservative USD 2, settled when valid usage is available. These are app estimates, not guaranteed invoice ceilings. [Image cost and recovery details](creator-keyframes.md).
 
-OpenAI requests use the budget model with bounded output and Standard service. Each model request reserves USD 0.50 before dispatch; known returned usage can settle this conservative allowance, while unknown outcomes retain it. Research reserves each model/search request separately, so parallel agent branches cannot hide extra spending inside a batch estimate. Quote-reserved visual audits use their existing per-clip hold. Direct X/Grok requests and paid built-in model tools are disabled in this budget profile. Free Firecrawl credits may cover discovery: the [current free plan](https://www.firecrawl.dev/pricing) lists 1,000 credits per month. Avoid enabling paid automatic top-ups for this experiment.
+For the existing Seedance path, the [fal model page](https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video) lists silent output at USD 1.20 per million video tokens, with an approximately USD 0.13 example for five seconds at 720p. The app's selected Seedance profile reserves USD 0.05 per clip-second plus the USD 0.10 review allowance; three five-second clips reserve USD 1.05.
+
+OpenAI text/vision requests use the budget model with bounded output and Standard service. Each such request reserves USD 0.50 before dispatch; known returned usage can settle this conservative allowance, while unknown outcomes retain it. Research reserves each model/search request separately, so parallel agent branches cannot hide extra spending inside a batch estimate. Quote-reserved visual audits use their existing per-clip hold. Direct X/Grok requests and paid built-in model tools are disabled in this budget profile. Free Firecrawl credits may cover discovery: the [current free plan](https://www.firecrawl.dev/pricing) lists 1,000 credits per month. Avoid enabling paid automatic top-ups for this experiment.
 
 Before production, request and inspect the exact cost quote, explicitly approve its current plan and cost, then produce. Quotes expire after ten minutes. Failed visual review never automatically starts another paid generation. A deliberate retry needs a fresh quote and explicit approval, with a maximum of two paid attempts per clip for the same plan. Reapproving an unchanged plan does not reset that limit. Passed clips can be reused after integrity verification.
 

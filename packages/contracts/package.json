@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./creator-images": {
+      "types": "./src/creator-images.ts",
+      "import": "./dist/creator-images.js"
+    },
     "./creator": {
       "types": "./src/creator.ts",
       "import": "./dist/creator.js"

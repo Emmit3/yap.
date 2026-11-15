@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { randomUUID } from 'node:crypto';
 import { CreatorApiError, createCreatorApi } from '../src/creator/api.js';
 
 test('validation failures surface field-specific server limits for a saved answer', async () => {
@@ -62,5 +63,59 @@ test('clip previews and final downloads encode identifiers and keep the configur
   assert.equal(
     api.clipUrl('film', 'job', 'clip/id', 2),
     'https://api.example/api/creator/sessions/film/jobs/job/clips/clip%2Fid/video?attempt=2',
+  );
+});
+
+test('saved prompt review is a read-only, encoded request with a runtime-validated response', async () => {
+  const review = {
+    planId: randomUUID(),
+    workflowVersion: 3,
+    hasBlockingIssues: false,
+    clips: [
+      {
+        clipId: randomUUID(),
+        compiledPrompt: 'A slow push toward the supplied product.',
+        issues: [],
+      },
+    ],
+  };
+  let address = '';
+  let method = '';
+  const transport: typeof fetch = async (input, init) => {
+    address = String(input);
+    method = init?.method ?? 'GET';
+    return Response.json(review);
+  };
+  assert.deepEqual(
+    await createCreatorApi('https://api.example/', transport).reviewPlan('film/id'),
+    review,
+  );
+  assert.equal(address, 'https://api.example/api/creator/sessions/film%2Fid/plan/review');
+  assert.equal(method, 'GET');
+  const malformed: typeof fetch = async () => Response.json({ ...review, clips: [] });
+  await assert.rejects(
+    createCreatorApi('', malformed).reviewPlan('film'),
+    (error) => error instanceof CreatorApiError && error.code === 'INVALID_RESPONSE',
+  );
+});
+
+test('image library access is validated and generated files use encoded server-only URLs', async () => {
+  let address = '';
+  const transport: typeof fetch = async (input) => {
+    address = String(input);
+    return Response.json({ configured: false, variants: [], jobs: [] });
+  };
+  const api = createCreatorApi('https://api.example/', transport);
+  assert.deepEqual(await api.images('film/id'), { configured: false, variants: [], jobs: [] });
+  assert.equal(address, 'https://api.example/api/creator/sessions/film%2Fid/images');
+  assert.equal(
+    api.imageUrl('film/id', 'variant/id'),
+    'https://api.example/api/creator/sessions/film%2Fid/images/variant%2Fid/file',
+  );
+  const broken: typeof fetch = async () =>
+    Response.json({ configured: true, variants: [{ id: 'not-an-image' }], jobs: [] });
+  await assert.rejects(
+    createCreatorApi('', broken).images('film'),
+    (error) => error instanceof CreatorApiError && error.code === 'INVALID_RESPONSE',
   );
 });

@@ -44,20 +44,20 @@ test('vision review bounds output and image inputs while keeping model overrides
         assert.equal(body.store, false);
         assert.deepEqual(body.reasoning, model ? undefined : { effort: 'none' });
         assert.equal(body.text.format.strict, true);
-        assert.deepEqual(body.text.format.schema, {
-          type: 'object',
-          properties: {
-            passed: { type: 'boolean' },
-            summary: { type: 'string', minLength: 1, maxLength: 2000 },
-            issues: {
-              type: 'array',
-              items: { type: 'string', minLength: 1, maxLength: 1000 },
-              maxItems: 10,
-            },
-          },
-          required: ['passed', 'summary', 'issues'],
-          additionalProperties: false,
-        });
+        const schema = body.text.format.schema;
+        assert.equal(schema.additionalProperties, false);
+        assert.deepEqual(schema.required, [
+          'passed',
+          'summary',
+          'issues',
+          'findings',
+          'suggestedRevision',
+        ]);
+        assert.equal(schema.properties.summary.maxLength, 2000);
+        assert.equal(schema.properties.issues.maxItems, 10);
+        assert.equal(schema.properties.findings.maxItems, 10);
+        assert.equal(schema.properties.findings.items.additionalProperties, false);
+        assert.equal(schema.properties.suggestedRevision.anyOf[0].additionalProperties, false);
         const images = body.input[0].content.filter(
           (item: { type: string }) => item.type === 'input_image',
         );
@@ -143,6 +143,20 @@ test('only a complete, exact audit result can pass review', async () => {
     () => response({ ...result, approved: true }),
     () => response({ ...result, issues: Array.from({ length: 11 }, () => 'Issue') }),
     () => response({ ...result, summary: 'x'.repeat(2001) }),
+    () =>
+      response({
+        ...result,
+        findings: [
+          {
+            category: 'subject',
+            severity: 'blocking',
+            frameIndices: [3],
+            observation: 'The shape changed.',
+            suggestedFix: 'Preserve the silhouette.',
+          },
+        ],
+      }),
+    () => response({ ...result, suggestedRevision: { prompt: 'Incomplete correction.' } }),
     () => response(result, 'incomplete'),
     () => Response.json({ status: 'completed', output: 'not-an-array' }),
     () => new Response('not-json'),

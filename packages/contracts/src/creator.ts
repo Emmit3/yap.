@@ -95,9 +95,20 @@ export const creatorClipSchema = z
     camera: text(1000),
     lighting: text(1000),
     assetId: z.uuid().optional(),
+    keyframeId: z.uuid().optional(),
+    keyframeSha256: z
+      .string()
+      .regex(/^[a-f0-9]{64}$/)
+      .optional(),
     referenceIds: z.array(text(120)).max(12).optional(),
   })
-  .strict();
+  .strict()
+  .refine((clip) => !(clip.assetId && clip.keyframeId), {
+    message: 'Select either an uploaded photo or a generated keyframe.',
+  })
+  .refine((clip) => Boolean(clip.keyframeId) === Boolean(clip.keyframeSha256), {
+    message: 'A selected generated keyframe requires its saved content hash.',
+  });
 export const creatorPlanSchema = z
   .object({
     id: z.uuid(),
@@ -107,7 +118,7 @@ export const creatorPlanSchema = z
     caption: z.string().max(3000),
     clips: z.array(creatorClipSchema).min(1).max(12),
     provider: z.enum(['runway', 'fal']).optional(),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro', 'minimax-h3-max']),
     ratio: z.literal('720:1280'),
     hasAudio: z.literal(false),
     maxAttemptsPerClip: z.literal(2),
@@ -140,12 +151,68 @@ export const creatorSessionSchema = z
     updatedAt: z.iso.datetime(),
   })
   .strict();
+export const creatorAuditFindingSchema = z
+  .object({
+    category: z.enum([
+      'subject',
+      'prompt',
+      'camera',
+      'lighting',
+      'artifacts',
+      'continuity',
+      'unwanted_text',
+    ]),
+    severity: z.enum(['blocking', 'warning']),
+    frameIndices: z.array(z.number().int().min(0).max(2)).max(3),
+    observation: text(1000),
+    suggestedFix: text(1000),
+  })
+  .strict()
+  .refine((finding) => finding.severity !== 'blocking' || finding.frameIndices.length > 0, {
+    message: 'A blocking visual finding must identify at least one observed frame.',
+  });
+export const creatorSuggestedRevisionSchema = z
+  .object({ prompt: text(1000), camera: text(1000), lighting: text(1000), reason: text(1000) })
+  .strict();
+export const creatorPromptReviewSchema = z
+  .object({
+    planId: z.uuid(),
+    workflowVersion: version,
+    hasBlockingIssues: z.boolean(),
+    clips: z
+      .array(
+        z
+          .object({
+            clipId: z.uuid(),
+            compiledPrompt: text(4000),
+            issues: z
+              .array(
+                z
+                  .object({
+                    code: text(80),
+                    severity: z.enum(['blocking', 'warning']),
+                    message: text(1000),
+                    suggestion: text(1000),
+                  })
+                  .strict(),
+              )
+              .max(12),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(12),
+  })
+  .strict();
 export const creatorAuditSchema = z
   .object({
     technicalPassed: z.boolean(),
     visionPassed: z.boolean().nullable(),
     summary: text(3000),
     issues: z.array(text(1000)).max(12),
+    findings: z.array(creatorAuditFindingSchema).max(10).optional(),
+    suggestedRevision: creatorSuggestedRevisionSchema.nullable().optional(),
+    sampledAtSeconds: z.array(z.number().finite().nonnegative()).max(3).optional(),
   })
   .strict();
 export const creatorClipReceiptSchema = z
@@ -249,7 +316,7 @@ export const creatorCapabilitiesSchema = z
     researchConfigured: z.boolean(),
     visionConfigured: z.boolean(),
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro', 'minimax-h3-max']),
     hasAudio: z.literal(false),
     maxAttemptsPerClip: z.literal(2),
     maxGeneratedSeconds: z.literal(120),
@@ -257,7 +324,7 @@ export const creatorCapabilitiesSchema = z
   })
   .strict();
 
-const cents = z.number().int().nonnegative().max(1_000_000);
+const cents = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 export const creatorBudgetSchema = z
   .object({
     scope: z.literal('creator_app'),
@@ -266,6 +333,7 @@ export const creatorBudgetSchema = z
     reservedCents: cents,
     chargedCents: cents,
     availableCents: cents,
+    pausedReason: z.string().max(1500).optional(),
   })
   .strict();
 export const creatorQuoteSchema = z
@@ -278,7 +346,7 @@ export const creatorQuoteSchema = z
     planId: z.uuid(),
     fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
     provider: z.enum(['runway', 'fal']),
-    model: z.enum(['gen4.5', 'seedance-v1.5-pro']),
+    model: z.enum(['gen4.5', 'seedance-v1.5-pro', 'minimax-h3-max']),
     ratio: z.literal('720:1280'),
     hasAudio: z.literal(false),
     currency: z.literal('USD'),
@@ -331,6 +399,7 @@ export type CreatorPlan = z.infer<typeof creatorPlanSchema>;
 export type CreatorApproval = z.infer<typeof creatorApprovalSchema>;
 export type CreatorSession = z.infer<typeof creatorSessionSchema>;
 export type CreatorAudit = z.infer<typeof creatorAuditSchema>;
+export type CreatorPromptReview = z.infer<typeof creatorPromptReviewSchema>;
 export type CreatorJob = z.infer<typeof creatorJobSchema>;
 export type CreatorSessionResponse = z.infer<typeof creatorSessionResponseSchema>;
 export type CreatorJobResponse = z.infer<typeof creatorJobResponseSchema>;
