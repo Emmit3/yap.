@@ -1,8 +1,8 @@
-# Yap Deep Agents demo
+# Yap Deep Agents research and drafting
 
 ## Product outcome
 
-Yap's research demo should demonstrate one connected task: take a creator's theme, gather bounded public evidence, combine what posts say with observed network structure, and turn reviewed findings into a cited creative direction. The proposal then enters the existing promo workflow, where the creator supplies their own product facts and reviews the script.
+Yap's research demo should demonstrate one connected task: take a creator's theme, gather bounded public evidence, combine what posts say with observed network structure, and turn reviewed findings into a cited creative direction. The selected direction enters the creation workflow, where the creator supplies their own facts and reviews the script. With `WORKFLOW_PROVIDER=deepagents`, actual SDK planning and delegated script/scene work prepare that proposal; the guided engine remains an explicit offline option.
 
 The Deep Agents harness earns its place by delegating specialist work, sharing bounded evidence through a virtual filesystem, and showing actual task/tool progress. A multi-agent label or an animated loading sequence alone does not establish harness use.
 
@@ -85,7 +85,7 @@ Use a coordinator plus three focused specialists, with distinct access and outpu
 2. **Network analyst:** read the evidence artifact and run bounded deterministic content/connectivity analysis. Distinguish observed interaction edges from content similarity; report when the source sample lacks connectivity.
 3. **Creative strategist:** read the evidence and analysis artifacts, identify supported strengths and tradeoffs, and propose citeable script decisions. Do not rewrite competitor claims as facts about the creator's product.
 
-The coordinator delegates actual `task` calls, checks their outputs, and persists the validated investigation. Specialists should not repeat collection or run uncontrolled additional searches. Agent tool names must map to real implementations; public telemetry must reflect completed work rather than a timer's invented milestones.
+The coordinator delegates actual `task` calls, checks their outputs, and persists the validated investigation. The creative specialist authors its synthesis through the model; cited evidence IDs must resolve within the bounded sample before its brief is retained. That synthesis remains creative interpretation, separate from creator facts. Specialists should not repeat collection or run uncontrolled additional searches. Agent tool names must map to real implementations; public telemetry must reflect completed work rather than a timer's invented milestones.
 
 `StateBackend` supplies graph-state virtual files, shared by the coordinator and specialists in the current thread. It supports filesystem tools without granting access to the API server's working directory. Preserve only validated research results through Yap's existing repository. A run-local filesystem does not itself establish durable cross-session memory. Cross-turn persistence requires checkpointed thread state. [Backend behavior](https://docs.langchain.com/oss/javascript/deepagents/backends).
 
@@ -112,13 +112,21 @@ Only expose allowed fields: role, public task name, status, bounded search term,
 
 The browser uses a research-run resource, not a client-held provider connection. The agreed boundary is `POST /api/social/research-runs`, polling `GET /api/social/research-runs/:id`, cancellation through `DELETE`, and a capabilities endpoint. A completed run supplies its persisted investigation ID. Polling at the advertised interval lets the UI update agent roles, actual task progress, source counts, and files while collection runs.
 
-Configure `DEEPAGENTS_MODEL` to a supported OpenAI model ID and set `OPENAI_API_KEY` or the research-specific `DEEPAGENTS_OPENAI_API_KEY`. Configure at least one compatible public-data provider as described in [social analysis](social-analysis.md). The live harness is disabled until its model and key are configured; the example replay needs neither.
+Use the bounded model `DEEPAGENTS_MODEL=gpt-6-luna` (the default) and set `OPENAI_API_KEY` or the agent-specific `DEEPAGENTS_OPENAI_API_KEY`. Provider-qualified `openai:gpt-6-luna` is normalized before the spending gate. Configure at least one compatible public-data provider as described in [social analysis](social-analysis.md). The live harness needs a configured key; analytics initially selects Deep Agents when model and public-source access are ready. Explicit engine choices survive refreshes and defaults do not create unsaved changes. The example replay starts no live model calls.
 
 The API loads the Deep Agents SDK only when the selected live harness runs. Capability checks, ordinary public search, and example replay do not load it. Collection is cached within a run so specialist work cannot multiply external search batches. Model and tool calls have explicit limits, alongside the provider response and timeout budgets.
 
 `GET /api/social/research-runs/capabilities` explains execution availability. `POST /api/social/research-runs` accepts the existing research input plus `harness: 'pipeline' | 'deepagents'`, returning `202 {run}`. The run includes status, execution mode, ordered public events, five allowlisted artifact metadata records, and an eventual investigation ID. Read a created file with `GET /api/social/research-runs/:id/artifacts?path=...`; native filesystem paths are rejected. Inspectable files contain bounded source previews and interpretations, not raw model output.
 
 The server retains at most 50 ephemeral runs for 30 minutes, accepts two active searches, caps activity at 200 events and each artifact at 64 KB, and limits a run to 120 seconds before its final atomic save. Cancellation aborts provider/model work. Once the atomic local save starts, `canCancel` becomes false and the run finishes that save rather than reporting a canceled result that was actually persisted. API shutdown aborts active research alongside existing render cleanup. Saved investigations remain durable after run telemetry expires.
+
+## Script and scene preparation
+
+Set `WORKFLOW_PROVIDER=deepagents` to prepare creator scripts and scenes through the real JavaScript SDK. A coordinator plans and delegates bounded drafting work, with run-local virtual files and validated outputs. The script and scene records retain `provider: deepagents`, which the studio displays beside the proposal. This provenance describes the work that produced the saved artifact; changing configuration does not relabel historical records.
+
+Refinement and questions continue through the existing OpenAI adapter. `WORKFLOW_PROVIDER=openai` selects direct model drafting; `WORKFLOW_PROVIDER=guided` selects offline structured templates. Missing credentials or failed agent execution do not become a claimed SDK success or a synthetic proposal. Completed drafting stages remain saved for explicit recovery rather than automatically repeating a paid stage.
+
+SDK model calls use the same durable spending ledger and approved bounded OpenAI model as the rest of the app. Deadlines, cancellation and tool/model call limits apply. Drafting receipts retain the model, measured model/tool counts, specialist names, context hash and source IDs used by the proposal. Script/scene proposals still require creator review, and video production retains its separate exact quote and approval. Tests use the real SDK with injected deterministic models; they do not prove funded live account access.
 
 ## Honest replay and live execution
 

@@ -37,6 +37,11 @@ import AnalyticsOverview from './AnalyticsOverview';
 import { researchActivityStorageKey, researchContextSeed } from './analytics-overview';
 import { useResearchRun } from './useResearchRun';
 import { researchError, socialApi } from './api';
+import {
+  applyResearchEngineDefault,
+  chooseResearchEngine,
+  initialResearchEngine,
+} from './research-engine';
 import './social.css';
 
 const platformNames: Record<SocialPlatform, string> = {
@@ -90,7 +95,8 @@ export default function SocialWorkspace({
   const [providers, setProviders] = useState<SocialProviderStatus[]>([]);
   const [researchCapabilities, setResearchCapabilities] =
     useState<SocialResearchCapabilities | null>(null);
-  const [harness, setHarness] = useState<'pipeline' | 'deepagents'>('pipeline');
+  const [engine, setEngine] = useState(initialResearchEngine);
+  const harness = engine.value;
   const [active, setActive] = useState<SocialInvestigation | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState('');
@@ -157,7 +163,7 @@ export default function SocialWorkspace({
       publicOnly ||
       days !== 7 ||
       limit !== 60 ||
-      harness !== 'pipeline' ||
+      harness !== engine.baseline ||
       platforms.length !== 3 ||
       !(['x', 'instagram', 'web'] as const).every((platform) => platforms.includes(platform)));
   const workspaceDirty = noteDirty || researchFormDirty;
@@ -224,8 +230,10 @@ export default function SocialWorkspace({
         else failures.push(researchError(library.reason));
         if (integrations.status === 'fulfilled') setProviders(integrations.value.providers);
         else failures.push(researchError(integrations.reason));
-        if (capabilities.status === 'fulfilled') setResearchCapabilities(capabilities.value);
-        else failures.push(researchError(capabilities.reason));
+        if (capabilities.status === 'fulfilled') {
+          setResearchCapabilities(capabilities.value);
+          setEngine((previous) => applyResearchEngineDefault(previous, capabilities.value));
+        } else failures.push(researchError(capabilities.reason));
         if (saved.status === 'fulfilled' && saved.value && loadEpoch === epoch.current)
           openInvestigation(saved.value.investigation);
         else if (saved.status === 'rejected' && loadEpoch === epoch.current)
@@ -251,7 +259,11 @@ export default function SocialWorkspace({
     setPlatforms(['x', 'instagram', 'web']);
     setDays(7);
     setLimit(60);
-    setHarness('pipeline');
+    setEngine(
+      researchCapabilities
+        ? applyResearchEngineDefault(initialResearchEngine, researchCapabilities)
+        : initialResearchEngine,
+    );
     setImportJson('');
     setPublicOnly(false);
   }
@@ -338,6 +350,7 @@ export default function SocialWorkspace({
       setInvestigations(library.investigations);
       setProviders(integrations.providers);
       setResearchCapabilities(capabilities);
+      setEngine((previous) => applyResearchEngineDefault(previous, capabilities));
       setStatus('Saved research and source availability refreshed.');
     } catch (caught) {
       setError(researchError(caught));
@@ -364,6 +377,7 @@ export default function SocialWorkspace({
       setNoteEvidenceIds([]);
     }
     submittedForm.current = formSignature;
+    setEngine((previous) => chooseResearchEngine(previous, previous.value));
     setError('');
     setStatus('');
     await activity.start({
@@ -901,7 +915,12 @@ export default function SocialWorkspace({
                       value={harness}
                       disabled={!!busy}
                       onChange={(event) =>
-                        setHarness(event.target.value as 'pipeline' | 'deepagents')
+                        setEngine((previous) =>
+                          chooseResearchEngine(
+                            previous,
+                            event.target.value as 'pipeline' | 'deepagents',
+                          ),
+                        )
                       }
                     >
                       <option value="pipeline">Direct public search</option>

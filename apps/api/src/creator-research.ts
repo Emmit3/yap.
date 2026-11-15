@@ -13,6 +13,8 @@ import {
 } from '@yap/contracts/creator';
 import type { SocialDataset } from '@yap/contracts/social';
 import type { SocialDeepAgentsContext, SocialDeepAgentsDependencies } from './social-deepagents.js';
+import { configFromEnv as deepAgentsConfigFromEnv } from './social-agent-config.js';
+import { ApiError } from './errors.js';
 
 export interface CreatorResearchConfig {
   firecrawlApiKey?: string;
@@ -250,10 +252,11 @@ async function abortable<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
 export function creatorResearchConfigFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): CreatorResearchConfig {
+  const agent = deepAgentsConfigFromEnv(env);
   return {
     firecrawlApiKey: env.FIRECRAWL_API_KEY?.trim(),
-    deepAgentsModel: env.DEEPAGENTS_MODEL?.trim(),
-    deepAgentsApiKey: env.DEEPAGENTS_OPENAI_API_KEY?.trim() || env.OPENAI_API_KEY?.trim(),
+    deepAgentsModel: agent.model,
+    deepAgentsApiKey: agent.apiKey,
   };
 }
 
@@ -640,6 +643,7 @@ export function createCreatorResearch(
     ].slice(0, 40);
     const limitations = branches.flatMap((branch) => branch.limitations);
     const professionals = sources.filter((source) => source.kind === 'cinematography');
+    let agentReviewCompleted = false;
     let cinematography = professionals.length
       ? `Professional source passages for creator review:\n${professionals.map((source) => `[${source.title}](${source.url}): ${source.excerpt}`).join('\n\n')}`.slice(
           0,
@@ -647,11 +651,7 @@ export function createCreatorResearch(
         )
       : 'No live professional cinematography sources were retrieved. Camera and lighting choices still need creator review; no retrieved guidance was fabricated.';
 
-    if (
-      config.deepAgentsModel?.trim() &&
-      config.deepAgentsApiKey?.trim() &&
-      sources.some((source) => source.provider === 'firecrawl')
-    ) {
+    if (config.deepAgentsModel?.trim() && config.deepAgentsApiKey?.trim() && sources.length > 0) {
       emit('Configured Deep Agents review of the retrieved evidence started.');
       try {
         const dataset: SocialDataset = {
@@ -717,6 +717,7 @@ export function createCreatorResearch(
           throw new ResearchFailure(
             'The agent review did not retain its complete evidence artifacts.',
           );
+        agentReviewCompleted = true;
         limitations.push(
           'A configured LangChain Deep Agents harness planned and reviewed this immutable retrieved batch through its specialists. Its TikTok entries were treated as web evidence; it performed no additional source searches or visual video inspection.',
         );
@@ -726,13 +727,15 @@ export function createCreatorResearch(
             6000,
           );
         emit('Configured Deep Agents evidence review completed.');
-      } catch {
+      } catch (error) {
         canceled(signal);
-        limitations.push(
-          'The optional configured Deep Agents review failed or reached its call/deadline budget. Retrieved sources are retained as public search results; no agent success was claimed.',
-        );
         emit(
-          'Configured Deep Agents evidence review did not complete; attributed search results retained.',
+          'Configured Deep Agents evidence review failed. Run research again after checking its access and limits.',
+        );
+        throw new ApiError(
+          error instanceof ApiError ? error.status : 502,
+          'CREATOR_AGENT_RESEARCH_FAILED',
+          'Configured Deep Agents research could not finish. Check model access or narrow the topic, then run research again.',
         );
       }
     } else
@@ -773,6 +776,9 @@ export function createCreatorResearch(
       questions: context.questions,
       limitations: [...new Set(limitations)].slice(0, 20),
       coverage: branches.map((branch) => branch.coverage),
+      execution: agentReviewCompleted
+        ? { harness: 'deepagents', model: config.deepAgentsModel!.trim().replace(/^openai:/, '') }
+        : { harness: 'pipeline' },
     });
   };
 }

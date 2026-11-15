@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { z } from 'zod';
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models';
 import {
   workflowBriefSchema,
   workflowQueryResponseSchema,
@@ -31,7 +32,7 @@ export interface WorkflowScriptTiming {
 }
 
 export interface VideoWorkflowProvider {
-  readonly name: 'guided' | 'openai';
+  readonly name: 'guided' | 'openai' | 'deepagents';
   refine(
     workflow: Workflow,
     input: WorkflowRefinementInput,
@@ -47,10 +48,11 @@ export interface VideoWorkflowProvider {
 }
 
 export interface WorkflowProviderConfig {
-  provider: 'guided' | 'openai';
+  provider: 'guided' | 'openai' | 'deepagents';
   apiKey?: string;
   model?: string;
   timeoutMs?: number;
+  maxModelCalls?: number;
 }
 
 export interface WorkflowProviderDependencies {
@@ -59,10 +61,35 @@ export interface WorkflowProviderDependencies {
     asset: WorkflowImageAsset,
   ) => Promise<{ mimeType: string; data: Buffer }>;
   fetch?: typeof globalThis.fetch;
+  /** Deterministic model injection exercises the actual SDK graph without external calls. */
+  model?: BaseChatModel;
 }
 
 /** Verified against official OpenAI model/docs on 2026-11-13. Override via configuration. */
-export const DEFAULT_WORKFLOW_MODEL = 'gpt-5.6-terra';
+export const DEFAULT_WORKFLOW_MODEL = 'gpt-6-luna';
+/** Runtime defaults select the real harness; guided remains an explicit offline choice. */
+export function workflowProviderConfigFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+): WorkflowProviderConfig {
+  const provider = env.WORKFLOW_PROVIDER?.trim() || 'deepagents';
+  if (provider !== 'guided' && provider !== 'openai' && provider !== 'deepagents')
+    throw new ApiError(
+      503,
+      'PROVIDER_NOT_CONFIGURED',
+      'WORKFLOW_PROVIDER must be guided, openai or deepagents.',
+    );
+  return {
+    provider,
+    apiKey:
+      provider === 'deepagents'
+        ? env.DEEPAGENTS_OPENAI_API_KEY?.trim() || env.OPENAI_API_KEY?.trim()
+        : env.OPENAI_API_KEY?.trim(),
+    model: (provider === 'deepagents'
+      ? env.DEEPAGENTS_MODEL?.trim() || env.OPENAI_MODEL?.trim() || DEFAULT_WORKFLOW_MODEL
+      : env.OPENAI_MODEL?.trim()
+    )?.replace(/^openai:/, ''),
+  };
+}
 const RESPONSES_URL = 'https://api.openai.com/v1/responses';
 const MAX_RESPONSE_BYTES = 256 * 1024;
 const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
@@ -393,12 +420,28 @@ export function createWorkflowProvider(
       },
     };
   }
-  if (config.provider !== 'openai' || !config.apiKey?.trim()) {
+  if (!['openai', 'deepagents'].includes(config.provider) || !config.apiKey?.trim()) {
     throw new ApiError(
       503,
       'PROVIDER_NOT_CONFIGURED',
       'Configure the selected drafting provider and its API key before starting the server.',
     );
+  }
+  if (config.provider === 'deepagents') {
+    // Guided startup stays independent of the agent SDK; load it only for a
+    // deliberately selected model operation. Every operation has its own run.
+    const provider = async () =>
+      (await import('./workflow-deepagents.js')).createWorkflowDeepAgentsProvider(
+        config,
+        dependencies,
+      );
+    return {
+      name: 'deepagents',
+      refine: async (...args) => (await provider()).refine(...args),
+      script: async (...args) => (await provider()).script(...args),
+      scenes: async (...args) => (await provider()).scenes(...args),
+      query: async (...args) => (await provider()).query(...args),
+    };
   }
   const model = config.model?.trim() || DEFAULT_WORKFLOW_MODEL;
   const timeoutMs = config.timeoutMs ?? 45000;

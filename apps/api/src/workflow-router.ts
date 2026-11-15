@@ -128,10 +128,23 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
   );
   await renders.recoverInterrupted();
   const router = express.Router();
+  const activeRequests = new Set<AbortController>();
+  let closing = false;
   router.use((_request, response, next) => {
+    if (closing)
+      return next(
+        new ApiError(
+          503,
+          'API_SHUTTING_DOWN',
+          'The API is shutting down. No drafting request was started.',
+        ),
+      );
     const controller = new AbortController();
+    activeRequests.add(controller);
     response.locals.workflowSignal = controller.signal;
+    response.once('finish', () => activeRequests.delete(controller));
     response.once('close', () => {
+      activeRequests.delete(controller);
       if (!response.writableEnded) controller.abort();
     });
     next();
@@ -165,7 +178,7 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
   router.get('/capabilities', (_request, response) =>
     response.json({
       provider: provider.name,
-      understandsImages: provider.name === 'openai',
+      understandsImages: provider.name !== 'guided',
       images: {
         contentTypes: ['image/png', 'image/jpeg', 'image/webp'],
         maxBytes: 10 * 1024 * 1024,
@@ -256,7 +269,7 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
     const previous = await repository.get(idOf(request));
     repository.checkVersion(previous, expectedVersion);
     let candidate = structuredClone(previous);
-    if (provider.name === 'openai' && (!candidate.script || regenerate)) {
+    if (provider.name !== 'guided' && (!candidate.script || regenerate)) {
       const result = await provider.refine(candidate, {}, response.locals.workflowSignal);
       const brief = workflowBriefSchema.parse({ ...candidate.brief, ...result.brief });
       if (JSON.stringify(brief) !== JSON.stringify(candidate.brief)) {
@@ -538,5 +551,15 @@ export async function createWorkflowRouter(options: WorkflowRouterOptions) {
       if (result.status === 'rejected') options.onError?.(result.reason);
     response.status(204).end();
   });
-  return { router, repository, assets, provider, close: () => renders.close() };
+  return {
+    router,
+    repository,
+    assets,
+    provider,
+    close: () => {
+      closing = true;
+      for (const controller of activeRequests) controller.abort();
+      return renders.close();
+    },
+  };
 }

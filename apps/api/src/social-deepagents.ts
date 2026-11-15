@@ -42,6 +42,23 @@ export interface SocialDeepAgentsDependencies {
 }
 
 const AGENTS = ['source_researcher', 'network_analyst', 'creative_strategist'] as const;
+const synthesisSchema = z
+  .object({
+    summary: z.string().trim().min(1).max(1200),
+    decisions: z
+      .array(
+        z
+          .object({
+            evidenceIds: z.array(z.string().trim().min(1).max(300)).min(1).max(6),
+            adopt: z.string().trim().min(1).max(600),
+            avoid: z.string().trim().min(1).max(600),
+            test: z.string().trim().min(1).max(600),
+          })
+          .strict(),
+      )
+      .max(4),
+  })
+  .strict();
 type ResearchAgent = (typeof AGENTS)[number];
 type Agent = SocialResearchEventInput['agent'];
 const PATHS: SocialResearchArtifactPath[] = [
@@ -227,6 +244,8 @@ export async function runSocialDeepAgents(
   let toolCalls = 0;
   let budgetExceeded = false;
   let rejectedDelegation = false;
+  let rejectedSynthesis = false;
+  let synthesisIdentity: string | undefined;
   let planned = false;
   const completed = new Set<ResearchAgent>();
   const budget = createMiddleware({
@@ -339,16 +358,50 @@ export async function runSocialDeepAgents(
     },
   );
   const buildBrief = tool(
-    async () => {
-      if (!analysis) throw new Error('The network analyst must finish before the creative brief.');
+    async (proposed: z.infer<typeof synthesisSchema>) => {
+      if (!analysis || !dataset)
+        throw new Error('The network analyst must finish before the creative brief.');
+      const synthesis = synthesisSchema.parse(proposed),
+        sources = new Map(dataset.posts.map((post) => [post.id, post])),
+        identity = JSON.stringify(synthesis);
+      if (
+        (dataset.posts.length > 0 && synthesis.decisions.length === 0) ||
+        synthesis.decisions.some((decision) =>
+          decision.evidenceIds.some((id) => !sources.has(id)),
+        ) ||
+        (synthesisIdentity !== undefined && synthesisIdentity !== identity)
+      ) {
+        rejectedSynthesis = true;
+        controller.abort();
+        throw new Error(
+          'Research synthesis must cite the immutable evidence and retain its first accepted version.',
+        );
+      }
+      let authored = `# Model-proposed creative framing\n\n${synthesis.summary}\n\nThis is attributed model interpretation for creator review, separate from product facts and approval.\n`;
+      if (!dataset.posts.length)
+        authored +=
+          '\nNo public evidence was collected; no evidence-backed decisions are available.\n';
+      for (const [index, decision] of synthesis.decisions.entries()) {
+        const ids = [...new Set(decision.evidenceIds)];
+        authored += `\n## Proposed decision ${index + 1}\n\nEvidence IDs: ${JSON.stringify(ids)}\n\nSources: ${ids.map((id) => sources.get(id)!.url).join(' ')}\n\nAdopt: ${decision.adopt}\n\nAvoid: ${decision.avoid}\n\nTest: ${decision.test}\n`;
+      }
+      const brief = `${authored}\n---\n\n${briefFile(input, analysis)}`;
+      if (Buffer.byteLength(brief) > 24 * 1024) {
+        rejectedSynthesis = true;
+        controller.abort();
+        throw new Error('Research synthesis exceeded its bounded artifact size.');
+      }
+      // Admit the first validated synthesis before any asynchronous write so
+      // concurrent tool calls cannot replace its accepted wording.
+      synthesisIdentity = identity;
       await save('/research/insights.json', insightsFile(analysis));
-      await save('/research/brief.md', briefFile(input, analysis));
+      await save('/research/brief.md', brief);
       context.emit({
         agent: 'creative_strategist',
         task: 'brief',
         phase: 'completed',
         message:
-          'Saved pattern strengths, tradeoffs, and proposed script framing for the creator to review. No script or approval was changed.',
+          'Saved attributed model-authored framing, evidence citations, and adopt/avoid/test decisions alongside the deterministic analysis for creator review. No script or approval was changed.',
         resultCount: analysis.posts.length,
       });
       return JSON.stringify({
@@ -360,8 +413,8 @@ export async function runSocialDeepAgents(
     {
       name: 'build_creative_brief',
       description:
-        'Create a factual pattern and script-framing preview from the deterministic analysis. Writes insights.json and brief.md in the shared filesystem. This never copies source claims into creator facts or approves content.',
-      schema: z.object({}).strict(),
+        'Submit your own bounded creative synthesis after reading sources.json and network.json. Cite only collected evidence IDs for each adopt/avoid/test decision; use at least one decision for nonempty evidence, or zero when no evidence exists. Saves the attributed synthesis in brief.md alongside deterministic insights. Never turn source claims into creator facts or approve content.',
+      schema: synthesisSchema,
     },
   );
   const model =
@@ -412,7 +465,7 @@ export async function runSocialDeepAgents(
         model,
         tools: [buildBrief],
         middleware: [budget],
-        systemPrompt: `ROLE creative_strategist. Read /research/network.json, call build_creative_brief, then read /research/brief.md. ${shared}`,
+        systemPrompt: `ROLE creative_strategist. Read /research/sources.json and /research/network.json. Synthesize an original summary and up to four evidence-grounded decisions, each with collected evidenceIds and concrete adopt, avoid, and test guidance. You must submit your authored synthesis through build_creative_brief once, then inspect /research/brief.md. For a nonempty batch include at least one decision; if no evidence was collected, state that limitation and use no decisions. Do not invent evidence IDs, observations, creator facts or popularity claims. ${shared}`,
       },
     ],
   });
@@ -510,6 +563,7 @@ export async function runSocialDeepAgents(
       !planned ||
       AGENTS.some((name) => !completed.has(name)) ||
       !dataset ||
+      !synthesisIdentity ||
       PATHS.some((path) => !canonicalArtifacts.has(path))
     )
       throw new ApiError(
@@ -550,6 +604,12 @@ export async function runSocialDeepAgents(
         502,
         'SOCIAL_AGENT_DELEGATION',
         'The research harness requested an unsupported specialist. Retry the bounded research job.',
+      );
+    if (rejectedSynthesis)
+      throw new ApiError(
+        502,
+        'SOCIAL_AGENT_SYNTHESIS',
+        'The research synthesis could not be retained with valid evidence citations and bounded size. Review the source scope and run research again.',
       );
     if (budgetExceeded)
       throw new ApiError(

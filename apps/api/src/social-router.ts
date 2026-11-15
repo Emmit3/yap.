@@ -235,15 +235,16 @@ export async function createSocialRouter(
 
   router.get('/research-runs/capabilities', (_request, response) => {
     const deep = deepAvailability();
+    const publicSources = providers.statuses().some((provider) => provider.configured);
     const capabilities: SocialResearchCapabilities = {
-      defaultHarness: 'pipeline',
+      defaultHarness: deep.configured && publicSources ? 'deepagents' : 'pipeline',
       demoReplay: true,
       pollIntervalMs: 750,
       harnesses: [
         {
           id: 'pipeline',
           name: 'Research pipeline',
-          configured: providers.statuses().some((provider) => provider.configured),
+          configured: publicSources,
           description:
             'Bounded public collection, evidence validation, network analysis, and creative insights.',
           limitations: [

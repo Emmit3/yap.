@@ -138,7 +138,7 @@ export async function createApp(options: AppOptions = {}) {
   app.locals.shutdown = workflow.close;
 
   app.get('/api/health', (_request, response) => {
-    response.json({ status: 'ok', service: 'yap-api', generator: 'guided' });
+    response.json({ status: 'ok', service: 'yap-api', generator: workflow.provider.name });
   });
   app.get('/api/projects', async (_request, response) => {
     response.json({ projects: await repository.list() });
