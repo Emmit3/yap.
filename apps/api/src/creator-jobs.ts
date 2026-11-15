@@ -439,10 +439,9 @@ export class CreatorJobs {
           );
           await this.current(session, workflow);
           signal.throwIfAborted();
-          await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
-            ...current,
-            audioStarted: true,
-          }));
+          // The hold counts as used only once a line reaches the provider. Until then a
+          // failure proves nothing was billed, and the whole narration hold is released.
+          let started = false;
           let recorded: Buffer[];
           try {
             recorded = await this.options.voiceover.narrate(
@@ -453,6 +452,12 @@ export class CreatorJobs {
               async () => {
                 await this.current(session, workflow);
                 signal.throwIfAborted();
+                if (started) return;
+                await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
+                  ...current,
+                  audioStarted: true,
+                }));
+                started = true;
               },
             );
           } catch (error) {

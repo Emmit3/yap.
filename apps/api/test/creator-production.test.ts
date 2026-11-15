@@ -610,10 +610,11 @@ test('narration is quoted, held, recorded before any clip and mixed with music i
     },
     voiceover: {
       configured: true,
-      narrate: async (lines, voice) => {
+      narrate: async (lines, voice, _tone, _signal, beforeSubmit) => {
         order.push('narration');
         spoken.push(lines);
         assert.equal(voice, 'marin');
+        for (const _line of lines) await beforeSubmit?.();
         return lines.map(() => speech!);
       },
     },
@@ -684,7 +685,8 @@ test('a creator can turn sound off, and a rejected narration key stops productio
     },
     voiceover: {
       configured: true,
-      narrate: async () => {
+      narrate: async (_lines, _voice, _tone, _signal, beforeSubmit) => {
+        await beforeSubmit?.();
         throw new ApiError(502, 'CREATOR_VOICEOVER_REJECTED', 'OpenAI rejected the API key.');
       },
     },
@@ -734,4 +736,79 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   assert.equal(result.job.output?.hasAudio, false);
   const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
   assert.doesNotMatch(await streams(f.directory, Buffer.from(await final.arrayBuffer())), /Audio:/);
+});
+
+test('the narration hold is released when nothing was submitted and kept once a line was', async (t) => {
+  let clip: Buffer | undefined,
+    generated = 0,
+    submitted = 0,
+    lineCount = 0,
+    mode: 'changed' | 'failed' = 'changed';
+  const base = passingProduction(() => clip!);
+  const f = await fixture(t, {
+    ...base,
+    video: {
+      ...base.video,
+      generate: async (input) => {
+        generated++;
+        return base.video.generate(input);
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (lines, _voice, _tone, _signal, beforeSubmit) => {
+        lineCount = lines.length;
+        if (mode === 'changed') {
+          // The creator edits the plan after production starts but before the first line leaves.
+          const now = creatorSessionResponseSchema.parse(
+            await (await f.request(`/sessions/${sessionId}`)).json(),
+          );
+          const edited = await f.request(
+            `/sessions/${sessionId}/plan`,
+            json('PATCH', {
+              expectedVersion: now.session.version,
+              expectedWorkflowVersion: now.workflow.version,
+              clips: now.session.plan!.clips,
+              caption: now.session.plan!.caption,
+              audio: { voice: 'cedar', musicTrackId: null },
+            }),
+          );
+          assert.equal(edited.status, 200, await edited.clone().text());
+        }
+        await beforeSubmit?.();
+        submitted++;
+        throw new ApiError(502, 'CREATOR_VOICEOVER_FAILED', 'The narration provider failed.');
+      },
+    },
+  });
+  clip = await makeVideo(f.directory);
+  const draft = await prepared(f);
+  const sessionId = draft.session.id;
+  const changed = await produce(f, await reviewQuote(f, draft));
+  assert.equal(changed.job.status, 'failed');
+  assert.equal(changed.job.error?.code, 'CREATOR_SOURCE_CHANGED');
+  assert.deepEqual([submitted, generated], [0, 0]);
+  const ledger = () => CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  let budget = await (await ledger()).budget();
+  assert.deepEqual(
+    [budget.reservedCents, budget.chargedCents],
+    [0, 0],
+    'a plan change before the first line leaves releases the whole narration hold',
+  );
+
+  mode = 'failed';
+  const current = creatorSessionResponseSchema.parse(
+    await (await f.request(`/sessions/${sessionId}`)).json(),
+  );
+  const failed = await produce(f, await reviewQuote(f, current));
+  assert.equal(failed.job.status, 'failed');
+  assert.equal(failed.job.error?.code, 'CREATOR_VOICEOVER_FAILED');
+  assert.deepEqual([submitted, generated], [1, 0]);
+  budget = await (await ledger()).budget();
+  assert.ok(lineCount > 0);
+  assert.equal(
+    budget.reservedCents + budget.chargedCents,
+    lineCount * 10,
+    'an uncertain outcome after a line left keeps the conservative narration hold',
+  );
 });

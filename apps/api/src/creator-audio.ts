@@ -124,6 +124,38 @@ export function voiceoverLines(plan: CreatorPlan, workflow: Workflow): Voiceover
     })
     .sort((left, right) => left.start - right.start);
 }
+/**
+ * One spoken line is recorded once and placed in one window, so every clip that shows it
+ * must be consecutive. A, B, A cannot be narrated until the film has a timeline model.
+ */
+export function voiceoverContiguous(
+  clips: Array<{ sceneId: string }>,
+  workflow: Workflow,
+): boolean {
+  const segmentByScene = new Map(
+    workflow.scenes?.scenes.map((scene) => [scene.id, scene.scriptSegmentId]),
+  );
+  const seen = new Set<string>();
+  let previous: string | undefined;
+  for (const clip of clips) {
+    const segmentId = segmentByScene.get(clip.sceneId);
+    if (segmentId === previous) continue;
+    if (segmentId) {
+      if (seen.has(segmentId)) return false;
+      seen.add(segmentId);
+    }
+    previous = segmentId;
+  }
+  return true;
+}
+export function assertVoiceoverContiguous(plan: CreatorPlan, workflow: Workflow): void {
+  if (plan.audio?.voice && !voiceoverContiguous(plan.clips, workflow))
+    throw new ApiError(
+      400,
+      'CREATOR_VOICEOVER_ORDER',
+      'Narration needs every clip of one spoken line to play back to back. Reorder the clips so each line stays together, or turn narration off.',
+    );
+}
 /** Rejects narration that cannot fit before any paid request is quoted. */
 export function assertVoiceoverFits(lines: VoiceoverLine[], total: number): void {
   if (lines.some((line) => line.text.length > VOICEOVER_MAX_CHARACTERS))
@@ -167,7 +199,11 @@ export function layoutVoiceover(
 
 export interface CreatorVoiceover {
   configured: boolean;
-  /** One paid request per line, in order, never retried. Returns WAV bytes per line. */
+  /**
+   * One paid request per line, in order, never retried. Returns WAV bytes per line.
+   * `beforeSubmit` must run immediately before each request leaves: the caller treats its
+   * first completed run as the point where narration may have been billed.
+   */
   narrate(
     lines: string[],
     voice: CreatorVoice,

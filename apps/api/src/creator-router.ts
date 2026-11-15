@@ -44,6 +44,7 @@ import {
   createCreatorVoiceover,
   defaultMusicTrack,
   loadCreatorMusic,
+  voiceoverContiguous,
   type CreatorMusicLibrary,
   type CreatorVoiceover,
 } from './creator-audio.js';
@@ -589,7 +590,18 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         // A re-prepared plan keeps the creator's earlier sound choices when still available.
         const previous = session.plan?.audio;
         plan = makePlan(session, candidate, profile, {
-          voice: voiceover.configured ? (previous ? previous.voice : DEFAULT_CREATOR_VOICE) : null,
+          // Scenes that return to an earlier spoken line cannot be narrated, so such a plan
+          // starts without a voice rather than failing to prepare.
+          voice:
+            voiceover.configured &&
+            voiceoverContiguous(
+              candidate.scenes!.scenes.map((scene) => ({ sceneId: scene.id })),
+              candidate,
+            )
+              ? previous
+                ? previous.voice
+                : DEFAULT_CREATOR_VOICE
+              : null,
           musicTrackId:
             previous &&
             (previous.musicTrackId === null ||
@@ -636,6 +648,12 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         (scene) => secondsByScene.get(scene.id) !== scene.seconds,
       );
       const audio = input.audio ? checkAudio(input.audio, voiceover, music) : plan.audio;
+      if (audio?.voice && !voiceoverContiguous(input.clips, workflow))
+        throw new ApiError(
+          400,
+          'CREATOR_VOICEOVER_ORDER',
+          'Narration needs every clip of one spoken line to play back to back. Reorder the clips so each line stays together, or turn narration off.',
+        );
       if (input.caption !== workflow.script!.caption || timingChanged) {
         workflow = await options.workflows.update(workflow.id, workflow.version, (current) => {
           const scenes = current.scenes!.scenes.map((scene) => ({
