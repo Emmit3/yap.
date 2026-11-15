@@ -140,6 +140,12 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
   const panelHeading = useRef<HTMLHeadingElement>(null);
   const scriptTimingInput = useRef<HTMLInputElement>(null);
   const state = c.state;
+  const heading = state?.session.input.prompt.includes('\n')
+    ? state.session.input.prompt
+        .split(/\r?\n/)
+        .find((line) => line.trim())
+        ?.trim() || state.workflow.title
+    : state?.workflow.title || 'Make room for your next idea.';
   const active = isActiveJob(c.job);
   const production = active && c.job?.kind === 'production';
   const locked = Boolean(c.busy) || c.needsReload || production;
@@ -234,7 +240,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
           <button className="creator-back" onClick={props.onBack}>
             <ArrowLeft size={16} /> Your workspace
           </button>
-          <h1>{state ? state.workflow.title : 'Make room for your next idea.'}</h1>
+          <h1>{heading}</h1>
           <p>
             {state
               ? 'One film. Two ways to shape it.'
