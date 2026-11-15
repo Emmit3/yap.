@@ -136,8 +136,10 @@ export class PosterReferenceLibrary {
     try {
       const rootInfo = await lstat(this.root);
       if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw invalidCatalog();
+      // The root itself may not be a symbolic link, but a system ancestor may be one
+      // (macOS serves /var and /tmp through /private). Containment is checked against
+      // the resolved root below.
       const actualRoot = await realpath(this.root);
-      if (relative(this.root, actualRoot) !== '') throw invalidCatalog();
       const target = resolve(this.root, file);
       const within = relative(this.root, target);
       if (!within || within.startsWith('..') || isAbsolute(within)) throw invalidCatalog();
