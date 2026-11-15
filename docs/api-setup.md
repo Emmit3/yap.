@@ -33,7 +33,7 @@ CREATOR_BUDGET_LIMIT_USD=30.00
 WORKFLOW_PROVIDER=guided
 ```
 
-Set `DEEPAGENTS_MODEL=gpt-6-luna` to enable the optional real evidence-review harness. Its research-specific `DEEPAGENTS_OPENAI_API_KEY` can override the shared OpenAI key. Leave optional `X_BEARER_TOKEN` and `XAI_API_KEY` empty for this budget setup: those separate providers are outside the selected USD reservation profile.
+Set `DEEPAGENTS_MODEL=gpt-6-luna` to enable the optional real evidence-review harness. The current spending profile permits only this model for text and research requests; another model, including Terra, is rejected before paid dispatch. Its research-specific `DEEPAGENTS_OPENAI_API_KEY` can override the shared OpenAI key. Leave optional `X_BEARER_TOKEN` and `XAI_API_KEY` empty for this budget setup: those separate providers are outside the selected USD reservation profile.
 
 `GET /api/creator/capabilities`, `/api/social/providers`, and `/api/social/research-runs/capabilities` report configuration presence without exposing secrets. Presence is not proof of a valid key, sufficient balance, or successful live generation. `GET /api/creator/budget` reports the durable app budget.
 
