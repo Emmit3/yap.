@@ -14,7 +14,7 @@ Yap should be easy for a business such as a matcha shop: supply photos of the sh
 
 The backend prepares the brief, script, and scenes beneath this simple flow. Defaults keep setup short; refinement questions help when useful. A query endpoint explains the saved idea, open questions, script, and scenes. Detailed stage approval endpoints remain available, while one final approval supports the main product flow.
 
-The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Photo promo output is silent; the creator studio can add AI narration and bundled music to generated films. The business downloads a video and caption for posting. Social account posting, billing, and accounts are not implemented.
+The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Photo promo output is silent; the creator studio can add AI narration, bundled music and burned-in script subtitles to generated films. Subtitles use measured narration or ordered scene timing and have a separate SRT export. The business downloads a video and social post caption for posting. Social account posting, billing, and accounts are not implemented.
 
 ## Acceptance criteria for this implementation
 

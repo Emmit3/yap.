@@ -133,6 +133,7 @@ export const creatorPlanSchema = z
     // Generated clips stay silent. This describes the assembled film's added soundtrack.
     hasAudio: z.boolean(),
     audio: creatorAudioSchema.optional(),
+    subtitlesEnabled: z.boolean().optional(),
     maxAttemptsPerClip: z.literal(2),
     maxGeneratedSeconds: z.number().int().positive().max(120),
     createdAt: z.iso.datetime(),
@@ -214,6 +215,20 @@ export const creatorJobSchema = z
         width: z.literal(1080),
         height: z.literal(1920),
         hasAudio: z.boolean(),
+        subtitles: z
+          .object({
+            format: z.literal('srt'),
+            bytes: z
+              .number()
+              .int()
+              .positive()
+              .max(128 * 1024),
+            sha256: z.string().regex(/^[a-f0-9]{64}$/),
+            cueCount: z.number().int().positive().max(240),
+            timingSource: z.enum(['narration', 'scene']),
+          })
+          .strict()
+          .optional(),
       })
       .strict()
       .nullable(),
@@ -250,6 +265,7 @@ export const creatorUpdatePlanSchema = creatorPrepareSchema.extend({
   clips: z.array(creatorClipSchema).min(1).max(12),
   caption: z.string().max(3000),
   audio: creatorAudioSchema.optional(),
+  subtitlesEnabled: z.boolean().optional(),
 });
 export const creatorApproveSchema = creatorPrepareSchema.extend({
   planId: z.uuid(),
@@ -325,6 +341,7 @@ export const creatorQuoteSchema = z
     ratio: z.literal('720:1280'),
     hasAudio: z.boolean(),
     audio: creatorAudioSchema.optional(),
+    subtitlesEnabled: z.boolean().optional(),
     // Narration ceiling for the whole film. Bundled music is free. Absent on older quotes.
     audioCents: cents.default(0),
     narratedSegments: z.number().int().nonnegative().max(60).default(0),
