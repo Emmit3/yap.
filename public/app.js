@@ -765,6 +765,14 @@ function showShareLink(url, title) {
 $$('[data-create-entry]').forEach((button) => {
   button.hidden = !embedded;
 });
+if (embedded && new URLSearchParams(location.search).get('example') === 'matcha') {
+  $$('[data-example-entry]').forEach((button) => {
+    const label = [...button.childNodes].find(
+      (node) => node.nodeType === Node.TEXT_NODE && node.textContent.trim(),
+    );
+    if (label) label.textContent = 'Open matcha example ';
+  });
+}
 $$('[data-studio]').forEach((button) =>
   button.addEventListener('click', () => {
     if (requestWorkspace('yap:enter-studio')) return;

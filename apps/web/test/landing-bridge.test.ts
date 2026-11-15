@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { destinationForShowcaseMessage } from '../src/landing/messages.js';
+import { destinationForShowcaseMessage, exampleCreationPath } from '../src/landing/messages.js';
 
 const origin = 'http://127.0.0.1:5173';
 const iframe = {};
@@ -9,6 +9,34 @@ const message = (data: unknown, overrides: Partial<{ origin: string; source: unk
   source: iframe,
   data,
   ...overrides,
+});
+
+test('a configured example opens its existing saved creation route', () => {
+  assert.equal(
+    exampleCreationPath(' 11111111-1111-4111-8111-111111111111 '),
+    '/create/11111111-1111-4111-8111-111111111111',
+  );
+  assert.equal(
+    exampleCreationPath('ABCDEFAB-1234-4123-8123-123456789ABC'),
+    '/create/abcdefab-1234-4123-8123-123456789abc',
+  );
+});
+
+test('missing or malformed example settings keep the normal new-creation entry', () => {
+  for (const setting of [
+    undefined,
+    null,
+    '',
+    ' ',
+    123,
+    '/create/11111111-1111-4111-8111-111111111111',
+    'https://other.example/11111111-1111-4111-8111-111111111111',
+    '11111111-1111-4111-8111-111111111111?view=video',
+    '11111111-1111-0111-0111-111111111111',
+  ]) {
+    assert.equal(exampleCreationPath(setting), null);
+    assert.equal(exampleCreationPath(setting) ?? '/create', '/create');
+  }
 });
 
 test('the showcase iframe can request the studio', () => {
