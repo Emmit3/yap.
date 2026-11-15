@@ -14,7 +14,9 @@ Yap should be easy for a business such as a matcha shop: supply photos of the sh
 
 The backend prepares the brief, script, and scenes beneath this simple flow. Defaults keep setup short; refinement questions help when useful. A query endpoint explains the saved idea, open questions, script, and scenes. Detailed stage approval endpoints remain available, while one final approval supports the main product flow.
 
-The backend supports a local guided provider, an optional OpenAI text/vision adapter, real photo uploads, and real vertical MP4 rendering. The renderer preserves supplied photography rather than inventing footage. Photo promo output is silent; the creator studio can add AI narration, bundled music and burned-in script subtitles to generated films. Subtitles use measured narration or ordered scene timing and have a separate SRT export. The business downloads a video and social post caption for posting. Social account posting, billing, and accounts are not implemented.
+The backend supports a local guided provider, optional OpenAI text/vision services, photo uploads and MP4 rendering. Photo promos preserve supplied photography and remain silent. Creator films support explicit per-shot fal Seedance 2.5 profiles, native 720p portrait/landscape delivery or labeled portrait 1080p resizing, optional narration/music and burned-in script subtitles with a separate SRT export. The historical fal Seedance 1.5 profile is retired and cannot start new generation. Posting remains manual; accounts and customer billing are not implemented.
+
+Per-workspace brand settings can be explicitly snapshotted into a reviewed plan. Separate versioned edits trim/reorder a finished film, add transitions/text and render free previews without changing generation receipts or renewing paid attempts. Quoted storyboard PNGs and timestamped reference imports/sample analysis are implemented with distinct provenance and spending approvals. These local capabilities do not establish funded provider access or completed real-provider rehearsals. See [branding/editing](docs/creator-brand-edit.md), [reference assets](docs/creator-reference-assets.md) and the [Mori Drinks presenter path](docs/demo-presenter.md).
 
 ## Acceptance criteria for this implementation
 
@@ -42,6 +44,6 @@ Backend promo acceptance criteria:
 
 ## Decisions still needed before expanding
 
-Choose user identity, deployment storage, brand controls, and social publishing integrations before expanding beyond the local service. Developer collaboration in this repository is separate from multiple businesses having isolated accounts.
+Choose user identity, deployment storage and social publishing integrations before expanding beyond the local service. Brand controls currently belong to one local workspace; per-account brand ownership still depends on accounts and tenant isolation. Developer collaboration in this repository is separate from multiple businesses having isolated data.
 
 See [research](docs/product-research.md) for source evidence and [architecture](docs/architecture.md) for implementation boundaries.

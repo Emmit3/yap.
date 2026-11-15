@@ -47,7 +47,7 @@ export interface CreatorVideoConfig {
   apiKey?: string;
   timeoutMs?: number;
   pollMs?: number;
-  model?: 'gen4.5' | 'gen4_turbo';
+  model?: CreatorVideoModel;
   ratio?: CreatorVideoRatio;
 }
 const ROOT = 'https://api.dev.runwayml.com/v1';

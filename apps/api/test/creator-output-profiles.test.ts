@@ -8,6 +8,7 @@ import {
   createConfiguredCreatorVideoProviders,
   creatorVideoProfileOptions,
   resolveCreatorVideoProvider,
+  creatorVideoConfigFromEnv,
 } from '../src/creator-video-factory.js';
 import { createCreatorVideoProvider } from '../src/creator-video-provider.js';
 import { resolveOutputProfile } from '../src/creator-output-profiles.js';
@@ -44,10 +45,63 @@ test('historical delivery stays portrait 1080p while native selections preserve 
   });
 });
 
-test('registry publishes explicit configured Runway profiles and an unavailable retired fal profile without calls', () => {
+test('Fal is the default and never exposes Runway profiles even when a Runway key exists', () => {
+  let calls = 0;
+  const env = { FAL_KEY: 'fixture-fal-key', RUNWAYML_API_SECRET: 'unused-runway-key' },
+    registry = createConfiguredCreatorVideoProviders(env, async () => {
+      calls++;
+      throw new Error('No generation requested');
+    }),
+    profiles = creatorVideoProfileOptions(registry),
+    active = profiles.filter((profile) => !profile.retired);
+  assert.equal(creatorVideoConfigFromEnv(env).provider, 'fal');
+  assert.equal(profiles.length, 3);
+  assert.deepEqual(
+    active.map((profile) => [profile.id, profile.model, profile.provider, profile.configured]),
+    [
+      ['fal-seedance2.5-portrait', 'seedance-2.5', 'fal', true],
+      ['fal-seedance2.5-landscape', 'seedance-2.5', 'fal', true],
+    ],
+  );
+  assert.ok(
+    active.every((profile) => profile.rateCentsPerSecond === 50 && profile.minSeconds === 4),
+  );
+  assert.equal(
+    resolveCreatorVideoProvider(
+      { ...clip, videoProfileId: 'fal-seedance2.5-landscape' },
+      createConfiguredCreatorVideoProvider({ provider: 'fal' }),
+      registry,
+    ).profile?.nativeWidth,
+    1280,
+  );
+  assert.throws(
+    () =>
+      resolveCreatorVideoProvider(
+        { ...clip, videoProfileId: 'runway-gen4.5-portrait' },
+        createConfiguredCreatorVideoProvider({ provider: 'fal' }),
+        registry,
+      ),
+    { code: 'CREATOR_VIDEO_PROFILE' },
+  );
+  const unavailable = creatorVideoProfileOptions(
+    createConfiguredCreatorVideoProviders({ RUNWAYML_API_SECRET: 'unused-key' }),
+  );
+  assert.equal(
+    unavailable.some((profile) => profile.configured),
+    false,
+  );
+  assert.ok(
+    unavailable
+      .filter((profile) => !profile.retired)
+      .every((profile) => /FAL_KEY/.test(profile.unavailableReason!)),
+  );
+  assert.equal(calls, 0);
+});
+
+test('only explicit legacy Runway configuration publishes Runway profiles', () => {
   let calls = 0;
   const registry = createConfiguredCreatorVideoProviders(
-    { RUNWAYML_API_SECRET: 'fixture-key', FAL_KEY: 'unused-key' },
+    { CREATOR_VIDEO_PROVIDER: 'runway', RUNWAYML_API_SECRET: 'fixture-key', FAL_KEY: 'unused-key' },
     async () => {
       calls++;
       throw new Error('No generation requested');
@@ -76,7 +130,10 @@ test('registry publishes explicit configured Runway profiles and an unavailable 
 });
 
 test('saved shot selection is explicit and cannot fall back when unavailable or incompatible', () => {
-  const registry = createConfiguredCreatorVideoProviders({ RUNWAYML_API_SECRET: 'fixture-key' });
+  const registry = createConfiguredCreatorVideoProviders({
+    CREATOR_VIDEO_PROVIDER: 'runway',
+    RUNWAYML_API_SECRET: 'fixture-key',
+  });
   const fallback = createCreatorVideoProvider({ apiKey: 'fixture-key' });
   assert.equal(resolveCreatorVideoProvider(clip, fallback, registry), fallback);
   const selected = resolveCreatorVideoProvider(
@@ -121,7 +178,7 @@ test('saved shot selection is explicit and cannot fall back when unavailable or 
       ),
     { code: 'CREATOR_CLIP_DURATION' },
   );
-  const absent = createConfiguredCreatorVideoProviders({});
+  const absent = createConfiguredCreatorVideoProviders({ CREATOR_VIDEO_PROVIDER: 'runway' });
   assert.throws(
     () =>
       resolveCreatorVideoProvider(
@@ -219,7 +276,7 @@ test('Turbo rejects missing images and unsupported durations before preprocessin
 test('legacy configured-provider factory retains an explicit retired fal choice instead of using Runway', async () => {
   let calls = 0;
   const provider = createConfiguredCreatorVideoProvider(
-    { provider: 'fal', apiKey: 'unused' },
+    { provider: 'fal', model: 'seedance-v1.5-pro', apiKey: 'unused' },
     async () => {
       calls++;
       throw new Error('Unexpected paid request');
@@ -232,4 +289,25 @@ test('legacy configured-provider factory retains an explicit retired fal choice 
     { code: 'CREATOR_MODEL_RETIRED' },
   );
   assert.equal(calls, 0);
+});
+
+test('the default Fal factory submits only one Fal request and never falls back after rejection', async () => {
+  const calls: string[] = [];
+  const provider = createConfiguredCreatorVideoProvider(
+    { provider: 'fal', apiKey: 'fixture-key' },
+    async (input) => {
+      calls.push(String(input));
+      return Response.json({ detail: 'fixture rejected' }, { status: 402 });
+    },
+  );
+  assert.equal(provider.profile?.model, 'seedance-2.5');
+  assert.equal(provider.configured, true);
+  await assert.rejects(
+    provider.generate({ clip, signal: new AbortController().signal, onSubmitted: async () => {} }),
+    { code: 'CREATOR_VIDEO_PROVIDER_ERROR' },
+  );
+  assert.deepEqual(calls, ['https://queue.fal.run/bytedance/seedance-2.5/text-to-video']);
+  assert.throws(() => createCreatorVideoProvider({ model: 'seedance-2.5' }), {
+    code: 'CREATOR_CONFIGURATION',
+  });
 });

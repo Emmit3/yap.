@@ -629,7 +629,7 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
               disabled={locked || active}
               onDirty={markToolDirty('references')}
               onUseReference={async (reference) => {
-                c.selectExternal({
+                await c.saveExternalReference({
                   id: `analysis-${reference.id}`,
                   title: reference.title,
                   url: reference.sourceUrl,
@@ -1371,13 +1371,23 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
           .reverse()
           .find((item) => item.clipId === clip?.id && item.status === 'passed')
       : null;
+  const profile = c.capabilities?.videoProfiles?.find((item) => item.id === clip?.videoProfileId);
+  const ratio = receipt?.ratio ?? profile?.ratio ?? c.state?.session.plan?.ratio ?? '720:1280';
+  const landscape = ratio === '1280:720';
   return (
     <section className="creator-scene-preview" aria-label="Selected shot preview">
       <div className="creator-stage-top">
-        <span>Portrait canvas</span>
-        <span>{clip?.videoProfileId?.endsWith('landscape') ? '16:9' : '9:16'} / silent clip</span>
+        <span>{landscape ? 'Landscape canvas' : 'Portrait canvas'}</span>
+        <span>{landscape ? '16:9' : '9:16'} / silent clip</span>
       </div>
-      <div className="creator-film-stage">
+      <div
+        className="creator-film-stage"
+        style={
+          landscape
+            ? { aspectRatio: '16 / 9', width: '100%', height: 'auto' }
+            : { aspectRatio: '9 / 16' }
+        }
+      >
         {receipt && c.job ? (
           <video
             key={`${c.job.id}-${receipt.clipId}-${receipt.attempt}`}
@@ -1385,11 +1395,13 @@ function ScenePreview({ c, clip }: { c: CreatorController; clip?: CreatorClip })
             controls
             playsInline
             preload="metadata"
+            style={{ objectFit: 'contain' }}
             aria-label="Generated clip preview"
           />
         ) : (asset || clip?.storyboardFrameId) && c.state ? (
           <>
             <img
+              style={{ objectFit: 'contain' }}
               src={
                 clip?.storyboardFrameId
                   ? creatorApi.storyboardImageUrl(c.state.session.id, clip.storyboardFrameId)
@@ -1481,11 +1493,20 @@ function ShotInspector({
   disabled: boolean;
 }) {
   const clip = c.plan?.clips[index];
+  const selectedProfile = c.capabilities?.videoProfiles?.find((profile) =>
+    clip?.videoProfileId
+      ? profile.id === clip.videoProfileId
+      : profile.provider === c.state?.session.plan?.provider &&
+        profile.model === c.state?.session.plan?.model &&
+        profile.ratio === c.state?.session.plan?.ratio,
+  );
   const minimumSeconds =
-    c.state?.session.plan?.provider === 'fal' ||
+    selectedProfile?.minSeconds ??
+    (c.state?.session.plan?.provider === 'fal' ||
     c.state?.session.plan?.model === 'seedance-v1.5-pro'
       ? 4
-      : 2;
+      : 2);
+  const maximumSeconds = selectedProfile?.maxSeconds ?? 10;
   if (!clip)
     return (
       <div className="creator-inspector-empty">
@@ -1540,13 +1561,19 @@ function ShotInspector({
           <input
             type="number"
             min={minimumSeconds}
-            max={10}
-            step={1}
+            max={maximumSeconds}
+            step={
+              selectedProfile?.allowedSeconds?.length === 2
+                ? selectedProfile.allowedSeconds[1]! - selectedProfile.allowedSeconds[0]!
+                : 1
+            }
             value={clip.seconds}
             onChange={(event) => update('seconds', Number(event.target.value))}
           />
           <small className="creator-fineprint">
-            This model accepts {minimumSeconds} to 10 seconds per clip.
+            {selectedProfile?.allowedSeconds?.length
+              ? `This model accepts ${selectedProfile.allowedSeconds.join(' or ')} seconds per clip.`
+              : `This model accepts ${minimumSeconds} to ${maximumSeconds} seconds per clip.`}
           </small>
         </label>
         <label>
@@ -1685,7 +1712,7 @@ function ScriptInspector({
         {totalSeconds} seconds in this script
         {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.
         {c.capabilities &&
-          ` Each moment needs at least ${c.capabilities.provider === 'fal' ? 4 : 2} seconds for ${c.capabilities.provider === 'fal' ? 'Seedance' : 'Runway'}.`}
+          ' Each shot must fit the selected model’s duration limits, shown in its shot controls.'}
       </p>
       <fieldset disabled={disabled}>
         <label>
@@ -2063,6 +2090,10 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
               playsInline
               preload="metadata"
               aria-label={current ? 'Completed generated film' : 'Earlier generated film'}
+              style={{
+                aspectRatio: `${job.output.width} / ${job.output.height}`,
+                objectFit: 'contain',
+              }}
               onError={() => setPlaybackError(true)}
             />
             {playbackError && (

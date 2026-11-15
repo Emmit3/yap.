@@ -363,8 +363,18 @@ export function useCreatorSession(options: {
     };
   }, [options.id, reloadKey]);
 
-  async function run(label: string, work: (signal: AbortSignal) => Promise<void>) {
-    if (operation.current) return;
+  async function run(
+    label: string,
+    work: (signal: AbortSignal) => Promise<void>,
+    rejectOnFailure = false,
+  ) {
+    if (operation.current) {
+      if (rejectOnFailure)
+        throw new Error(
+          'Wait for the current studio action to finish, then try saving this reference again.',
+        );
+      return;
+    }
     operation.current = true;
     const active = new AbortController();
     controller.current = active;
@@ -373,8 +383,16 @@ export function useCreatorSession(options: {
     setNotice('');
     try {
       await work(active.signal);
+      if (rejectOnFailure && (active.signal.aborted || !mounted.current))
+        throw new DOMException(
+          'Reference saving was canceled. Reload the saved creation before trying again.',
+          'AbortError',
+        );
     } catch (caught) {
-      if (active.signal.aborted || !mounted.current) return;
+      if (active.signal.aborted || !mounted.current) {
+        if (rejectOnFailure) throw caught;
+        return;
+      }
       setError(creatorMessage(caught));
       const quoteIssue =
         caught instanceof CreatorApiError &&
@@ -398,6 +416,7 @@ export function useCreatorSession(options: {
           'The saved state may have changed. Local text is still here. Reload the saved state before retrying.',
         );
       }
+      if (rejectOnFailure) throw caught;
     } finally {
       if (controller.current === active) {
         controller.current = null;
@@ -592,30 +611,42 @@ export function useCreatorSession(options: {
     });
   }
 
-  function selectExternal(reference: CreatorExternalReference) {
-    const previous = state?.session.externalReferences ?? externalReferences;
+  async function saveExternalReference(reference: CreatorExternalReference): Promise<void> {
+    const saved = current.current;
+    const previous = saved?.session.externalReferences ?? externalReferences;
     const next = [...previous.filter((item) => item.id !== reference.id), reference];
     if (next.length > 12) {
-      setError('Choose up to 12 film references. Remove one before adding another.');
-      return;
+      const message = 'Choose up to 12 film references. Remove one before adding another.';
+      setNotice('');
+      setError(message);
+      throw new Error(message);
     }
-    if (!state) {
+    if (!saved) {
       setExternalReferences(next);
       return;
     }
-    const saved = current.current!;
-    void run('Saving selected techniques', async (signal) => {
-      guardDrafts('none');
-      accept(
-        await creatorApi.patch(
-          saved.session.id,
-          { expectedVersion: saved.session.version, externalReferences: next },
-          signal,
-        ),
-        true,
-      );
-      setNotice('Selected techniques saved as creative context. No campaign media was copied.');
-    });
+    await run(
+      'Saving selected techniques',
+      async (signal) => {
+        guardDrafts('none');
+        accept(
+          await creatorApi.patch(
+            saved.session.id,
+            { expectedVersion: saved.session.version, externalReferences: next },
+            signal,
+          ),
+          true,
+        );
+        setNotice('Selected techniques saved as creative context. No campaign media was copied.');
+      },
+      true,
+    );
+  }
+
+  function selectExternal(reference: CreatorExternalReference) {
+    // The reference room has fire-and-forget callbacks; their errors remain in the
+    // controller. Panels needing a confirmation await saveExternalReference instead.
+    void saveExternalReference(reference).catch(() => undefined);
   }
 
   function removeExternal(id: string) {
@@ -1023,6 +1054,7 @@ export function useCreatorSession(options: {
     saveSavedAnswers,
     externalReferences: state?.session.externalReferences ?? externalReferences,
     selectExternal,
+    saveExternalReference,
     removeExternal,
     job,
     watching,

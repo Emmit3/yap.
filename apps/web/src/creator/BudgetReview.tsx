@@ -22,16 +22,18 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
   const expired = Boolean(quote && Date.parse(quote.expiresAt) <= now);
   const consumed = Boolean(quote?.consumedByJobId);
   const available = c.capabilities?.configured && c.capabilities.visionConfigured;
-  const provider = plan.provider ?? (plan.model === 'seedance-v1.5-pro' ? 'fal' : 'runway');
+  const provider = plan.provider ?? (plan.model.startsWith('seedance-') ? 'fal' : 'runway');
   const model = plan.model;
   const overrides = plan.clips.some((clip) => clip.videoProfileId);
   const modelLabel = overrides
     ? 'Profiles selected per shot'
-    : model === 'seedance-v1.5-pro'
-      ? 'Seedance 1.5 Pro (retired)'
-      : model === 'gen4_turbo'
-        ? 'Gen 4 Turbo'
-        : 'Gen 4.5';
+    : model === 'seedance-2.5'
+      ? 'Seedance 2.5'
+      : model === 'seedance-v1.5-pro'
+        ? 'Seedance 1.5 Pro (retired)'
+        : model === 'gen4_turbo'
+          ? 'Gen 4 Turbo'
+          : 'Gen 4.5';
   const minimumSeconds = provider === 'fal' || model === 'seedance-v1.5-pro' ? 4 : 2;
   const invalidDuration = plan.clips.some((clip) => {
     const profile = c.capabilities?.videoProfiles?.find((item) => item.id === clip.videoProfileId);
@@ -120,7 +122,9 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
             {overrides
               ? 'Listed for each shot below'
               : provider === 'fal'
-                ? 'fal.ai (retired model)'
+                ? model === 'seedance-v1.5-pro'
+                  ? 'fal.ai (retired model)'
+                  : 'fal.ai'
                 : 'Runway'}
           </dd>
         </div>

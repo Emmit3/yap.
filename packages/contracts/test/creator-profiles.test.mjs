@@ -68,6 +68,19 @@ test('new native profile, model and generated-frame selections are explicit and 
   assert.equal(creatorPlanSchema.safeParse({ ...plan, model: 'unpriced-model' }).success, false);
 });
 
+test('Fal Seedance 2.5 keeps explicit native portrait and landscape identities', () => {
+  for (const direction of ['portrait', 'landscape']) {
+    const selected = creatorPlanSchema.parse({
+      ...plan,
+      provider: 'fal',
+      model: 'seedance-2.5',
+      clips: [{ ...clip, videoProfileId: `fal-seedance2.5-${direction}` }],
+    });
+    assert.equal(selected.model, 'seedance-2.5');
+    assert.equal(selected.clips[0].videoProfileId, `fal-seedance2.5-${direction}`);
+  }
+});
+
 function job(output) {
   return {
     id: randomUUID(),

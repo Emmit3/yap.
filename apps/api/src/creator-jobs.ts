@@ -227,6 +227,18 @@ export class CreatorJobs {
         'CREATOR_QUOTE_STALE',
         'The plan, reference assets or provider changed. Review a new quote.',
       );
+    // Historical plans omit shot profiles and retain the original global
+    // production preflight error. Explicit shot choices report their own errors.
+    if (
+      !this.options.video.configured &&
+      !this.options.video.profile?.retired &&
+      session.plan!.clips.some((clip) => !clip.videoProfileId)
+    )
+      throw new ApiError(
+        503,
+        'CREATOR_PRODUCTION_NOT_CONFIGURED',
+        'Configure the selected video provider and required frame review before starting paid clips.',
+      );
     for (const clip of session.plan!.clips)
       resolveCreatorVideoProvider(
         clip,

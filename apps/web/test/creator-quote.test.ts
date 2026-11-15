@@ -142,6 +142,36 @@ function overriddenFixture(landscape = false) {
   return value;
 }
 
+test('Fal Seedance 2.5 quotes retain exact per-shot model and native canvas identity', () => {
+  for (const landscape of [false, true]) {
+    const { session, workflow, quote, now } = overriddenFixture(landscape);
+    const profile = landscape ? 'fal-seedance2.5-landscape' : 'fal-seedance2.5-portrait';
+    for (const clip of session.plan!.clips) clip.videoProfileId = profile;
+    quote.provider = 'fal';
+    quote.model = 'seedance-2.5';
+    quote.clips = quote.clips.map((clip) => ({
+      ...clip,
+      provider: 'fal',
+      model: 'seedance-2.5',
+      videoProfileId: profile,
+    }));
+    assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+    assert.equal(
+      quoteIsCurrent({ ...quote, model: 'seedance-v1.5-pro' }, session, workflow, now),
+      false,
+    );
+    assert.equal(
+      quoteIsCurrent(
+        { ...quote, clips: quote.clips.map((clip) => ({ ...clip, model: 'gen4.5' })) },
+        session,
+        workflow,
+        now,
+      ),
+      false,
+    );
+  }
+});
+
 test('per-shot Runway quotes remain current over historical fal plan metadata only for exact saved choices', () => {
   const { session, workflow, quote, now } = overriddenFixture();
   assert.equal(session.plan!.provider, 'fal');

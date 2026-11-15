@@ -20,7 +20,13 @@ import {
   renderBrandMovie,
   wrapProductionText,
   prepareProductionFont,
+  productionFontName,
 } from './creator-brand.js';
+import {
+  clampProductionText,
+  productionTextAss,
+  type ProductionTextLayer,
+} from './creator-production-text.js';
 import {
   productionStore,
   verifyProductionFile,
@@ -291,22 +297,35 @@ export async function createEditService(directory: string) {
           audio = nextAudio;
         }
         const scale = Math.min(document.base.width / 1080, document.base.height / 1920);
-        const fontFile = document.draft.textLayers.length
-          ? await prepareProductionFont(work, document.draft.brand?.font ?? 'sans')
-          : undefined;
-        for (const [index, layer] of document.draft.textLayers.entries()) {
-          const fontSize = Math.max(12, Math.round(layer.fontSize * scale)),
-            textFile = `edit-text-${index}.txt`,
-            nextVideo = `textv${index}`;
+        if (document.draft.textLayers.length) {
+          const font = document.draft.brand?.font ?? 'sans';
+          await prepareProductionFont(work, font);
+          const text: ProductionTextLayer[] = document.draft.textLayers.map((layer) => {
+            const fontSize = Math.max(12, Math.round(layer.fontSize * scale));
+            return clampProductionText(
+              {
+                text: wrapProductionText(layer.text, (document.base.width - 96 * scale) / fontSize),
+                start: layer.start,
+                end: layer.end,
+                x: document.base.width * layer.x,
+                y: document.base.height * layer.y,
+                fontName: productionFontName(font),
+                fontSize,
+                color: layer.color,
+                alignment: 'center',
+                box: { color: '#101010', opacity: 0.75, padding: 8 },
+              },
+              document.base.width,
+              document.base.height,
+            );
+          });
           await writeFile(
-            join(work, textFile),
-            wrapProductionText(layer.text, (document.base.width - 96 * scale) / fontSize),
+            join(work, 'edit-text.ass'),
+            productionTextAss(document.base.width, document.base.height, text),
             'utf8',
           );
-          filters.push(
-            `[${video}]drawtext=fontfile=${fontFile}:textfile=${textFile}:expansion=none:fontsize=${fontSize}:fontcolor=0x${layer.color.slice(1)}:box=1:boxcolor=0x101010@0.75:boxborderw=8:x='max(16,min(w-tw-16,w*${layer.x}-tw/2))':y='max(16,min(h-th-16,h*${layer.y}-th/2))':enable='between(t,${layer.start},${layer.end})'[${nextVideo}]`,
-          );
-          video = nextVideo;
+          filters.push(`[${video}]ass=filename=edit-text.ass:fontsdir=.[textv]`);
+          video = 'textv';
         }
         const baseOutput = document.draft.brand ? join(work, 'unbranded.mp4') : output;
         await runProductionFfmpeg(

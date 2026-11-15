@@ -342,6 +342,42 @@ test('pricebook and quote fingerprint bind prompts, source asset identity, durat
   );
 });
 
+test('Fal Seedance 2.5 quotes enforce the 50 cent native-720p ceiling and bind the new model', () => {
+  const { workflow, session } = creation();
+  const fal = productionProfile({
+    profile: {
+      provider: 'fal',
+      model: 'seedance-2.5',
+      minSeconds: 4,
+      maxSeconds: 10,
+      rateCentsPerSecond: 1,
+    },
+  });
+  assert.equal(fal.rateCentsPerSecond, 50);
+  session.plan!.provider = 'fal';
+  session.plan!.model = 'seedance-2.5';
+  const quote = buildCreatorQuote(session, workflow, fal, []);
+  assert.equal(quote.provider, 'fal');
+  assert.equal(quote.model, 'seedance-2.5');
+  assert.equal(
+    quote.maxCostCents,
+    780,
+    'three 5-second clips each reserve 250 cents video plus 10 cents review',
+  );
+  delete session.plan!.provider;
+  assert.equal(
+    buildCreatorQuote(session, workflow, fal, []).provider,
+    'fal',
+    'omitted provider is inferred from the saved Seedance model',
+  );
+  assert.throws(() => productionProfile({ profile: { ...fal, minSeconds: 2 } }), {
+    code: 'CREATOR_PRICEBOOK_INVALID',
+  });
+  assert.throws(() => productionProfile({ profile: { ...fal, provider: 'runway' } }), {
+    code: 'CREATOR_PRICEBOOK_INVALID',
+  });
+});
+
 test('legacy production receipts with unknown past spend fail closed on first budget migration', async (t) => {
   const { file, repository } = await storage(t);
   const { session } = creation();

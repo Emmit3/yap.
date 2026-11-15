@@ -6,7 +6,7 @@ The creator studio keeps generated storyboard frames, imported reference evidenc
 
 Storyboard generation uses OpenAI's Images API with a fixed profile: `gpt-image-2-2026-04-21`, one medium quality 1024 × 1536 PNG. The prompt is limited to 2000 UTF-8 bytes. A quote binds the prompt hash, purpose, session/workflow versions, model, output settings and optional earlier frame identity. It expires after ten minutes.
 
-The creator reviews the exact prompt and separately approves a maximum of USD 0.10 before generation. The configured adapter receives only the application paid gate's fetch implementation. The gate reserves before transport and settles a known rejection or supported usage; an uncertain submitted outcome retains its conservative hold. No generation, fallback or retry starts automatically.
+The creator reviews the exact prompt and separately approves a maximum of USD 0.10 before generation. The configured adapter receives only the application paid gate's fetch implementation. The gate reserves before transport, releases definite rejections and accounts completed image calls at the approved ceiling. An uncertain submitted outcome retains its conservative hold. No generation, fallback or retry starts automatically.
 
 The app ceiling is conservative accounting, not a provider invoice. The official guide lists medium portrait output for GPT Image 2 at about USD 0.041 before text input. Text input is USD 5 per million tokens and image output is USD 30 per million tokens. The bounded text only prompt and fixed output fit beneath the ten cent reservation with headroom. Pricing was checked on November 15, 2026; changing models, output settings or billing policy requires an explicit price model and gate update.
 

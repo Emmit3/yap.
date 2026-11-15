@@ -425,6 +425,8 @@ function ReferenceAnalysisSession({
                 disabled={busy || !reference.observations.length}
                 onClick={() => {
                   setBusy(true);
+                  setError('');
+                  setNotice('');
                   void onUseReference(reference)
                     .then(() =>
                       setNotice(

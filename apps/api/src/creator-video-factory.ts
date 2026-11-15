@@ -2,11 +2,13 @@ import { ApiError } from './errors.js';
 import {
   creatorVideoProfileIdSchema,
   creatorVideoProfileOptionSchema,
+  creatorVideoModelSchema,
   type CreatorClip,
   type CreatorVideoProfileId,
   type CreatorVideoProfileOption,
 } from '@yap/contracts/creator';
 import { createFalCreatorVideoProvider } from './creator-fal-provider.js';
+import { createSeedance25CreatorVideoProvider } from './creator-fal-seedance25.js';
 import {
   createCreatorVideoProvider,
   type CreatorVideoConfig,
@@ -23,9 +25,13 @@ export function creatorVideoConfigFromEnv(
       'CREATOR_CONFIGURATION',
       'Use fal or runway for CREATOR_VIDEO_PROVIDER.',
     );
+  const model = env.CREATOR_VIDEO_MODEL?.trim();
+  if (model && !creatorVideoModelSchema.safeParse(model).success)
+    throw new ApiError(503, 'CREATOR_CONFIGURATION', 'Use a supported CREATOR_VIDEO_MODEL.');
   return {
     provider,
     apiKey: provider === 'fal' ? env.FAL_KEY : env.RUNWAYML_API_SECRET,
+    ...(model ? { model: creatorVideoModelSchema.parse(model) } : {}),
   };
 }
 
@@ -35,9 +41,13 @@ export function createConfiguredCreatorVideoProvider(
   fetcher: typeof globalThis.fetch = globalThis.fetch,
 ): CreatorVideoProvider {
   const provider = config.provider ?? creatorVideoConfigFromEnv().provider;
-  return provider === 'fal'
-    ? createFalCreatorVideoProvider(config, fetcher)
-    : createCreatorVideoProvider(config, fetcher);
+  if (provider === 'fal') {
+    if (config.model === 'seedance-v1.5-pro') return createFalCreatorVideoProvider(config, fetcher);
+    if (config.model && config.model !== 'seedance-2.5')
+      throw new ApiError(503, 'CREATOR_CONFIGURATION', 'Choose a supported fal video model.');
+    return createSeedance25CreatorVideoProvider(config, fetcher);
+  }
+  return createCreatorVideoProvider(config, fetcher);
 }
 
 export type CreatorVideoProviderRegistry = ReadonlyMap<CreatorVideoProfileId, CreatorVideoProvider>;
@@ -48,19 +58,30 @@ export function createConfiguredCreatorVideoProviders(
   fetcher: typeof globalThis.fetch = globalThis.fetch,
 ): CreatorVideoProviderRegistry {
   const providers = new Map<CreatorVideoProfileId, CreatorVideoProvider>();
-  for (const model of ['gen4.5', 'gen4_turbo'] as const)
+  const config = creatorVideoConfigFromEnv(env);
+  if (config.provider === 'runway') {
+    for (const model of ['gen4.5', 'gen4_turbo'] as const)
+      for (const ratio of ['720:1280', '1280:720'] as const) {
+        const provider = createCreatorVideoProvider(
+          {
+            provider: 'runway',
+            apiKey: env.RUNWAYML_API_SECRET,
+            model,
+            ratio,
+          },
+          fetcher,
+        );
+        providers.set(provider.profile!.id!, provider);
+      }
+  } else {
     for (const ratio of ['720:1280', '1280:720'] as const) {
-      const provider = createCreatorVideoProvider(
-        {
-          provider: 'runway',
-          apiKey: env.RUNWAYML_API_SECRET,
-          model,
-          ratio,
-        },
+      const provider = createSeedance25CreatorVideoProvider(
+        { provider: 'fal', apiKey: env.FAL_KEY, ratio },
         fetcher,
       );
       providers.set(provider.profile!.id!, provider);
     }
+  }
   const retired = createFalCreatorVideoProvider({ provider: 'fal', apiKey: env.FAL_KEY }, fetcher);
   providers.set('fal-seedance-v1.5-portrait', retired);
   return providers;
@@ -88,7 +109,12 @@ export function creatorVideoProfileOptions(
       ...(profile.unavailableReason
         ? { unavailableReason: profile.unavailableReason }
         : !provider.configured
-          ? { unavailableReason: 'Configure RUNWAYML_API_SECRET to use this profile.' }
+          ? {
+              unavailableReason:
+                profile.provider === 'fal'
+                  ? 'Configure FAL_KEY with usable API credits to use this profile.'
+                  : 'Configure RUNWAYML_API_SECRET to use this profile.',
+            }
           : {}),
       rateCentsPerSecond: profile.rateCentsPerSecond,
     });

@@ -13,11 +13,13 @@ function profileIdentity(id: string) {
   const landscape = id.endsWith('landscape');
   return {
     provider: id.startsWith('fal-') ? 'fal' : 'runway',
-    model: id.startsWith('fal-')
-      ? 'seedance-v1.5-pro'
-      : id.startsWith('runway-gen4turbo-')
-        ? 'gen4_turbo'
-        : 'gen4.5',
+    model: id.startsWith('fal-seedance2.5-')
+      ? 'seedance-2.5'
+      : id.startsWith('fal-')
+        ? 'seedance-v1.5-pro'
+        : id.startsWith('runway-gen4turbo-')
+          ? 'gen4_turbo'
+          : 'gen4.5',
     ratio: landscape ? '1280:720' : '720:1280',
     nativeWidth: landscape ? 1280 : 720,
     nativeHeight: landscape ? 720 : 1280,
@@ -61,7 +63,10 @@ export function quoteIsCurrent(
     quote.sessionId !== session.id ||
     quote.planId !== plan.id ||
     quote.model !== (firstProfile?.model ?? plan.model) ||
-    quote.provider !== (firstProfile?.provider ?? plan.provider ?? 'runway') ||
+    quote.provider !==
+      (firstProfile?.provider ??
+        plan.provider ??
+        (plan.model.startsWith('seedance-') ? 'fal' : 'runway')) ||
     quote.ratio !== (plan.outputProfileId === 'landscape-720' ? '1280:720' : plan.ratio) ||
     quote.outputProfileId !== plan.outputProfileId ||
     quote.brandSnapshot?.sha256 !== plan.brandSnapshot?.sha256 ||

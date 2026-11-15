@@ -15,6 +15,11 @@ import {
 } from '@yap/contracts/production';
 import { ApiError } from './errors.js';
 import {
+  productionTextAss,
+  productionTextEmWidth,
+  type ProductionTextLayer,
+} from './creator-production-text.js';
+import {
   productionStore,
   verifyProductionFile,
   runProductionFfmpeg,
@@ -193,6 +198,7 @@ const fonts =
     : process.platform === 'darwin'
       ? { sans: 'Arial', serif: 'Georgia', mono: 'Menlo' }
       : { sans: 'DejaVu Sans', serif: 'DejaVu Serif', mono: 'DejaVu Sans Mono' };
+export const productionFontName = (font: BrandSettings['font']) => fonts[font];
 export async function prepareProductionFont(
   directory: string,
   font: BrandSettings['font'] = 'sans',
@@ -251,19 +257,7 @@ export function subtitleStyle(brand: BrandSnapshot) {
   };
 }
 export function wrapProductionText(text: string, maxEm: number): string {
-  const advance = (value: string) =>
-    [...value].reduce(
-      (sum, character) =>
-        sum +
-        (/\p{Extended_Pictographic}/u.test(character)
-          ? 1.6
-          : /[MW@%&#]/u.test(character)
-            ? 1
-            : /^[\x20-\x7e]$/u.test(character)
-              ? 0.7
-              : 1.2),
-      0,
-    );
+  const advance = productionTextEmWidth;
   const words = text.replace(/\s+/gu, ' ').trim().split(' '),
     lines: string[] = [];
   let line = '';
@@ -313,11 +307,10 @@ export async function renderBrandMovie(input: {
     );
   if (brand.logo && input.logoPath) await verifyProductionFile(input.logoPath, brand.logo);
   await mkdir(directory, { recursive: true });
-  const fontFile = await prepareProductionFont(directory, brand.font);
+  await prepareProductionFont(directory, brand.font);
   const scale = Math.min(metadata.width / 1080, metadata.height / 1920),
     size = (value: number) => Math.max(1, Math.round(value * scale));
-  const ink = `0x${brand.inkColor.slice(1)}`,
-    paper = `0x${brand.paperColor.slice(1)}`,
+  const paper = `0x${brand.paperColor.slice(1)}`,
     accent = `0x${brand.accentColor.slice(1)}`;
   const filters: string[] = [],
     args = ['-protocol_whitelist', 'file,pipe', '-i', resolve(input.input)];
@@ -326,38 +319,64 @@ export async function renderBrandMovie(input: {
     filters.push(`[1:v]scale=${size(144)}:${size(144)}:force_original_aspect_ratio=decrease[logo]`);
   }
   filters.push('[0:v]null[marked]');
-  const draw: string[] = [`drawbox=x=0:y=0:w=iw:h=${size(8)}:color=${accent}:t=fill`];
+  const draw: string[] = [`drawbox=x=0:y=0:w=iw:h=${size(8)}:color=${accent}:t=fill`],
+    text: ProductionTextLayer[] = [],
+    fontName = productionFontName(brand.font),
+    endCardStart = metadata.duration - brand.endCard.seconds;
   if (brand.name) {
-    await writeFile(
-      join(directory, 'brand-name.txt'),
-      wrapProductionText(brand.name, (metadata.width - size(brand.logo ? 352 : 192)) / size(32)),
-      'utf8',
-    );
-    draw.push(
-      `drawtext=fontfile=${fontFile}:textfile=brand-name.txt:expansion=none:fontsize=${size(32)}:fontcolor=${ink}:box=1:boxcolor=${paper}@0.9:boxborderw=${size(12)}:x=${size(brand.logo ? 256 : 96)}:y=${size(104)}`,
-    );
+    text.push({
+      text: wrapProductionText(
+        brand.name,
+        (metadata.width - size(brand.logo ? 352 : 192)) / size(32),
+      ),
+      start: 0,
+      end: brand.endCard.enabled ? endCardStart : metadata.duration,
+      x: size(brand.logo ? 256 : 96),
+      y: size(104),
+      fontName,
+      fontSize: size(32),
+      color: brand.inkColor,
+      alignment: 'top-left',
+      box: { color: brand.paperColor, opacity: 0.9, padding: size(12) },
+    });
   }
   if (brand.endCard.enabled) {
-    await writeFile(
-      join(directory, 'brand-title.txt'),
-      wrapProductionText(brand.endCard.title, (metadata.width - size(192)) / size(48)),
-      'utf8',
-    );
-    await writeFile(
-      join(directory, 'brand-detail.txt'),
-      wrapProductionText(brand.endCard.detail, (metadata.width - size(192)) / size(28)),
-      'utf8',
-    );
-    const when = `gte(t,${(metadata.duration - brand.endCard.seconds).toFixed(3)})`;
+    const when = `gte(t,${endCardStart.toFixed(3)})`;
     draw.push(
       `drawbox=x=0:y=0:w=iw:h=ih:color=${paper}:t=fill:enable='${when}'`,
       `drawbox=x=${size(96)}:y=ih*0.28:w=${size(96)}:h=${size(8)}:color=${accent}:t=fill:enable='${when}'`,
-      `drawtext=fontfile=${fontFile}:textfile=brand-title.txt:expansion=none:fontsize=${size(48)}:fontcolor=${ink}:line_spacing=${size(12)}:x=${size(96)}:y=h*0.34:enable='${when}'`,
     );
+    text.push({
+      text: wrapProductionText(brand.endCard.title, (metadata.width - size(192)) / size(48)),
+      start: endCardStart,
+      end: metadata.duration,
+      x: size(96),
+      y: metadata.height * 0.34,
+      fontName,
+      fontSize: size(48),
+      color: brand.inkColor,
+      alignment: 'top-left',
+    });
     if (brand.endCard.detail)
-      draw.push(
-        `drawtext=fontfile=${fontFile}:textfile=brand-detail.txt:expansion=none:fontsize=${size(28)}:fontcolor=${ink}:line_spacing=${size(8)}:x=${size(96)}:y=h*0.67:enable='${when}'`,
-      );
+      text.push({
+        text: wrapProductionText(brand.endCard.detail, (metadata.width - size(192)) / size(28)),
+        start: endCardStart,
+        end: metadata.duration,
+        x: size(96),
+        y: metadata.height * 0.67,
+        fontName,
+        fontSize: size(28),
+        color: brand.inkColor,
+        alignment: 'top-left',
+      });
+  }
+  if (text.length) {
+    await writeFile(
+      join(directory, 'brand-text.ass'),
+      productionTextAss(metadata.width, metadata.height, text),
+      'utf8',
+    );
+    draw.push('ass=filename=brand-text.ass:fontsdir=.');
   }
   filters.push(`[marked]${draw.join(',')}[${brand.logo ? 'drawn' : 'video'}]`);
   if (brand.logo) filters.push(`[drawn][logo]overlay=${size(80)}:${size(80)}:format=auto[video]`);

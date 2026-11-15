@@ -175,7 +175,7 @@ export function productionProfile(video: object): CreatorProductionProfile {
   );
   if (
     (profile.provider === 'fal' &&
-      (profile.model !== 'seedance-v1.5-pro' || profile.minSeconds < 4)) ||
+      (!['seedance-v1.5-pro', 'seedance-2.5'].includes(profile.model) || profile.minSeconds < 4)) ||
     (profile.provider === 'runway' && !['gen4.5', 'gen4_turbo'].includes(profile.model)) ||
     profile.maxSeconds < profile.minSeconds
   )
@@ -188,7 +188,13 @@ export function productionProfile(video: object): CreatorProductionProfile {
     ...profile,
     rateCentsPerSecond: Math.max(
       profile.rateCentsPerSecond,
-      profile.model === 'gen4_turbo' ? 5 : profile.provider === 'fal' ? 5 : 16,
+      profile.model === 'seedance-2.5'
+        ? 50
+        : profile.model === 'gen4_turbo'
+          ? 5
+          : profile.provider === 'fal'
+            ? 5
+            : 16,
     ),
   };
 }
@@ -274,7 +280,9 @@ export function buildCreatorQuote(
   if (
     !plan ||
     (!plan.clips.every((clip) => clip.videoProfileId) &&
-      (plan.model !== profile.model || (plan.provider ?? 'runway') !== profile.provider))
+      (plan.model !== profile.model ||
+        (plan.provider ?? (plan.model.startsWith('seedance-') ? 'fal' : 'runway')) !==
+          profile.provider))
   )
     throw new ApiError(
       409,

@@ -87,7 +87,12 @@ export const creatorExternalReferenceSchema = z
     verifiedAt: z.iso.datetime().optional(),
   })
   .strict();
-export const creatorVideoModelSchema = z.enum(['gen4.5', 'gen4_turbo', 'seedance-v1.5-pro']);
+export const creatorVideoModelSchema = z.enum([
+  'gen4.5',
+  'gen4_turbo',
+  'seedance-v1.5-pro',
+  'seedance-2.5',
+]);
 export const creatorVideoRatioSchema = z.enum(['720:1280', '1280:720']);
 export const creatorVideoProfileIdSchema = z.enum([
   'runway-gen4.5-portrait',
@@ -95,6 +100,8 @@ export const creatorVideoProfileIdSchema = z.enum([
   'runway-gen4turbo-portrait',
   'runway-gen4turbo-landscape',
   'fal-seedance-v1.5-portrait',
+  'fal-seedance2.5-portrait',
+  'fal-seedance2.5-landscape',
 ]);
 export const creatorOutputProfileIdSchema = z.enum([
   'portrait-720',
