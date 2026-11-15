@@ -31,6 +31,7 @@ import type {
   CreatorSource,
 } from '@yap/contracts/creator';
 import { LoadingState } from '../components';
+import { AgentRunReceipt } from '../AgentRunReceipt';
 import { promoApi } from '../promo/api';
 import { creatorApi } from './api';
 import { fetchCreatorVideo, fetchCreatorSubtitles } from './downloads';
@@ -1220,6 +1221,13 @@ function ResearchPanel({ c, disabled }: { c: CreatorController; disabled: boolea
       )}
       {research && (
         <>
+          {research.execution && (
+            <p className="creator-fineprint">
+              {research.execution.harness === 'deepagents'
+                ? `Research completed with Deep Agents${research.execution.model ? ` · ${research.execution.model}` : ''}.`
+                : 'Research completed with direct public collection.'}
+            </p>
+          )}
           <p className="creator-research-summary">{research.summary}</p>
           {research.coverage && (
             <div className="creator-coverage" aria-label="Source coverage">
@@ -1708,6 +1716,13 @@ function ScriptInspector({
   return (
     <div className="creator-script-inspector">
       <h3>The words behind it.</h3>
+      {c.state?.workflow.script?.provider === 'deepagents' && (
+        <p className="creator-fineprint">
+          Prepared by Deep Agents with delegated drafting and review. Review the words and facts
+          before approval.
+        </p>
+      )}
+      <AgentRunReceipt receipt={c.state?.workflow.script?.agentRun} />
       <p className="creator-fineprint" role="status">
         {totalSeconds} seconds in this script
         {targetSeconds ? ` / ${targetSeconds} seconds requested` : ''}.

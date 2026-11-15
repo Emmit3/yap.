@@ -17,7 +17,7 @@ _This composition uses licensed studies already on the website. It is a workflow
 1. **Research a theme.** Choose an audience and public sources, or import a public evidence sample. Inspect posts, known metrics, sources, and coverage limits.
 2. **Explore content and connections together.** Compare topics and estimated communities in a graph or list. Inspect observed interactions separately from derived content relationships, and save notes to adopt, avoid, or test.
 3. **Choose what informs the script.** Send selected notes and insights as attributed research context. The creator supplies their own facts and photos separately.
-4. **Prepare and edit.** Guided templates or a configured OpenAI adapter propose a script and timed shots. Structural checks identify missing, inconsistent, or stale material.
+4. **Prepare and edit.** Configured Deep Agents plan and delegate script and scene proposals; explicit guided templates support offline drafting. Structural checks identify missing, inconsistent, or stale material.
 5. **Approve and produce.** Explicitly approve the current material and cost quote, then create a photo-based promo or audited generated clips and a downloadable vertical MP4 and caption for manual posting.
 
 The workspace has three primary controls: **Your creations**, **Inspiration**, and **Workspace guide**, plus a separate **New creation** action. In a creation, choose generated video or your photos, then open **View analytics** for public research, agent activity, source evidence, the graph, and reviewed script decisions. Creation and analytics stay mounted together so changing views preserves drafts. Guided and Director share one saved session; return to it from **Your creations** (`#/films`). The old `#/social` link opens analytics inside a creation. Research never approves a script or starts a render.
@@ -38,7 +38,9 @@ The existing photo editor remains available without generation credentials. Gene
 
 [![Architecture: Deep Agents coordinator, ordered specialists, virtual research files, evidence graph, separate creator facts, structural checks, explicit approval, and rendering.](docs/assets/architecture.png)](docs/assets/architecture.svg)
 
-The live agent path uses the **LangChain Deep Agents JavaScript SDK**, not just agent-themed progress labels. A coordinator plans with `todoListMiddleware`, then delegates three dependent tasks in order:
+Configured research and script/scene drafting use the **LangChain Deep Agents JavaScript SDK**. `WORKFLOW_PROVIDER=deepagents` selects delegated drafting; `guided` retains offline templates and `openai` selects direct model drafting. Saved proposals identify their actual provider, and changing the engine does not relabel older records. Refinement and questions use the existing OpenAI adapter.
+
+The research coordinator uses the SDK for actual planning and tool work. It plans with `todoListMiddleware`, then delegates three dependent tasks in order:
 
 | Specialist            | Actual tool work                                                                 | Shared output                                   |
 | --------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -46,7 +48,7 @@ The live agent path uses the **LangChain Deep Agents JavaScript SDK**, not just 
 | `network_analyst`     | Runs deterministic content and observed-network analysis                         | `/research/network.json`                        |
 | `creative_strategist` | Builds attributed strengths, cautions, and creative direction from that analysis | `/research/insights.json`, `/research/brief.md` |
 
-The shared scope is stored in `/research/scope.json`. `StateBackend` provides a shared **virtual filesystem within the run**, without granting access to server files. The specialist names are enforced at runtime. Collection, analysis, and brief building are application tools; the model plans and delegates their use. The workflow uses one bounded collection batch.
+With model and public-source access configured, analytics initially selects Deep Agents while preserving explicit choices. Creator research starts automatically for a new creation. The shared scope is stored in `/research/scope.json`. `StateBackend` provides a shared **virtual filesystem within the run**, without granting access to server files. The specialist names are enforced at runtime. Collection and deterministic network analysis are application tools; the model plans and delegates their use. The creative specialist authors a synthesis grounded in the retrieved sample, and the application validates its cited evidence IDs before retaining it. The workflow uses one bounded collection batch.
 
 The research activity panel shows validated task/tool events, source counts, and five inspectable artifact previews. It excludes private model reasoning. The default shared budget is **24 model calls, 48 tool calls, and 120 seconds**. Cancellation aborts active work; shutdown composes research cancellation with render cleanup. Saved investigations persist independently of temporary run telemetry.
 

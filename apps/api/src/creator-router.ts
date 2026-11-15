@@ -49,6 +49,7 @@ import {
 } from './creator-tools-router.js';
 import { createCreatorVisionAuditor, type CreatorVisionAuditor } from './creator-media.js';
 import { analyzeCreator } from './creator-research.js';
+import { creatorResearchHandoff } from './creator-research-handoff.js';
 import {
   DEFAULT_CREATOR_VOICE,
   createCreatorVoiceover,
@@ -331,6 +332,8 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     onError: options.onError,
   });
   const router = express.Router();
+  const activeRequests = new Set<AbortController>();
+  let closing = false;
   const envelope = async (session: CreatorSession) => ({
     session,
     workflow: await options.workflows.get(session.workflowId),
@@ -341,9 +344,20 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       await repository.withSession(idOf(request), () => handler(request, response));
     };
   router.use((_request, response, next) => {
+    if (closing)
+      return next(
+        new ApiError(
+          503,
+          'API_SHUTTING_DOWN',
+          'The API is shutting down. No drafting request was started.',
+        ),
+      );
     const controller = new AbortController();
+    activeRequests.add(controller);
     response.locals.creatorSignal = controller.signal;
+    response.once('finish', () => activeRequests.delete(controller));
     response.once('close', () => {
+      activeRequests.delete(controller);
       if (!response.writableEnded) controller.abort();
     });
     next();
@@ -548,6 +562,12 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           2000,
         );
       const signal = response.locals.creatorSignal as AbortSignal;
+      const research = creatorResearchHandoff(session, candidate.research);
+      const draftingSource = () => ({
+        ...candidate,
+        ...(research ? { research } : {}),
+        brief: { ...candidate.brief, imageDirection: context },
+      });
       const profile = productionProfile(video);
       let workflowVersion = previous.version;
       const checkCurrent = async () => {
@@ -567,7 +587,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           'CREATOR_PREPARE_REVIEW_REQUIRED',
           `Completed drafting is saved. Reload this creation to review or edit its saved script and scenes, then prepare again. Saved stages will not be drafted again. ${reason}`,
         );
-      if (draftingProvider.name === 'openai' && !budgeted?.provider)
+      if (draftingProvider.name !== 'guided' && !budgeted?.provider)
         throw new ApiError(
           503,
           'CREATOR_BUDGET_CONFIGURATION',
@@ -575,11 +595,11 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         );
       if (!candidate.script) {
         await checkCurrent();
-        const script = await draftingProvider.script(
-          { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
-          signal,
-          { minSeconds: profile.minSeconds, maxSeconds: profile.maxSeconds, maxSegments: 12 },
-        );
+        const script = await draftingProvider.script(draftingSource(), signal, {
+          minSeconds: profile.minSeconds,
+          maxSeconds: profile.maxSeconds,
+          maxSegments: 12,
+        });
         // Preserve a completed paid stage before another provider call or plan validation.
         await checkpoint(setWorkflowScript(candidate, script, { requireApproval: false }));
       }
@@ -591,10 +611,7 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         await checkCurrent();
         let scenes;
         try {
-          scenes = await draftingProvider.scenes(
-            { ...candidate, brief: { ...candidate.brief, imageDirection: context } },
-            signal,
-          );
+          scenes = await draftingProvider.scenes(draftingSource(), signal);
         } catch (error) {
           if (!signal.aborted && error instanceof ApiError && error.code.startsWith('PROVIDER_'))
             throw needsReview('Scene drafting did not complete. The saved script can be reused.');
@@ -966,6 +983,10 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     repository,
     budget: repository as CreatorBudgetLedger,
     jobs,
-    close: () => Promise.all([jobs.close(), tools.close()]).then(() => undefined),
+    close: () => {
+      closing = true;
+      for (const controller of activeRequests) controller.abort();
+      return Promise.all([jobs.close(), tools.close()]).then(() => undefined);
+    },
   };
 }

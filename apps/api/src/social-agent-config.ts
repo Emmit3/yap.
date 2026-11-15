@@ -8,7 +8,7 @@ export interface SocialDeepAgentsConfig {
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): SocialDeepAgentsConfig {
   return {
-    model: env.DEEPAGENTS_MODEL?.trim(),
+    model: (env.DEEPAGENTS_MODEL?.trim() || 'gpt-6-luna').replace(/^openai:/u, ''),
     apiKey: env.DEEPAGENTS_OPENAI_API_KEY?.trim() || env.OPENAI_API_KEY?.trim(),
   };
 }

@@ -73,6 +73,26 @@ const input = {
   limit: 8,
   harness: 'deepagents',
 };
+
+test('capabilities default to agents only when both the model and a public source are configured', async (t) => {
+  for (const [model, source] of [
+    [true, true],
+    [true, false],
+    [false, true],
+  ]) {
+    const f = await fixture(t, {
+      config: source ? { firecrawlApiKey: 'local-test-key' } : {},
+      fetch: async () => {
+        throw new Error('Capabilities must not send a paid request.');
+      },
+      deepAgentsAvailable: () => ({ configured: model!, reason: 'Local readiness fixture.' }),
+    });
+    const capabilities = socialResearchCapabilitiesSchema.parse(
+      await (await f.request('/research-runs/capabilities')).json(),
+    );
+    assert.equal(capabilities.defaultHarness, model && source ? 'deepagents' : 'pipeline');
+  }
+});
 test('no-key example replays actual stages and exposes inspectable public artifacts without calling model or providers', async (t) => {
   let requests = 0;
   let models = 0;

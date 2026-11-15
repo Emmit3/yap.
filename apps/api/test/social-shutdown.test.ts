@@ -167,12 +167,12 @@ test(
       throw error;
     });
     assert.deepEqual(JSON.parse(saved), []);
-    // This response changes to approval validation if workflow.close() was lost from composition.
+    // The closed workflow router must reject before approval or rendering work.
     const renderAfterShutdown = await post(`/workflows/${workflow.id}/renders`, {
       expectedVersion: workflow.version,
     });
     assert.equal(renderAfterShutdown.status, 503);
-    assert.equal((await renderAfterShutdown.json()).error.code, 'RENDER_UNAVAILABLE');
+    assert.equal((await renderAfterShutdown.json()).error.code, 'API_SHUTTING_DOWN');
   },
 );
 

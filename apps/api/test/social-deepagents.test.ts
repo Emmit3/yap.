@@ -63,7 +63,18 @@ let callId = 0;
 function call(name: string, args: Record<string, unknown> = {}): ScriptedCall[] {
   return [{ name, args, id: `scripted-call-${callId++}` }];
 }
-function script(): ScriptedCall[][] {
+const synthesis = {
+  summary: 'Open with a visible coffee comparison, then explain one practical choice.',
+  decisions: [
+    {
+      evidenceIds: ['p1', 'p2'],
+      adopt: 'Demonstrate the difference using the creator’s own coffee footage.',
+      avoid: 'Avoid copying source wording or claiming that engagement proves quality.',
+      test: 'Test a comparison opening against a direct product detail.',
+    },
+  ],
+};
+function script(brief: Record<string, unknown> = synthesis): ScriptedCall[][] {
   return [
     call('write_todos', {
       todos: [
@@ -96,8 +107,9 @@ function script(): ScriptedCall[][] {
       description:
         'Read /research/network.json, build_creative_brief, and inspect /research/brief.md.',
     }),
+    call('read_file', { file_path: '/research/sources.json', offset: 0, limit: 100 }),
     call('read_file', { file_path: '/research/network.json', offset: 0, limit: 100 }),
-    call('build_creative_brief'),
+    call('build_creative_brief', brief),
     call('read_file', { file_path: '/research/brief.md', offset: 0, limit: 100 }),
     [],
     call('write_todos', {
@@ -197,7 +209,7 @@ test('real Deep Agents planning, three delegated specialists, and shared filesys
   );
   assert.deepEqual(returned, data);
   assert.equal(searches, 1);
-  assert.equal(model.calls, 19);
+  assert.equal(model.calls, 20);
   assert.ok(model.fileReads.some((content) => content.includes('Coffee comparisons')));
   assert.ok(model.fileReads.some((content) => content.includes('"totalPosts": 2')));
   assert.ok(model.fileReads.some((content) => content.includes('"observedRelationshipCount": 1')));
@@ -218,9 +230,128 @@ test('real Deep Agents planning, three delegated specialists, and shared filesys
     1,
   );
   assert.ok(artifacts.get('/research/brief.md')!.includes('creator must select'));
+  assert.match(artifacts.get('/research/brief.md')!, /Model-proposed creative framing/u);
+  assert.ok(artifacts.get('/research/brief.md')!.includes(synthesis.summary));
+  assert.ok(artifacts.get('/research/brief.md')!.includes(synthesis.decisions[0]!.adopt));
+  assert.ok(artifacts.get('/research/brief.md')!.includes(data.posts[0]!.url));
   for (const content of artifacts.values()) assert.ok(Buffer.byteLength(content) <= 64 * 1024);
   assert.ok(!JSON.stringify(events).includes('PRIVATE_MODEL_OUTPUT'));
   assert.ok(!JSON.stringify([...artifacts]).includes('PRIVATE_MODEL_OUTPUT'));
+});
+
+test('model synthesis cannot cite invented evidence or omit evidence for a nonempty collected batch', async () => {
+  for (const decisions of [[{ ...synthesis.decisions[0]!, evidenceIds: ['not-collected'] }], []]) {
+    const artifacts = new Map<SocialResearchArtifactPath, string>();
+    await assert.rejects(
+      runSocialDeepAgents(
+        {
+          input,
+          signal: new AbortController().signal,
+          emit: () => undefined,
+          writeArtifact: (path, content) => artifacts.set(path, content),
+          collect: async () => structuredClone(data),
+        },
+        {
+          model: new ScriptedResearchModel(script({ ...synthesis, decisions })),
+          config: { timeoutMs: 10000, maxModelCalls: 24 },
+        },
+      ),
+      (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_SYNTHESIS',
+    );
+    assert.equal(artifacts.has('/research/brief.md'), false);
+    assert.deepEqual(
+      JSON.parse(artifacts.get('/research/sources.json')!).posts.map(
+        (post: { id: string }) => post.id,
+      ),
+      ['p1', 'p2'],
+    );
+  }
+});
+
+test('an empty batch permits an explicit limitation without invented evidence-backed decisions', async () => {
+  const empty = { posts: [], actors: [], relationships: [], warnings: [] },
+    artifacts = new Map<SocialResearchArtifactPath, string>();
+  const returned = await runSocialDeepAgents(
+    {
+      input,
+      signal: new AbortController().signal,
+      emit: () => undefined,
+      writeArtifact: (path, content) => artifacts.set(path, content),
+      collect: async () => empty,
+    },
+    {
+      model: new ScriptedResearchModel(
+        script({ summary: 'No public evidence was collected for this scope.', decisions: [] }),
+      ),
+      config: { timeoutMs: 10000 },
+    },
+  );
+  assert.deepEqual(returned, empty);
+  assert.match(
+    artifacts.get('/research/brief.md')!,
+    /No public evidence was collected; no evidence-backed decisions/u,
+  );
+  assert.equal(artifacts.size, 5);
+});
+
+test('oversized synthesis rejects rather than truncating exact evidence URLs', async () => {
+  const dataset = socialDatasetSchema.parse({
+      ...data,
+      posts: Array.from({ length: 4 }, (_, index) => ({
+        ...data.posts[0]!,
+        id: `p${index + 1}`,
+        url: `https://example.org/${index}/${'x'.repeat(1900)}`,
+      })),
+    }),
+    artifacts = new Map<SocialResearchArtifactPath, string>();
+  const proposed = {
+    summary: synthesis.summary,
+    decisions: Array.from({ length: 4 }, () => ({
+      ...synthesis.decisions[0]!,
+      evidenceIds: dataset.posts.map((post) => post.id),
+    })),
+  };
+  await assert.rejects(
+    runSocialDeepAgents(
+      {
+        input,
+        signal: new AbortController().signal,
+        emit: () => undefined,
+        writeArtifact: (path, content) => artifacts.set(path, content),
+        collect: async () => dataset,
+      },
+      { model: new ScriptedResearchModel(script(proposed)), config: { timeoutMs: 10000 } },
+    ),
+    (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_SYNTHESIS',
+  );
+  assert.equal(artifacts.has('/research/brief.md'), false);
+  assert.deepEqual(
+    JSON.parse(artifacts.get('/research/sources.json')!).posts.map(
+      (post: { url: string }) => post.url,
+    ),
+    dataset.posts.map((post) => post.url),
+  );
+});
+
+test('concurrent conflicting model submissions cannot replace the accepted creative brief', async () => {
+  const steps = script();
+  steps[15] = [
+    ...call('build_creative_brief', synthesis),
+    ...call('build_creative_brief', { ...synthesis, summary: 'A conflicting second version.' }),
+  ];
+  await assert.rejects(
+    runSocialDeepAgents(
+      {
+        input,
+        signal: new AbortController().signal,
+        emit: () => undefined,
+        writeArtifact: () => undefined,
+        collect: async () => structuredClone(data),
+      },
+      { model: new ScriptedResearchModel(steps), config: { timeoutMs: 10000 } },
+    ),
+    (error: unknown) => error instanceof ApiError && error.code === 'SOCIAL_AGENT_SYNTHESIS',
+  );
 });
 
 test('missing configuration and demonstration mode never start live model or provider work', async () => {

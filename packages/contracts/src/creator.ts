@@ -58,6 +58,10 @@ export const creatorResearchSchema = z
     references: z.array(creatorReferenceSchema).max(12),
     questions: z.array(creatorQuestionSchema).max(8),
     limitations: z.array(text(1000)).max(20),
+    execution: z
+      .object({ harness: z.enum(['pipeline', 'deepagents']), model: text(120).optional() })
+      .strict()
+      .optional(),
     coverage: z
       .array(
         z

@@ -7,7 +7,24 @@ const timestamp = z.iso.datetime();
 const version = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 
 export const workflowStageSchema = z.enum(['brief', 'script', 'scenes']);
-export const workflowProviderSchema = z.enum(['guided', 'openai']);
+export const workflowProviderSchema = z.enum(['guided', 'openai', 'deepagents']);
+/** Original generation receipt; subsequent creator edits still require creator review. */
+export const workflowAgentRunSchema = z
+  .object({
+    harness: z.literal('deepagents'),
+    model: z.string().trim().min(1).max(120),
+    contextSha256: z.string().regex(/^[a-f0-9]{64}$/),
+    modelCalls: z.number().int().min(1).max(16),
+    toolCalls: z.number().int().min(1).max(32),
+    specialists: z
+      .array(z.enum(['script_writer', 'script_reviewer', 'scene_director', 'scene_reviewer']))
+      .length(2),
+    researchEvidenceIds: z.array(z.string().trim().min(1).max(300)).max(100),
+    researchContext: socialHandoffSchema.optional(),
+    researchNotes: z.string().trim().max(2000),
+    reviewSummary: z.string().trim().min(1).max(2000),
+  })
+  .strict();
 export const workflowQuestionFieldSchema = z.enum([
   'productName',
   'productDescription',
@@ -94,6 +111,7 @@ export const workflowScriptSchema = z
     segments: z.array(workflowScriptSegmentSchema).min(1).max(12),
     caption: z.string().max(3000),
     provider: workflowProviderSchema,
+    agentRun: workflowAgentRunSchema.optional(),
     createdAt: timestamp,
   })
   .strict();
@@ -115,6 +133,7 @@ export const workflowScenesSchema = z
     sourceScriptId: uuid,
     scenes: z.array(workflowSceneSchema).min(1).max(24),
     provider: workflowProviderSchema,
+    agentRun: workflowAgentRunSchema.optional(),
     createdAt: timestamp,
   })
   .strict();

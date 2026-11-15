@@ -21,6 +21,7 @@ import {
 import type { RenderJob } from '@yap/contracts/render';
 import type { SocialHandoff } from '@yap/contracts/social';
 import { ErrorNotice, LoadingState, PageHeading, platformNames, toneNames } from '../components';
+import { AgentRunReceipt } from '../AgentRunReceipt';
 import {
   promoApi,
   PromoApiError,
@@ -1342,14 +1343,17 @@ export function PromoWorkspace({
               <div>
                 <h2>Give the idea its shape.</h2>
                 <p>
-                  {workflow.script?.provider === 'openai'
-                    ? 'Model assisted proposal. Your review is the final check.'
-                    : workflow.script?.provider === 'guided'
-                      ? 'Guided proposal using structured templates and your supplied facts.'
-                      : 'Prepare editable copy and a scene plan from your saved brief and photos.'}
+                  {workflow.script?.provider === 'deepagents'
+                    ? 'Deep Agents proposal with delegated drafting and review. Your review is the final check.'
+                    : workflow.script?.provider === 'openai'
+                      ? 'Model assisted proposal. Your review is the final check.'
+                      : workflow.script?.provider === 'guided'
+                        ? 'Guided proposal using structured templates and your supplied facts.'
+                        : 'Prepare editable copy and a scene plan from your saved brief and photos.'}
                 </p>
               </div>
             </div>
+            <AgentRunReceipt receipt={workflow.script?.agentRun} />
             <div className="promo-actions">
               <button
                 className="button button-primary"

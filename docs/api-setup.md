@@ -1,15 +1,15 @@
 # Connecting the creator APIs
 
-Use **fal Seedance 2.5** for new video generation, with **OpenAI gpt-6-luna** for required sampled-frame review. Firecrawl adds optional live public research. The current video path uses fal only. [Seedance 1.5 Pro was retired on November 11, 2026](https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video); its historical Yap profile remains unavailable. No provider error automatically selects a replacement or retries a paid submission.
+Use **fal Seedance 2.5** for new video generation, with **OpenAI gpt-6-luna** for required sampled-frame review. LangChain Deep Agents coordinates configured research and delegates script/scene drafting. Firecrawl supplies live public discovery. The current video path uses fal only. [Seedance 1.5 Pro was retired on November 11, 2026](https://fal.ai/models/fal-ai/bytedance/seedance/v1.5/pro/image-to-video); its historical Yap profile remains unavailable. No provider error automatically selects a replacement or retries a paid submission.
 
 ## Accounts and settings
 
-| Service                                               | What it enables                                                                                                   | Server setting                                                               |
-| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| [fal Seedance 2.5](https://fal.ai/seedance-2.5)       | Text-to-video or image-to-video clips, with portrait/landscape 720p profiles                                      | `CREATOR_VIDEO_PROVIDER=fal`, `CREATOR_VIDEO_MODEL=seedance-2.5`, `FAL_KEY`  |
-| [OpenAI API](https://developers.openai.com/api/docs/) | Required frame review; optional script interpretation, narration, storyboard frames and reference-sample analysis | `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna` for the bounded text/vision path |
-| [Firecrawl](https://www.firecrawl.dev/)               | Optional public cinematography and indexed X/TikTok/Instagram discovery                                           | `FIRECRAWL_API_KEY`                                                          |
-| LangChain Deep Agents                                 | Optional SDK evidence review using the configured OpenAI account                                                  | `DEEPAGENTS_MODEL=gpt-6-luna`; no separate LangChain key                     |
+| Service                                               | What it enables                                                                                            | Server setting                                                                           |
+| ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| [fal Seedance 2.5](https://fal.ai/seedance-2.5)       | Text-to-video or image-to-video clips, with portrait/landscape 720p profiles                               | `CREATOR_VIDEO_PROVIDER=fal`, `CREATOR_VIDEO_MODEL=seedance-2.5`, `FAL_KEY`              |
+| [OpenAI API](https://developers.openai.com/api/docs/) | Model access for Deep Agents, text/photo interpretation, required frame review and optional media analysis | `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna` for the bounded text/vision path             |
+| [Firecrawl](https://www.firecrawl.dev/)               | Optional public cinematography and indexed X/TikTok/Instagram discovery                                    | `FIRECRAWL_API_KEY`                                                                      |
+| LangChain Deep Agents                                 | Real SDK planning, public-evidence research and delegated script/scene proposals                           | `WORKFLOW_PROVIDER=deepagents`, `DEEPAGENTS_MODEL=gpt-6-luna`; no separate LangChain key |
 
 Use user-owned API keys with usable model access and credits. A ChatGPT subscription, connected chat plugin or Higgsfield unlimited website plan does not establish fal/OpenAI API access for this server. Yap has no Higgsfield video adapter. No X, Meta, AWS or Higgsfield account is required for this setup. Runway settings are historical; current active video profiles use fal.
 
@@ -18,7 +18,7 @@ Use user-owned API keys with usable model access and credits. A ChatGPT subscrip
 1. Copy [the root `.env.example`](../.env.example) to an ignored root `.env` or `apps/api/.env` if neither already exists. Preserve existing private settings.
 2. API commands load root `.env` first, then `apps/api/.env`; existing process environment values take precedence. Keys belong only in these ignored server files or the API process environment. Never use `VITE_` variables for secrets, commit keys or paste them into public chat.
 3. Select `fal` and `seedance-2.5` explicitly as below; they are also the defaults when omitted. The active model is Seedance 2.5, not the retired 1.5 model. Old explicit retired profiles must be changed and requoted before generation.
-4. Restart after configuration changes. Run `npm ci` and `npm run dev` from the repository root for the local app at `http://127.0.0.1:5173`. Keep `WORKFLOW_PROVIDER=guided` unless you intend to enable configured model-driven drafting.
+4. Restart after configuration changes. Run `npm ci` and `npm run dev` from the repository root for the local app at `http://127.0.0.1:5173`. Use `WORKFLOW_PROVIDER=deepagents` for the real SDK drafting path. Select `guided` explicitly for offline templates, or `openai` for direct model drafting.
 
 ```dotenv
 CREATOR_VIDEO_PROVIDER=fal
@@ -27,16 +27,16 @@ FAL_KEY=
 OPENAI_API_KEY=
 OPENAI_MODEL=gpt-6-luna
 FIRECRAWL_API_KEY=
-DEEPAGENTS_MODEL=
+DEEPAGENTS_MODEL=gpt-6-luna
 CREATOR_BUDGET_LIMIT_USD=30.00
-WORKFLOW_PROVIDER=guided
+WORKFLOW_PROVIDER=deepagents
 ```
 
-Set `DEEPAGENTS_MODEL=gpt-6-luna` to enable the research harness. `DEEPAGENTS_OPENAI_API_KEY` can override its shared OpenAI key. Direct X/Grok calls remain outside this budget profile.
+The model defaults to `gpt-6-luna`; `openai:gpt-6-luna` is normalized to the same bounded model. `DEEPAGENTS_OPENAI_API_KEY` can override the shared `OPENAI_API_KEY` for agent calls. With model and public-source access configured, analytics initially selects Deep Agents; an explicit engine choice survives refreshes. New creator sessions start their configured research automatically. The real SDK also prepares script and scene proposals through `WORKFLOW_PROVIDER=deepagents`; ordinary refinement and questions use the existing OpenAI adapter. Direct X/Grok calls remain outside this budget profile.
 
 After starting the current API, run `npm run check:connections`. For another port use `npm run check:connections -- --url=http://127.0.0.1:3002 --json`. The command makes readiness GETs only. `/api/creator/capabilities` lists configuration and per-shot video profiles; `/api/social/providers` and `/api/social/research-runs/capabilities` report source/harness settings. Presence does not prove authentication, entitlement, balance or output quality. `/api/creator/budget` reports durable app accounting.
 
-Without provider keys, guided preparation, the photo renderer, the [Mori Drinks demo seed](demo-presenter.md), workspace brand settings, free edits of an existing authorized film, supplied reference imports and labeled synthetic research remain available. Missing live providers do not become fabricated footage or research.
+Without provider keys, select `WORKFLOW_PROVIDER=guided` for offline preparation. The photo renderer, the [Mori Drinks demo seed](demo-presenter.md), workspace brand settings, free edits of an existing authorized film, supplied reference imports and labeled synthetic research remain available. Missing live providers do not become fabricated footage or research.
 
 ## Shot profiles and final output
 
@@ -52,7 +52,7 @@ The shared app cap defaults to **USD 30** and can be lowered with `CREATOR_BUDGE
 
 Before producing video, review the exact current quote and explicitly approve its plan and cost. Quotes expire after ten minutes. Manual retries require another quote/approval and remain limited to two attempts per clip for the same plan. Reapproving an unchanged plan does not renew attempts. Passed clips can be reused only after integrity verification.
 
-Optional narration reserves USD 0.10 per approved spoken segment. Bundled music and subtitle rendering add no provider charge. Ordinary bounded OpenAI text/vision calls reserve USD 0.50 each; known returned usage can settle an estimate, while uncertain outcomes retain their hold. Research/search dispatches have their own bounded reservations. Quote-reserved clip audits use their existing per-clip allowance.
+Optional narration reserves USD 0.10 per approved spoken segment. Bundled music and subtitle rendering add no provider charge. Ordinary bounded OpenAI text/vision calls reserve USD 0.50 each; known returned usage can settle an estimate, while uncertain outcomes retain their hold. Every Deep Agents model/tool dispatch uses the shared bounded spending gate; SDK planning is not free and does not bypass the app cap. Research/search dispatches have their own bounded reservations. Quote-reserved clip audits use their existing per-clip allowance.
 
 Storyboard generation has a **separate USD 0.10 quote and approval** for one medium 1024 × 1536 PNG using the app's pinned `gpt-image-2-2026-04-21` profile. The [OpenAI image guide](https://developers.openai.com/api/docs/guides/image-generation) lists GPT Image 2 medium portrait output at about USD 0.041 before text input; the app bounds prompts and keeps headroom in its ceiling. Selecting an earlier frame records lineage, not image-conditioned editing. ChatGPT's built-in image tool and subscription billing are separate.
 

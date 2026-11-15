@@ -6,7 +6,7 @@ flowchart LR
   Research[Public social research] --> Context[Attributed creative context]
   Context --> API
   API --> Engine[Refinement and verification]
-  Engine --> Provider[Guided or OpenAI adapter]
+  Engine --> Provider[Deep Agents drafting or explicit guided/OpenAI adapter]
   Engine --> Review[Creator review and approval]
   Review --> Queue[Durable render receipts and bounded queue]
   Queue --> Renderer[Sharp and FFmpeg]
@@ -38,7 +38,11 @@ The initial storage adapter uses an atomic JSON file and serialized mutations in
 
 ## Generation boundary
 
-The workflow provider has two adapters: guided templates and OpenAI Responses with strict structured output and supplied image inputs. The adapter proposes content; it cannot approve it. Provider secrets stay on the backend. Requests and responses are bounded, model refusals and timeouts have explicit errors, and disconnected requests cancel provider work. Tests use injected fetch and do not call a live model.
+The workflow provider defaults to `WORKFLOW_PROVIDER=deepagents`: actual LangChain Deep Agents script and scene drafting. A coordinator delegates a writer/director, then a separate reviewer that must read the saved draft. Each operation permits at most 16 model calls and 32 tool calls, with a default 90-second deadline. Strict tools validate timing, source IDs and creator asset ownership; protected canonical artifacts retain the source, draft and review. Agent review does not grant creator approval.
+
+Explicit `guided` mode uses offline templates without a key. The direct `openai` Responses adapter remains available for strict structured output and supplied image inputs; Deep Agents also reuses it for refinement and queries. SDK script/scene specialists use saved creator descriptions and attributed research, not claimed image observations. Provider secrets stay on the backend. Requests and responses are bounded, provider failures have explicit errors, and disconnected requests cancel provider work. Tests exercise real SDK graphs with deterministic models and mocked transport.
+
+Original generated script/scene artifacts retain server-owned `agentRun` receipts with model, source-context hash, actual call counts, specialists, cited research decisions and review summary. Optional `researchContext` snapshots preserve the exact drafting handoff and its source IDs/URLs while leaving the creator brief and existing analytics selection distinct. Later research changes do not erase that original provenance.
 
 The main product path uses `/prepare` to propose both script and scenes, followed by one explicit `/approve-all`. Detailed stage generation and approval endpoints support closer review. Structural verification checks completeness, duration totals, segment coverage, current source revisions, and valid photo references. Review warnings identify defaults, user supplied claims, and uncertain factual content. Passing structural checks is not factual verification or automatic creator approval.
 
@@ -46,9 +50,11 @@ The main product path uses `/prepare` to propose both script and scenes, followe
 
 `/api/social` owns public collection/import, deterministic content and observed-network analysis, notes, queries, and cited handoffs through `@yap/contracts/social`. Investigations persist in a separate atomic JSON repository. Pollable research runs hold temporary activity and artifact previews: two searches can be active across legacy collection requests and runs, at most 50 runs are retained, and terminal runs expire after 30 minutes. Each run caps activity at 200 events and each artifact at 64 KiB, with a default 120-second deadline before the final atomic save.
 
-Execution modes describe actual work. `demo_replay` uses synthetic evidence and labeled simulated activity without external calls. `pipeline` uses configured public-data providers and deterministic analysis. `deepagents` adds real Deep Agents planning, delegation, tools, and shared virtual files; its SDK loads only when selected for live execution. Failed live providers do not silently become replay data. Model and provider credentials remain on the backend.
+Execution modes describe actual work. `demo_replay` uses synthetic evidence and labeled simulated activity without external calls. `pipeline` uses configured public-data providers and deterministic analysis. `deepagents` adds real planning, delegation, shared virtual files and model-authored creative synthesis. Model access defaults to `gpt-6-luna` and uses `DEEPAGENTS_OPENAI_API_KEY` or `OPENAI_API_KEY`; credential presence does not prove live access. SDK modules load only for their selected operations. Failed configured agent runs do not silently become pipeline success or replay data.
 
 The Deep Agents coordinator may delegate only to `source_researcher`, `network_analyst`, and `creative_strategist`. All share one cached collection batch, deadline, and model/tool-call budgets (24 model calls by default and 48 tool calls). A run-local `StateBackend` provides virtual files rather than access to the server filesystem or durable cross-session memory. The HTTP boundary exposes only five allowlisted artifact previews and validated public activity, excluding raw model state, prompts, and private reasoning.
+
+Source, network and baseline insight artifacts remain deterministic. The creative specialist submits its own bounded summary and adopt/avoid/test decisions, citing only IDs in the collected evidence. The canonical brief places this attributed model synthesis before the baseline. Unknown IDs, unsupported empty decisions, oversized briefs and conflicting submissions fail; an empty evidence batch supports an explicit limitation. Creator research accepts validated public GitHub evidence as well as Firecrawl results, and its optional `execution` metadata reports completed SDK or pipeline work. These proposals remain creative context, not product facts or factual certification.
 
 Shutdown rejects new searches, aborts legacy collections and pollable runs, and waits for tracked completion alongside render cleanup. Cancellation before the commit boundary prevents persistence. Once the final atomic save starts, cancellation becomes unavailable and shutdown waits for its actual outcome.
 
