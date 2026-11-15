@@ -2,6 +2,8 @@
 
 Source review on November 14, 2026, in the creator budget integration worktree. This is a control and state audit of `apps/web/src` and the public showcase, using the existing product brief and Impeccable audit/product guidance. No browser, screenshot, viewport, live provider, or assistive technology testing was performed. Visual contrast, clipping, actual target sizes and rendered focus order remain unverified; a visual health score would imply checks that were not performed.
 
+Follow-up on November 15, 2026: the new script project form (`#/new`) now uses actionable field errors and focuses its first invalid input after submission. Actual Chrome checks at 1365×900 and 390×844 verified empty submission, then successive correction of the project name and idea, with preserved values and valid error-description links. These checks do not establish assistive-technology or live-provider coverage for the other inventory items.
+
 The main task remains: supply an idea and photos, refine a proposal, explicitly review production cost, then download a real film and caption. Decorative artwork and progress labels do not need click handlers. Controls that claim to save, share, approve or copy must complete that action or offer a usable recovery.
 
 ## Release reconciliation
