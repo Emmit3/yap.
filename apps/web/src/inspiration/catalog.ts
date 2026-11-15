@@ -162,6 +162,7 @@ export function productInspiration(
   return films.map((film) => {
     const evidenceUrls = film.videoEvidence.match(/https:\/\/[^\s<>"']+/g) ?? [];
     const candidates = [
+      film.previewVerifiedAt ? film.previewUrl : undefined,
       film.watchUrl,
       ...evidenceUrls.slice(0, 8).map((url) => url.replace(/[),.;\]]+$/, '')),
     ];

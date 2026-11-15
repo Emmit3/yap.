@@ -1,21 +1,12 @@
-import {
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type MouseEvent,
-  type PointerEvent,
-} from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   BookmarkSimple,
   Check,
-  FilmSlate,
   MagnifyingGlass,
+  Pause,
   Play,
   X,
 } from '@phosphor-icons/react';
@@ -26,195 +17,52 @@ import {
   type InspirationProduct,
   type ProductCategoryId,
 } from './catalog';
+import { FilmPreview } from './FilmPreview';
+import { useVisibleClipPreviews } from './preview-playback';
 import './gallery.css';
 
 export interface ProductGalleryProps {
   onUseReferences(ids: string[]): void;
-  /** The parent keeps this room mounted. Hidden rooms never retain a media player. */
   active: boolean;
 }
-
 const MAX_SHORTLIST = 12;
-const SHORTLIST_STORAGE_KEY = 'yap.film-reference-shortlist.v1';
-
-function motionBehavior(): ScrollBehavior {
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
-}
-
-/** Mouse dragging supplements native touch scrolling, buttons, and keyboard navigation. */
-function usePanScroll(refreshKey: string) {
-  const ref = useRef<HTMLDivElement>(null);
-  const gesture = useRef<{ pointer: number; x: number; y: number; scroll: number; moved: boolean }>(
-    null,
-  );
-  const suppressClick = useRef(false);
-  const resetClick = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [edges, setEdges] = useState({ start: true, end: true });
-
-  function updateEdges() {
-    const node = ref.current;
-    if (!node) return;
-    const next = {
-      start: node.scrollLeft <= 2,
-      end: node.scrollLeft + node.clientWidth >= node.scrollWidth - 2,
-    };
-    setEdges((previous) =>
-      previous.start === next.start && previous.end === next.end ? previous : next,
-    );
-  }
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    updateEdges();
-    const resize = new ResizeObserver(updateEdges);
-    resize.observe(node);
-    return () => resize.disconnect();
-  }, [refreshKey]);
-  useEffect(
-    () => () => {
-      if (resetClick.current) clearTimeout(resetClick.current);
-    },
-    [],
-  );
-
-  function endDrag(event: PointerEvent<HTMLDivElement>) {
-    const current = gesture.current;
-    if (!current || current.pointer !== event.pointerId) return;
-    if (current.moved) {
-      suppressClick.current = true;
-      if (resetClick.current) clearTimeout(resetClick.current);
-      resetClick.current = setTimeout(() => {
-        suppressClick.current = false;
-        resetClick.current = null;
-      }, 0);
-    }
-    gesture.current = null;
-    setDragging(false);
-    if (event.currentTarget.hasPointerCapture(event.pointerId))
-      event.currentTarget.releasePointerCapture(event.pointerId);
-  }
-
-  return {
-    ref,
-    edges,
-    move(direction: -1 | 1) {
-      const node = ref.current;
-      if (node)
-        node.scrollBy({ left: direction * node.clientWidth * 0.85, behavior: motionBehavior() });
-    },
-    handlers: {
-      'data-dragging': dragging || undefined,
-      onScroll: updateEdges,
-      onPointerDown(event: PointerEvent<HTMLDivElement>) {
-        if (event.pointerType !== 'mouse' || event.button !== 0) return;
-        const target = event.target;
-        if (
-          target instanceof Element &&
-          target.closest('button, a, input, textarea, select, video, iframe, summary')
-        )
-          return;
-        gesture.current = {
-          pointer: event.pointerId,
-          x: event.clientX,
-          y: event.clientY,
-          scroll: event.currentTarget.scrollLeft,
-          moved: false,
-        };
-      },
-      onPointerMove(event: PointerEvent<HTMLDivElement>) {
-        const current = gesture.current;
-        if (!current || current.pointer !== event.pointerId) return;
-        if (event.buttons === 0) {
-          endDrag(event);
-          return;
-        }
-        const delta = event.clientX - current.x;
-        if (!current.moved) {
-          if (Math.abs(delta) < 6 || Math.abs(delta) <= Math.abs(event.clientY - current.y)) return;
-          current.moved = true;
-          setDragging(true);
-          event.currentTarget.setPointerCapture(event.pointerId);
-        }
-        event.preventDefault();
-        event.currentTarget.scrollLeft = current.scroll - delta;
-      },
-      onPointerUp: endDrag,
-      onPointerCancel: endDrag,
-      onPointerLeave(event: PointerEvent<HTMLDivElement>) {
-        if (gesture.current && !gesture.current.moved) endDrag(event);
-      },
-      onLostPointerCapture(event: PointerEvent<HTMLDivElement>) {
-        if (gesture.current?.pointer === event.pointerId) {
-          gesture.current = null;
-          setDragging(false);
-        }
-      },
-      onClickCapture(event: MouseEvent<HTMLDivElement>) {
-        if (suppressClick.current) {
-          event.preventDefault();
-          event.stopPropagation();
-        }
-      },
-      onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-        if (event.target !== event.currentTarget) return;
-        const node = event.currentTarget;
-        if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-          event.preventDefault();
-          node.scrollBy({
-            left: (event.key === 'ArrowLeft' ? -1 : 1) * node.clientWidth * 0.85,
-            behavior: motionBehavior(),
-          });
-        } else if (event.key === 'Home' || event.key === 'End') {
-          event.preventDefault();
-          node.scrollTo({
-            left: event.key === 'Home' ? 0 : node.scrollWidth,
-            behavior: motionBehavior(),
-          });
-        }
-      },
-    },
-  };
-}
+const STORAGE_KEY = 'yap.film-reference-shortlist.v1';
 
 export function ProductGallery({ onUseReferences, active }: ProductGalleryProps) {
   const [products, setProducts] = useState<InspirationProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
-  const [reload, setReload] = useState(0);
+  const [revision, setRevision] = useState(0);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<ProductCategoryId>('all');
   const [shortlist, setShortlist] = useState<string[]>([]);
-  const shortlistInitialized = useRef(false);
-  const [storageNotice, setStorageNotice] = useState('');
-  const [onlyShortlist, setOnlyShortlist] = useState(false);
-  const [playingId, setPlayingId] = useState('');
-  const [failedPlayer, setFailedPlayer] = useState('');
-  const [selectionError, setSelectionError] = useState('');
-  const [status, setStatus] = useState('');
-  const galleryId = useId();
-  const listId = `${galleryId}-films`;
-  const helpId = `${galleryId}-browse-help`;
-  const visibleProducts = useMemo(() => {
-    const filtered = filterProducts(products, { query, category });
-    return onlyShortlist
-      ? filtered.filter((product) => shortlist.includes(product.film.id))
-      : filtered;
-  }, [products, query, category, onlyShortlist, shortlist]);
-  const rail = usePanScroll(`${active}-${loading}-${visibleProducts.length}`);
-  const categories = usePanScroll(String(active));
-  const categoryCounts = useMemo(() => {
-    const counts = new Map<ProductCategoryId, number>();
-    counts.set('all', products.length);
-    for (const product of products)
-      counts.set(product.category, (counts.get(product.category) ?? 0) + 1);
-    return counts;
-  }, [products]);
-  const selectedProducts = useMemo(
-    () => shortlist.map((id) => products.find((product) => product.film.id === id)).filter(Boolean),
-    [products, shortlist],
+  const [onlySaved, setOnlySaved] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [paused, setPaused] = useState(false);
+  const [notice, setNotice] = useState('');
+  const [error, setError] = useState('');
+  const restored = useRef(false);
+  const opener = useRef<HTMLElement | null>(null);
+  const scrollPosition = useRef(0);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const discovery = useRef<HTMLDetailsElement>(null);
+  const id = useId();
+  const selected = products.find((product) => product.film.id === selectedId);
+  const films = useMemo(
+    () =>
+      filterProducts(products, { query, category })
+        .filter((product) => product.clip && (!onlySaved || shortlist.includes(product.film.id)))
+        .sort((a, b) => Number(Boolean(b.clip?.poster)) - Number(Boolean(a.clip?.poster))),
+    [products, query, category, onlySaved, shortlist],
   );
+  const previewIds = useMemo(() => films.map((product) => product.film.id), [films]);
+  const previews = useVisibleClipPreviews({
+    ids: previewIds,
+    active,
+    suspended: Boolean(selected),
+    paused,
+    maxActive: 6,
+  });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -224,533 +72,349 @@ export function ProductGallery({ onUseReferences, active }: ProductGalleryProps)
       .then((items) => {
         if (controller.signal.aborted) return;
         setProducts(items);
-        const knownIds = new Set(items.map((product) => product.film.id));
-        if (!shortlistInitialized.current) {
-          let restored: string[] = [];
-          let stored: string | null = null;
+        if (!restored.current) {
+          restored.current = true;
           try {
-            stored = window.localStorage.getItem(SHORTLIST_STORAGE_KEY);
-          } catch {
-            setStorageNotice(
-              'Browser storage is unavailable. Shortlist changes will stay here for this visit.',
-            );
-          }
-          if (stored !== null) {
-            try {
-              const value: unknown = JSON.parse(stored);
-              if (!Array.isArray(value)) throw new Error('Unreadable shortlist');
-              restored = [
+            const raw = localStorage.getItem(STORAGE_KEY);
+            if (raw) {
+              const parsed: unknown = JSON.parse(raw);
+              if (!Array.isArray(parsed)) throw new Error('Invalid saved list');
+              const known = new Set(items.map((product) => product.film.id));
+              setShortlist([
                 ...new Set(
-                  value.filter((id): id is string => typeof id === 'string' && knownIds.has(id)),
+                  parsed.filter(
+                    (value): value is string => typeof value === 'string' && known.has(value),
+                  ),
                 ),
-              ];
-            } catch {
-              setStorageNotice(
-                'Your saved shortlist could not be read. Saving a new selection will replace it.',
-              );
+              ]);
             }
+          } catch {
+            setNotice('Saved films are unavailable in this browser.');
           }
-          // Restoration never writes. In particular, the initial empty state must not erase
-          // an older shortlist, and legacy lists over the creation limit remain intact.
-          shortlistInitialized.current = true;
-          setShortlist(restored);
-        } else {
-          setShortlist((previous) => previous.filter((id) => knownIds.has(id)));
         }
       })
-      .catch((caught: unknown) => {
+      .catch((cause: unknown) => {
         if (!controller.signal.aborted)
-          setLoadError(
-            caught instanceof Error ? caught.message : 'The product films could not be loaded.',
-          );
+          setLoadError(cause instanceof Error ? cause.message : 'The films could not load.');
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [reload]);
-
+  }, [revision]);
   useEffect(() => {
-    if (!active || (playingId && !visibleProducts.some((item) => item.film.id === playingId))) {
-      setPlayingId('');
-      setFailedPlayer('');
+    if (selected && active) {
+      const frame = requestAnimationFrame(() => heading.current?.focus({ preventScroll: true }));
+      return () => cancelAnimationFrame(frame);
     }
-  }, [active, playingId, visibleProducts]);
+  }, [selectedId, active]);
   useEffect(() => {
-    if (!active || !playingId) return;
-    const frame = requestAnimationFrame(() =>
-      document.getElementById(`${galleryId}-player-${playingId}`)?.focus(),
-    );
-    return () => cancelAnimationFrame(frame);
-  }, [active, playingId, galleryId]);
+    const closeForNavigation = () => setSelectedId(null);
+    window.addEventListener('hashchange', closeForNavigation);
+    return () => window.removeEventListener('hashchange', closeForNavigation);
+  }, []);
 
-  function resetBrowse() {
-    setQuery('');
-    setCategory('all');
-    setOnlyShortlist(false);
-    rail.ref.current?.scrollTo({ left: 0 });
+  function open(product: InspirationProduct) {
+    opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    scrollPosition.current = window.scrollY;
+    discovery.current?.removeAttribute('open');
+    setError('');
+    setSelectedId(product.film.id);
+    window.scrollTo({ top: 0 });
   }
-  function saveShortlist(next: string[]) {
-    if (!shortlistInitialized.current) return;
+  function close() {
+    setSelectedId(null);
+    setError('');
+    requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollPosition.current });
+      if (opener.current?.isConnected) opener.current.focus({ preventScroll: true });
+    });
+  }
+  function saveList(next: string[]) {
     setShortlist(next);
     try {
-      window.localStorage.setItem(SHORTLIST_STORAGE_KEY, JSON.stringify(next));
-      setStorageNotice('');
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      setNotice('');
     } catch {
-      setStorageNotice(
-        'Browser storage is unavailable. Shortlist changes will stay here for this visit.',
-      );
+      setNotice('Saved for this visit. Browser storage is unavailable.');
     }
   }
   function toggleSaved(product: InspirationProduct) {
-    const id = product.film.id;
-    setSelectionError('');
-    if (shortlist.includes(id)) {
-      saveShortlist(shortlist.filter((saved) => saved !== id));
-      setStatus(`${product.film.brand || product.film.title} removed from your shortlist.`);
-    } else if (shortlist.length >= MAX_SHORTLIST) {
-      setSelectionError(
-        `Your shortlist has ${shortlist.length} films. Remove films before adding more. A creation can use up to ${MAX_SHORTLIST}.`,
-      );
-    } else {
-      saveShortlist([...shortlist, id]);
-      setStatus(`${product.film.brand || product.film.title} saved to your shortlist.`);
-    }
+    setError('');
+    if (shortlist.includes(product.film.id))
+      saveList(shortlist.filter((value) => value !== product.film.id));
+    else if (shortlist.length >= MAX_SHORTLIST)
+      setError('A video can use up to 12 references. Remove a saved film first.');
+    else saveList([...shortlist, product.film.id]);
   }
   function useSelection(ids: string[]) {
-    setSelectionError('');
-    if (ids.length === 0 || ids.length > MAX_SHORTLIST) {
-      setSelectionError(
-        ids.length > MAX_SHORTLIST
-          ? `Remove ${ids.length - MAX_SHORTLIST} ${ids.length - MAX_SHORTLIST === 1 ? 'film' : 'films'} from this shortlist before using it. A creation can use up to ${MAX_SHORTLIST}.`
-          : 'Choose at least one film to use for your video.',
-      );
+    if (
+      !ids.length ||
+      ids.length > MAX_SHORTLIST ||
+      ids.some((value) => !products.some((product) => product.film.id === value))
+    ) {
+      setError('Choose up to 12 films from this collection.');
       return;
     }
-    if (ids.some((id) => !products.some((product) => product.film.id === id))) {
-      setSelectionError(
-        'Some selected films are no longer in this collection. Reload and choose them again.',
-      );
-      return;
-    }
+    setSelectedId(null);
+    discovery.current?.removeAttribute('open');
     try {
       onUseReferences(ids);
-    } catch (caught: unknown) {
-      setSelectionError(
-        caught instanceof Error ? caught.message : 'The selected films could not be opened.',
-      );
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'The selection could not open.');
     }
-  }
-  function closePlayer(id: string) {
-    setPlayingId('');
-    setFailedPlayer('');
-    requestAnimationFrame(() => document.getElementById(`${galleryId}-play-${id}`)?.focus());
   }
 
   return (
-    <section className="product-gallery" aria-labelledby={`${galleryId}-heading`}>
-      <header className="product-gallery-heading">
-        <div>
-          <h1 id={`${galleryId}-heading`}>A little inspiration. Your own next video.</h1>
-          <p>
-            Explore real product films. Save the ideas and techniques you want to make your own.
-          </p>
-        </div>
-        <label className="product-gallery-search">
-          <span className="sr-only">Search products, brands, and film techniques</span>
-          <MagnifyingGlass size={20} aria-hidden="true" />
-          <input
-            type="search"
-            value={query}
-            placeholder="Try Adidas, coffee, or stop motion"
-            onChange={(event) => {
-              setQuery(event.target.value);
-              rail.ref.current?.scrollTo({ left: 0 });
-            }}
-          />
-        </label>
-      </header>
-
-      <div
-        ref={categories.ref}
-        className="product-gallery-categories"
-        role="group"
-        aria-label="Filter by product category"
-        {...categories.handlers}
-      >
-        {productCategories
-          .filter((item) => loading || item.id === 'all' || categoryCounts.has(item.id))
-          .map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-pressed={category === item.id}
-              aria-controls={listId}
-              onClick={() => {
-                setCategory(item.id);
-                rail.ref.current?.scrollTo({ left: 0 });
-              }}
-            >
-              {item.label}
-              {!loading && (
-                <span className="product-gallery-category-count">
-                  {categoryCounts.get(item.id) ?? 0}
-                </span>
-              )}
-            </button>
-          ))}
+    <section
+      className="product-gallery cinema"
+      aria-labelledby={`${id}-title`}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          if (selected) {
+            event.preventDefault();
+            event.stopPropagation();
+            close();
+          } else if (discovery.current?.open) {
+            event.preventDefault();
+            discovery.current.removeAttribute('open');
+          }
+        }
+      }}
+    >
+      <h1 id={`${id}-title`} className="sr-only">
+        Film inspiration
+      </h1>
+      <div className="cinema-tools">
+        <details ref={discovery} className="cinema-discovery">
+          <summary aria-label="Find a film">
+            <MagnifyingGlass size={18} />
+            <span className="sr-only">Find a film</span>
+          </summary>
+          <div className="cinema-discovery-panel">
+            <label>
+              <span className="sr-only">Search products, brands, and film techniques</span>
+              <input
+                type="search"
+                value={query}
+                placeholder="Search films"
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            <div className="cinema-categories" role="group" aria-label="Film categories">
+              {productCategories.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={category === item.id}
+                  onClick={() => {
+                    setCategory(item.id);
+                    discovery.current?.removeAttribute('open');
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="cinema-discovery-actions">
+              <button
+                type="button"
+                aria-pressed={onlySaved}
+                onClick={() => setOnlySaved((value) => !value)}
+              >
+                <BookmarkSimple size={16} />
+                Saved ({shortlist.length})
+              </button>
+              <button
+                type="button"
+                aria-pressed={paused || previews.reducedMotion}
+                disabled={previews.reducedMotion}
+                onClick={() => setPaused((value) => !value)}
+              >
+                {paused || previews.reducedMotion ? <Play size={16} /> : <Pause size={16} />}{' '}
+                {paused || previews.reducedMotion ? 'Play previews' : 'Pause previews'}
+              </button>
+            </div>
+            {shortlist.length > 0 && (
+              <div className="cinema-saved-list">
+                {shortlist.map((value) => {
+                  const product = products.find((item) => item.film.id === value);
+                  return product ? (
+                    <div key={value}>
+                      <button onClick={() => open(product)}>
+                        {product.film.brand} · {product.film.product || product.film.title}
+                      </button>
+                      <button
+                        aria-label={`Remove ${product.film.title} from shortlist`}
+                        onClick={() => saveList(shortlist.filter((id) => id !== value))}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ) : null;
+                })}
+                <button
+                  className="cinema-primary"
+                  disabled={shortlist.length > MAX_SHORTLIST}
+                  onClick={() => useSelection(shortlist)}
+                >
+                  Use saved films <ArrowRight size={16} />
+                </button>
+              </div>
+            )}
+            {(query || category !== 'all' || onlySaved) && (
+              <button
+                className="cinema-clear"
+                onClick={() => {
+                  setQuery('');
+                  setCategory('all');
+                  setOnlySaved(false);
+                }}
+              >
+                Clear filters
+              </button>
+            )}
+            {notice && <p role="status">{notice}</p>}
+          </div>
+        </details>
       </div>
-
-      <div className="product-gallery-browse-bar">
-        <div className="product-gallery-result-summary">
-          <p role="status">
-            {loading
-              ? 'Opening the film collection…'
-              : `${visibleProducts.length} ${visibleProducts.length === 1 ? 'film' : 'films'}${onlyShortlist ? ' in your shortlist' : ' to explore'}`}
-          </p>
-          <button
-            className="product-gallery-saved-filter"
-            type="button"
-            aria-pressed={onlyShortlist}
-            aria-controls={listId}
-            onClick={() => {
-              setOnlyShortlist((previous) => !previous);
-              rail.ref.current?.scrollTo({ left: 0 });
-            }}
-          >
-            <BookmarkSimple
-              size={16}
-              weight={onlyShortlist ? 'fill' : 'regular'}
-              aria-hidden="true"
-            />
-            Saved ({shortlist.length})
-          </button>
-        </div>
-        <div className="product-gallery-scroll-actions">
-          <span id={helpId}>Swipe or drag to explore</span>
-          <button
-            type="button"
-            aria-label="Previous product films"
-            aria-controls={listId}
-            disabled={loading || rail.edges.start}
-            onClick={() => rail.move(-1)}
-          >
-            <ArrowLeft size={20} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            aria-label="Next product films"
-            aria-controls={listId}
-            disabled={loading || rail.edges.end}
-            onClick={() => rail.move(1)}
-          >
-            <ArrowRight size={20} aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-
+      {error && (
+        <p className="cinema-error" role="alert">
+          {error}
+        </p>
+      )}
       {loadError ? (
-        <div className="product-gallery-empty" role="alert">
-          <h2>The collection could not open.</h2>
-          <p>{loadError}</p>
-          <button
-            type="button"
-            className="product-gallery-primary"
-            onClick={() => setReload((n) => n + 1)}
-          >
-            Try loading again
-          </button>
+        <div className="cinema-empty" role="alert">
+          <p>The films couldn’t load.</p>
+          <button onClick={() => setRevision((value) => value + 1)}>Try again</button>
         </div>
-      ) : !loading && visibleProducts.length === 0 ? (
-        <div className="product-gallery-empty">
-          <FilmSlate size={32} aria-hidden="true" />
-          <h2>
-            {onlyShortlist && shortlist.length === 0
-              ? 'Keep the films that catch your eye.'
-              : 'Try another product or style.'}
-          </h2>
-          <p>
-            {onlyShortlist && shortlist.length === 0
-              ? 'Save a film to build a shortlist, then bring its cited techniques into your video.'
-              : 'Search a brand, product, or technique, or explore the full collection.'}
-          </p>
-          <button type="button" className="product-gallery-primary" onClick={resetBrowse}>
-            Explore all films
+      ) : selected ? (
+        <section className="cinema-detail" aria-labelledby={`${id}-detail-title`}>
+          <button className="cinema-back" onClick={close}>
+            <ArrowLeft size={18} />
+            All videos
+          </button>
+          <div className="cinema-detail-layout">
+            <div className="cinema-detail-player">
+              {selected.clip?.poster && <img src={selected.clip.poster} alt="" />}
+              {selected.clip && (
+                <FilmPreview
+                  clip={selected.clip}
+                  active={active}
+                  preview={false}
+                  label={`${selected.film.brand}: ${selected.film.title}`}
+                />
+              )}
+            </div>
+            <div className="cinema-detail-copy">
+              <p className="cinema-detail-brand">{selected.film.brand}</p>
+              <h2 id={`${id}-detail-title`} ref={heading} tabIndex={-1}>
+                {selected.film.product || selected.film.title}
+              </h2>
+              <p className="cinema-detail-title">
+                {selected.film.title}
+                {selected.film.year ? ` · ${selected.film.year}` : ''}
+              </p>
+              <p>{selected.film.whyItFits}</p>
+              {selected.film.techniques.length > 0 && (
+                <ul className="cinema-techniques">
+                  {selected.film.techniques.slice(0, 4).map((technique) => (
+                    <li key={technique}>{technique}</li>
+                  ))}
+                </ul>
+              )}
+              <div className="cinema-detail-actions">
+                <button className="cinema-primary" onClick={() => useSelection([selected.film.id])}>
+                  Make something like this <ArrowRight size={16} />
+                </button>
+                <button
+                  className="cinema-save"
+                  aria-pressed={shortlist.includes(selected.film.id)}
+                  onClick={() => toggleSaved(selected)}
+                >
+                  {shortlist.includes(selected.film.id) ? (
+                    <Check size={18} />
+                  ) : (
+                    <BookmarkSimple size={18} />
+                  )}{' '}
+                  {shortlist.includes(selected.film.id) ? 'Saved' : 'Save'}
+                </button>
+              </div>
+              <a
+                className="cinema-source"
+                href={selected.clip?.sourceUrl || selected.film.url}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {selected.film.creator || 'Original source'} <ArrowUpRight size={14} />
+              </a>
+            </div>
+          </div>
+        </section>
+      ) : loading ? (
+        <div className="cinema-grid" aria-label="Loading films" aria-busy="true">
+          {Array.from({ length: 12 }, (_, index) => (
+            <div key={index} className="cinema-skeleton" />
+          ))}
+        </div>
+      ) : films.length === 0 ? (
+        <div className="cinema-empty">
+          <p>No films found.</p>
+          <button
+            onClick={() => {
+              setQuery('');
+              setCategory('all');
+              setOnlySaved(false);
+            }}
+          >
+            Show all videos
           </button>
         </div>
       ) : (
-        <div
-          ref={rail.ref}
-          id={listId}
-          className={`product-gallery-rail${loading ? ' product-gallery-loading' : ''}`}
-          role="region"
-          aria-label="Product film collection"
-          aria-describedby={helpId}
-          aria-busy={loading}
-          tabIndex={0}
-          {...rail.handlers}
-        >
-          {loading
-            ? [0, 1, 2].map((item) => (
-                <div className="product-gallery-skeleton" key={item} aria-hidden="true">
-                  <div />
-                  <span />
-                  <span />
+        <div className="cinema-grid" aria-label="Product film collection">
+          {films.map((product) => {
+            const { film, clip } = product;
+            if (!clip) return null;
+            return (
+              <article
+                key={film.id}
+                ref={previews.refFor(film.id)}
+                className="cinema-film"
+                data-film-id={film.id}
+              >
+                <div className="cinema-film-visual">
+                  {clip.poster && (
+                    <img
+                      src={clip.poster}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      draggable={false}
+                    />
+                  )}
+                  <FilmPreview
+                    clip={clip}
+                    active={previews.activeIds.has(film.id)}
+                    label={`${film.brand}: ${film.title}`}
+                  />
                 </div>
-              ))
-            : visibleProducts.map((product) => {
-                const { film, clip } = product;
-                const saved = shortlist.includes(film.id);
-                const playing = active && playingId === film.id;
-                const categoryLabel = productCategories.find(
-                  (item) => item.id === product.category,
-                )?.label;
-                return (
-                  <article
-                    className="product-film"
-                    key={film.id}
-                    aria-label={`${film.brand}: ${film.title}`}
-                  >
-                    <div className={`product-film-media${playing ? ' is-playing' : ''}`}>
-                      {playing && clip ? (
-                        <div
-                          id={`${galleryId}-player-${film.id}`}
-                          className="product-film-player"
-                          tabIndex={-1}
-                          role="group"
-                          aria-label={`${film.brand} original film player`}
-                        >
-                          {failedPlayer === film.id ? (
-                            <div className="product-film-player-error" role="alert">
-                              <p>This clip could not play here.</p>
-                              <a href={clip.sourceUrl} target="_blank" rel="noopener noreferrer">
-                                Watch the original <ArrowUpRight size={16} aria-hidden="true" />
-                              </a>
-                            </div>
-                          ) : clip.kind === 'video' ? (
-                            <video
-                              src={clip.src}
-                              poster={clip.poster}
-                              controls
-                              autoPlay
-                              muted
-                              playsInline
-                              preload="none"
-                              aria-label={`${film.brand}: ${film.title}`}
-                              onError={() => setFailedPlayer(film.id)}
-                            />
-                          ) : (
-                            <iframe
-                              src={clip.src}
-                              title={`${film.brand}: ${film.title} on ${clip.provider}`}
-                              allow="autoplay; fullscreen; picture-in-picture; encrypted-media"
-                              allowFullScreen
-                              referrerPolicy="strict-origin-when-cross-origin"
-                            />
-                          )}
-                          <button
-                            type="button"
-                            className="product-film-close"
-                            aria-label={`Close ${film.brand} film player`}
-                            onClick={() => closePlayer(film.id)}
-                          >
-                            <X size={18} aria-hidden="true" />
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          {clip?.poster ? (
-                            <img src={clip.poster} alt="" loading="lazy" draggable={false} />
-                          ) : (
-                            <div className="product-film-title-cover" aria-hidden="true">
-                              <FilmSlate size={28} />
-                              <strong>{film.brand}</strong>
-                              <span>{film.product || 'Product film'}</span>
-                            </div>
-                          )}
-                          {clip ? (
-                            <button
-                              id={`${galleryId}-play-${film.id}`}
-                              type="button"
-                              className="product-film-play"
-                              onClick={() => {
-                                setFailedPlayer('');
-                                setPlayingId(film.id);
-                              }}
-                              aria-label={`Play ${film.brand}: ${film.title}`}
-                            >
-                              <Play size={20} weight="fill" aria-hidden="true" />
-                              Play original
-                            </button>
-                          ) : (
-                            <a
-                              className="product-film-play"
-                              href={film.url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                            >
-                              Watch original <ArrowUpRight size={18} aria-hidden="true" />
-                            </a>
-                          )}
-                        </>
-                      )}
-                    </div>
-                    <div className="product-film-content">
-                      <div className="product-film-labels">
-                        <span>{categoryLabel}</span>
-                        <span>
-                          {film.kind === 'spec'
-                            ? 'Independent spec'
-                            : film.kind === 'campaign'
-                              ? 'Campaign'
-                              : 'Film study'}
-                        </span>
-                      </div>
-                      <h2>{film.brand}</h2>
-                      <p className="product-film-product">{film.product || film.title}</p>
-                      <p className="product-film-title">
-                        {film.title}
-                        {film.year ? ` · ${film.year}` : ''}
-                      </p>
-                      {film.techniques.length > 0 && (
-                        <ul className="product-film-techniques" aria-label="Creative techniques">
-                          {film.techniques.slice(0, 3).map((technique) => (
-                            <li key={technique}>{technique}</li>
-                          ))}
-                        </ul>
-                      )}
-                      <details className="product-film-notes">
-                        <summary>What to take from it</summary>
-                        <p>{film.whyItFits}</p>
-                        {film.creator && <p>Film by {film.creator}</p>}
-                        <p>
-                          Editorial notes describe creative techniques. The film stays with its
-                          original creator.
-                        </p>
-                      </details>
-                      <div className="product-film-actions">
-                        <button
-                          type="button"
-                          className="product-gallery-primary"
-                          onClick={() => useSelection([film.id])}
-                        >
-                          Use for my video <ArrowRight size={16} aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          className="product-film-save"
-                          aria-label={`${saved ? 'Remove' : 'Save'} ${film.brand}: ${film.title}${saved ? ' from' : ' to'} shortlist`}
-                          aria-pressed={saved}
-                          onClick={() => toggleSaved(product)}
-                        >
-                          {saved ? (
-                            <Check size={20} aria-hidden="true" />
-                          ) : (
-                            <BookmarkSimple size={20} aria-hidden="true" />
-                          )}
-                        </button>
-                      </div>
-                      <a
-                        className="product-film-source"
-                        href={clip?.sourceUrl || film.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {clip ? `Original on ${clip.provider}` : 'Open original source'}
-                        <ArrowUpRight size={14} aria-hidden="true" />
-                      </a>
-                    </div>
-                  </article>
-                );
-              })}
+                <button
+                  className="cinema-film-open"
+                  aria-label={`Open ${film.brand}: ${film.title}`}
+                  onClick={() => open(product)}
+                >
+                  <span className="cinema-film-caption">
+                    <strong>{film.brand}</strong>
+                    <span>{film.product || film.title}</span>
+                    <span className="cinema-film-description">{film.whyItFits}</span>
+                  </span>
+                </button>
+              </article>
+            );
+          })}
         </div>
       )}
-
-      {storageNotice && (
-        <p className="product-gallery-storage-notice" role="status">
-          {storageNotice}
-        </p>
-      )}
-      {selectionError && (
-        <p className="product-gallery-error" role="alert">
-          {selectionError}
-        </p>
-      )}
-      <p className="sr-only" role="status">
-        {status}
-      </p>
-      {shortlist.length > 0 && (
-        <aside className="product-gallery-shortlist" aria-label="Your selected inspiration films">
-          <div>
-            <strong>
-              {shortlist.length > MAX_SHORTLIST
-                ? `${shortlist.length} films saved`
-                : `${shortlist.length} of ${MAX_SHORTLIST} films saved`}
-            </strong>
-            {shortlist.length > MAX_SHORTLIST && (
-              <p
-                id={`${galleryId}-shortlist-limit`}
-                className="product-gallery-shortlist-limit"
-                role="status"
-              >
-                Your older shortlist is preserved. Remove {shortlist.length - MAX_SHORTLIST}{' '}
-                {shortlist.length - MAX_SHORTLIST === 1 ? 'film' : 'films'} before using it. A
-                creation can use up to {MAX_SHORTLIST} films.
-              </p>
-            )}
-            <p>
-              Bring their cited techniques into a new creation. Original footage stays at its
-              source.
-            </p>
-            <ul>
-              {selectedProducts.map(
-                (product) =>
-                  product && (
-                    <li key={product.film.id}>
-                      <span>{product.film.brand}</span>
-                      <button
-                        type="button"
-                        aria-label={`Remove ${product.film.brand}: ${product.film.title} from shortlist`}
-                        onClick={() => toggleSaved(product)}
-                      >
-                        <X size={14} aria-hidden="true" />
-                      </button>
-                    </li>
-                  ),
-              )}
-            </ul>
-          </div>
-          <div className="product-gallery-shortlist-actions">
-            <button
-              type="button"
-              className="product-gallery-primary"
-              disabled={shortlist.length > MAX_SHORTLIST}
-              aria-describedby={
-                shortlist.length > MAX_SHORTLIST ? `${galleryId}-shortlist-limit` : undefined
-              }
-              onClick={() => useSelection(shortlist)}
-            >
-              Use saved films <ArrowRight size={16} aria-hidden="true" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                saveShortlist([]);
-                setSelectionError('');
-                setStatus('Shortlist cleared.');
-              }}
-            >
-              Clear shortlist
-            </button>
-          </div>
-        </aside>
-      )}
-      <p className="product-gallery-footnote">
-        Campaigns and independent spec films are labeled. Choosing a reference carries links and
-        creative context into your video, with no footage copied.
-      </p>
     </section>
   );
 }
-
 export default ProductGallery;

@@ -1,8 +1,8 @@
 # Inspiration media verification
 
-[public/inspiration-media.json](../public/inspiration-media.json) augments the existing film catalog without changing its editorial records. Checked November 14, 2026: **32 original-host mappings and 32 reachable thumbnail URLs** — 27 Vimeo embeds, 2 YouTube embeds, 2 Mux embeds, and 1 direct MP4. This is a bounded subset of the 103 catalog entries.
+[public/inspiration-media.json](../public/inspiration-media.json) augments the existing film catalog without changing its editorial records. Checked November 14, 2026: **88 source-bound media mappings with verified thumbnail URLs**. Together with the catalog's explicit verified preview URLs and video evidence, the native gallery resolves **90 supported previews** across the 103 entries: 60 Vimeo, 8 YouTube, 19 Mux and 3 direct videos. The two Panoply WebM clips have no verified still thumbnail. Unsupported source cases remain in the catalog and existing saved lists, without becoming fabricated preview tiles.
 
-Verification means reading the creator case or its existing explicit video evidence, checking public provider metadata, and checking HTTP availability/content types. Vimeo/YouTube oEmbed returned the actual thumbnail URLs; thumbnail HEAD requests succeeded. Mux player pages and the two Adidas HLS manifests returned 200; posters returned image responses. Rimmel's exact public MP4 returned 200 with video/mp4. **Browser playback, full decoding, and regional/domain restrictions were not exercised.** No footage, posters, or video segments were downloaded to the repository or rehosted.
+Verification means reading the creator case or its existing explicit video evidence, checking public provider metadata, and checking HTTP availability/content types. Vimeo/YouTube oEmbed returned actual thumbnail URLs; newly added thumbnail responses were fetched, decoded and checked at a minimum width of 320 pixels. Mux player pages and the two Adidas HLS manifests returned 200; posters returned image responses. Rimmel's exact public MP4 returned 200 with video/mp4. Orca browsing confirms visible muted previews for the initial selection; it does not establish full decoding or availability of all 90 clips in every browser or region. Media remains on its original hosts.
 
 ## Priority sources
 
@@ -26,9 +26,13 @@ The remaining mappings retain their exact catalog source URL in each record. oEm
 
 Mux's official [hosted iframe guide](https://www.mux.com/docs/guides/player-mux-com) and [parameter reference](https://www.mux.com/docs/guides/player-mux-com-reference) document `https://player.mux.com/{PLAYBACK_ID}`. The Adidas MP4 alternatives high.mp4, 1080p.mp4, and 720p.mp4 returned 404, so the registry uses the documented hosted HLS player instead. [Mux static rendition documentation](https://www.mux.com/docs/api-reference/stream/streaming/get-static-rendition) explains that MP4 support must be enabled; an HLS playback ID alone does not establish MP4 availability. Existing cached case HTML reported media network errors; the later manifest check establishes availability, not successful browser playback.
 
-The registry's `unavailable` entries deliberately suppress automatic watch-URL fallback for:
+The registry's `unavailable` entries deliberately suppress every automatic preview fallback for:
 
 - **Onesal Tasty Cleaning:** cataloged Vimeo 921929631 resolves to a general Exploration Reel; no dedicated product clip was established.
 - **Milia Matcha:** the official case exposes Floraison/Cérémonie MP4 and WebM sources, but the checked MP4 and poster returned 403. Keep the [creator case](https://tybannmasson.fr/en/work/milia-matcha/) available as the external destination.
 
-Embeds, direct media, and thumbnails remain on original providers. The gallery should instantiate a player only when requested, retain creator/source attribution, and offer the original case when playback fails. These references provide creative context; they are not creator-owned production assets or evidence of reuse permission.
+Embeds, direct media, and thumbnails remain on original providers. The dark gallery presents media tiles without persistent card copy or action buttons. Hover or keyboard focus reveals a title and short description; clicking opens an inline detail view with full playback, attribution, saved-list controls and reference handoff.
+
+At most six sufficiently visible tiles acquire muted looping previews. Offscreen tiles, a hidden page, an inactive tab, an open detail view, the pause control or reduced motion remove preview players. Preview URLs use provider-specific chromeless parameters; full playback retains the original validated player URL and controls. Search, categories, saved films and a preview-pause control appear in the search menu. The workspace menu opens the existing navigation; it does not add a primary destination.
+
+These references provide creative context; they are not creator-owned production assets or evidence of reuse permission. Playback remains subject to the original provider's availability, permissions and browser autoplay rules.

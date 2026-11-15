@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { DotsThree, X } from '@phosphor-icons/react';
 import { rovingIndex } from '../creator/keyboard';
 import { ProductGallery } from '../inspiration/ProductGallery';
 import { PosterWorkspace } from '../posters/PosterWorkspace';
@@ -13,11 +14,24 @@ export function ReferenceRoom({
   onDirty(value: boolean): void;
 }) {
   const [tab, setTab] = useState<'films' | 'posters'>('films');
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const navigationToggle = useRef<HTMLButtonElement>(null);
   const tabId = useId();
   const dirtyCallback = useRef(onDirty);
   dirtyCallback.current = onDirty;
   const reportDirty = useCallback((value: boolean) => dirtyCallback.current(value), []);
   useEffect(() => () => dirtyCallback.current(false), []);
+  useEffect(() => {
+    if (!navigationOpen) return;
+    document.querySelector<HTMLElement>('.side-nav button')?.focus({ preventScroll: true });
+    const close = (event: KeyboardEvent | globalThis.KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setNavigationOpen(false);
+      navigationToggle.current?.focus({ preventScroll: true });
+    };
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [navigationOpen]);
   function moveTab(event: KeyboardEvent<HTMLDivElement>) {
     if (event.altKey || event.ctrlKey || event.metaKey) return;
     const next = rovingIndex(event.key, tab === 'films' ? 0 : 1, 2);
@@ -27,8 +41,23 @@ export function ReferenceRoom({
     event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
   return (
-    <section className="creation-reference-room" aria-label="Inspiration" data-view={tab}>
+    <section
+      className="creation-reference-room"
+      aria-label="Inspiration"
+      data-view={tab}
+      data-navigation-open={navigationOpen || undefined}
+    >
       <div className="reference-room-toolbar">
+        <button
+          ref={navigationToggle}
+          className="inspiration-menu-toggle"
+          type="button"
+          aria-label={navigationOpen ? 'Close workspace navigation' : 'Open workspace navigation'}
+          aria-expanded={navigationOpen}
+          onClick={() => setNavigationOpen((value) => !value)}
+        >
+          {navigationOpen ? <X size={18} /> : <DotsThree size={22} />}
+        </button>
         <div
           className="creation-view-tabs reference-room-tabs"
           role="tablist"
