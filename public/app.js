@@ -7,6 +7,10 @@ import {
   loadPose,
   wallLayout,
   wallCell,
+  initialReelIndex,
+  reconcileWallVideo,
+  firstPaintWatchdog,
+  playbackRecoveryWindow,
 } from './motion.js';
 import { uniqueReels, reelSelection } from './catalog.js';
 import {
@@ -151,7 +155,7 @@ const fallbackReels = [
   },
 ];
 
-const media = await fetch('./wall-media.json')
+const media = await fetch('./wall-media.json', { signal: AbortSignal.timeout(5000) })
   .then((response) => (response.ok ? response.json() : null))
   .catch(() => null);
 const catalog = uniqueReels(media?.clips, import.meta.url);
@@ -176,12 +180,15 @@ let travel = 1;
 let sceneTop = 0;
 let layout = wallLayout(width, height, reels.length);
 let count = layout.count;
-let selected = sharedReel.index >= 0 ? sharedReel.index : Math.floor(count / 2);
+let selected = initialReelIndex(reels, count, sharedReel.index);
 let selectedSmooth = selected;
 let progress = reduced ? 1 : 0;
 let targetProgress = progress;
 let sceneVisible = true;
 let frameId = 0;
+let firstPainted = false;
+let stopFirstPaintWatchdog = () => {};
+let stopWallRecovery = () => {};
 let lastTime = 0;
 let ambient = 0;
 let playbackPaused = reduced;
@@ -255,6 +262,12 @@ function buildWall() {
       clip.addEventListener('play', () => {
         if (!entry.active) clip.pause();
       });
+      clip.addEventListener('playing', () => {
+        if (entry.active && !entry.failed && canPlayWall()) button.classList.add('is-playing');
+        else clip.pause();
+      });
+      for (const event of ['loadeddata', 'canplay', 'seeked'])
+        clip.addEventListener(event, () => syncWallPlayback(performance.now(), false));
       clip.addEventListener('loadedmetadata', () => {
         if (Number.isFinite(clip.duration) && clip.duration > 0)
           clip.currentTime = (index * 0.67) % clip.duration;
@@ -315,9 +328,11 @@ function setVisibility(node, visible) {
   node.classList.toggle('is-visible', visible);
 }
 
-function draw(time) {
+function draw(time, staticPaint = false) {
   frameId = 0;
-  if (document.hidden) return;
+  if (document.hidden && !staticPaint) return;
+  firstPainted = true;
+  stopFirstPaintWatchdog();
   const dt = Math.min(lastTime ? time - lastTime : 16, 64);
   lastTime = time;
   const ease = reduced ? 1 : 1 - Math.exp(-dt / 95);
@@ -331,7 +346,7 @@ function draw(time) {
   const movingWall = canPlayWall() && progress < 0.04;
   if (movingWall) ambient += dt * (width < 700 ? 0.022 : 0.036);
   const state = sceneState(progress);
-  const elapsed = reduced ? 2 : (time - bootTime) / 1000;
+  const elapsed = reduced || staticPaint ? 2 : (time - bootTime) / 1000;
   const entrance = phase(elapsed, 0, 1.6);
   const drift = reduced ? 0 : ambient;
   tiles.forEach((tile, index) => {
@@ -444,26 +459,13 @@ function syncWallPlayback(time = performance.now(), force = false) {
       wanted.add(entry);
     }
   }
-  wallVideos.forEach((entry) => {
-    const active = wanted.has(entry);
-    if (active === entry.active) return;
-    entry.active = active;
-    if (active) {
-      if (!entry.node.getAttribute('src')) entry.node.src = entry.src;
-      entry.node
-        .play()
-        .then(() => {
-          if (entry.active) entry.tile.classList.add('is-playing');
-          else entry.node.pause();
-        })
-        .catch((error) => {
-          if (error.name === 'AbortError') return;
-          entry.failed = true;
-          entry.active = false;
-          entry.tile.classList.remove('is-playing');
-        });
-    } else entry.node.pause();
-  });
+  wallVideos.forEach((entry) => reconcileWallVideo(entry, wanted.has(entry), time, force));
+}
+
+function restartWallRecovery() {
+  stopWallRecovery();
+  if (canPlayWall())
+    stopWallRecovery = playbackRecoveryWindow(() => syncWallPlayback(performance.now(), false));
 }
 
 function updatePlayback() {
@@ -662,6 +664,7 @@ function toggleMotion() {
   playbackPaused = !playbackPaused;
   wallVideos.forEach((entry) => (entry.failed = false));
   updatePlayback();
+  restartWallRecovery();
 }
 $('#toggle-playback').addEventListener('click', toggleMotion);
 $('#toggle-wall-motion').addEventListener('click', toggleMotion);
@@ -964,7 +967,17 @@ window.addEventListener('resize', measure, { passive: true });
 document.addEventListener('visibilitychange', () => {
   lastTime = 0;
   updatePlayback();
-  if (!document.hidden) readScroll();
+  if (!document.hidden) measure();
+  restartWallRecovery();
+});
+window.addEventListener('pageshow', () => {
+  measure();
+  restartWallRecovery();
+});
+window.addEventListener('focus', () => {
+  measure();
+  updatePlayback();
+  restartWallRecovery();
 });
 motionPreference.addEventListener('change', (event) => {
   reduced = event.matches;
@@ -972,6 +985,7 @@ motionPreference.addEventListener('change', (event) => {
   progress = reduced ? 1 : progress;
   measure();
   updateReel(false);
+  restartWallRecovery();
 });
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') {
@@ -989,6 +1003,22 @@ measure();
 updateReel(false);
 setStep(0);
 requestFrame();
+// An iframe may initialize offscreen; paint a static fallback without starting background video.
+if (document.hidden) {
+  bootTime = performance.now() - 1600;
+  draw(performance.now(), true);
+} else {
+  stopFirstPaintWatchdog = firstPaintWatchdog(
+    () => firstPainted,
+    () => {
+      if (frameId) cancelAnimationFrame(frameId);
+      frameId = 0;
+      bootTime = performance.now() - 1600;
+      draw(performance.now(), true);
+    },
+  );
+}
+restartWallRecovery();
 if (sharedReel.index >= 0 || location.hash === '#product' || location.hash === '#reels')
   requestAnimationFrame(goToProduct);
 if (new URLSearchParams(location.search).get('intro') === '1' && !reduced)
