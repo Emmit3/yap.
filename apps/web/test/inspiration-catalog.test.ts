@@ -4,16 +4,16 @@ import { test } from 'node:test';
 import { parseFilmCatalog } from '../src/creator/references';
 import {
   filterProducts,
+  loadProductInspiration,
   playableClip,
   productCategory,
   productInspiration,
 } from '../src/inspiration/catalog';
 
-const films = parseFilmCatalog(
-  JSON.parse(
-    await readFile(new URL('../../../public/film-references.json', import.meta.url), 'utf8'),
-  ),
+const rawCatalog = JSON.parse(
+  await readFile(new URL('../../../public/film-references.json', import.meta.url), 'utf8'),
 );
+const films = parseFilmCatalog(rawCatalog);
 test('all catalog products stay browsable in practical business categories, including Adidas sportswear', () => {
   const products = productInspiration(films, null);
   assert.equal(products.length, 103);
@@ -111,4 +111,56 @@ test('published media supplies real Adidas clips and suppresses known mismatched
       .clip?.src.includes('395076720'),
   );
   assert.equal(products.filter((item) => item.clip?.poster).length, metadata.clips.length);
+  assert.equal(products.length, 103);
+  assert.equal(products.filter((item) => item.clip).length, 90);
+  assert.equal(products.filter((item) => item.clip?.provider === 'Mux').length, 19);
+  for (const id of ['amazon-echo-buds', 'nuii-frantic-spec', 'sonos-move'])
+    assert.equal(products.find((item) => item.film.id === id)!.clip?.provider, 'Mux');
+});
+
+test('attributed supplemental clips win over catalog previews and unavailable decisions win over both', () => {
+  const film = films.find((item) => item.id === 'amazon-echo-buds')!;
+  assert.ok(film.previewUrl && film.previewVerifiedAt);
+  assert.equal(productInspiration([film], null)[0]!.clip?.provider, 'Mux');
+  const metadata = {
+    schemaVersion: 1,
+    clips: [
+      { filmId: film.id, kind: 'embed', sourceUrl: film.url, url: 'https://vimeo.com/123456789' },
+    ],
+    unavailable: [] as Array<{ filmId: string; sourceUrl: string }>,
+  };
+  assert.equal(productInspiration([film], metadata)[0]!.clip?.provider, 'Vimeo');
+  assert.equal(
+    productInspiration([film], {
+      ...metadata,
+      unavailable: [{ filmId: film.id, sourceUrl: 'https://unrelated.example.com/case' }],
+    })[0]!.clip?.provider,
+    'Vimeo',
+    'another source cannot suppress this film',
+  );
+  metadata.unavailable.push({ filmId: film.id, sourceUrl: film.url });
+  assert.equal(productInspiration([film], metadata)[0]!.clip, null);
+});
+
+test('the real loader combines explicit previews with source metadata using one catalog request', async (context) => {
+  const metadata = JSON.parse(
+    await readFile(new URL('../../../public/inspiration-media.json', import.meta.url), 'utf8'),
+  );
+  const requests: string[] = [];
+  context.mock.method(globalThis, 'fetch', async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requests.push(url);
+    if (url === '/showcase/film-references.json') return Response.json(rawCatalog);
+    if (url === '/showcase/inspiration-media.json') return Response.json(metadata);
+    throw new Error(`Unexpected catalog request: ${url}`);
+  });
+  const products = await loadProductInspiration(new AbortController().signal);
+  assert.equal(products.length, 103);
+  assert.equal(products.filter((item) => item.clip).length, 90);
+  assert.equal(products.find((item) => item.film.id === 'amazon-echo-buds')!.clip?.provider, 'Mux');
+  assert.equal(products.find((item) => item.film.id === 'onesal-tasty-cleaning')!.clip, null);
+  assert.deepEqual(requests.sort(), [
+    '/showcase/film-references.json',
+    '/showcase/inspiration-media.json',
+  ]);
 });
