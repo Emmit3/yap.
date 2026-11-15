@@ -1,5 +1,5 @@
 import { randomUUID, createHash } from 'node:crypto';
-import { readFile, mkdir, rm, writeFile, copyFile } from 'node:fs/promises';
+import { readFile, mkdir, rm, writeFile, copyFile, stat } from 'node:fs/promises';
 import { resolve, join, relative, isAbsolute } from 'node:path';
 import type {
   CreatorSession,
@@ -29,6 +29,13 @@ import {
 } from './creator-audio.js';
 import { verifyWorkflow } from './workflow-engine.js';
 import { productionProfile, quoteFingerprint } from './creator-budget.js';
+import {
+  createSubtitleSnapshot,
+  writeCreatorSubtitles,
+  SUBTITLE_FILENAME,
+  SUBTITLE_MAX_BYTES,
+  type SubtitleWindow,
+} from './creator-subtitles.js';
 
 export type CreatorAnalyzer = (
   input: CreatorInput,
@@ -111,6 +118,39 @@ export class CreatorJobs {
         500,
         'CREATOR_VIDEO_CORRUPTED',
         'The saved video failed integrity verification.',
+      );
+    return path;
+  }
+  async verifySubtitles(job: CreatorJob): Promise<string> {
+    if (job.kind !== 'production' || job.status !== 'succeeded' || !job.output?.subtitles)
+      throw new ApiError(
+        409,
+        'CREATOR_SUBTITLES_NOT_READY',
+        'No completed subtitles are available for this film.',
+      );
+    const path = join(this.work(job.id), SUBTITLE_FILENAME);
+    let bytes: Buffer;
+    try {
+      if ((await stat(path)).size > SUBTITLE_MAX_BYTES)
+        throw new ApiError(
+          500,
+          'CREATOR_SUBTITLES_CORRUPTED',
+          'The saved subtitles failed integrity verification.',
+        );
+      bytes = await readFile(path);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(404, 'CREATOR_SUBTITLES_MISSING', 'The saved subtitles are missing.');
+    }
+    if (
+      bytes.length > SUBTITLE_MAX_BYTES ||
+      bytes.length !== job.output.subtitles.bytes ||
+      createHash('sha256').update(bytes).digest('hex') !== job.output.subtitles.sha256
+    )
+      throw new ApiError(
+        500,
+        'CREATOR_SUBTITLES_CORRUPTED',
+        'The saved subtitles failed integrity verification.',
       );
     return path;
   }
@@ -423,6 +463,10 @@ export class CreatorJobs {
             : {}),
         };
         const lines = voiceoverLines(plan, workflow);
+        // Validate before any paid production. Actual narration windows replace this
+        // scene estimate after silence trimming and tempo placement, before buying clips.
+        if (plan.subtitlesEnabled) createSubtitleSnapshot(plan, workflow);
+        let narrationWindows: SubtitleWindow[] | undefined;
         if (plan.audio?.voice && lines.length > 0) {
           // Narration is recorded before any clip is generated: it is the cheapest paid step,
           // and a script that cannot fit the film must stop production before the costly ones.
@@ -488,7 +532,19 @@ export class CreatorJobs {
             total,
           );
           placed.forEach((place, index) => Object.assign(soundtrack.voices[index]!, place));
+          narrationWindows = lines.map((line, index) => ({
+            segmentId: line.segmentId,
+            text: line.text,
+            start: placed[index]!.at,
+            end: placed[index]!.at + durations[index]! / placed[index]!.tempo,
+          }));
         }
+        const subtitles = plan.subtitlesEnabled
+          ? await writeCreatorSubtitles(
+              directory,
+              createSubtitleSnapshot(plan, workflow, narrationWindows),
+            )
+          : undefined;
         for (const clip of plan.clips) {
           signal.throwIfAborted();
           await this.current(session, workflow);
@@ -645,6 +701,7 @@ export class CreatorJobs {
           plan.clips.map((clip) => clip.seconds),
           signal,
           soundtrack,
+          Boolean(subtitles),
         );
         if (output.hasAudio !== plan.hasAudio)
           throw new ApiError(
@@ -656,11 +713,19 @@ export class CreatorJobs {
         signal.throwIfAborted();
         await this.options.repository.updateJob(job.sessionId, job.id, (current) => ({
           ...current,
-          output,
+          output: { ...output, ...(subtitles ? { subtitles } : {}) },
         }));
+        const sound =
+          soundtrack.voices.length > 0
+            ? soundtrack.music
+              ? 'with narration and music'
+              : 'with narration'
+            : soundtrack.music
+              ? 'with music'
+              : 'without sound';
         await this.event(
           job,
-          `Saved the final MP4 ${soundtrack.voices.length > 0 ? 'with narration' : 'without narration'}${soundtrack.music ? ' and music' : ''}. Sampled-frame review does not establish product facts or inspect every frame.`,
+          `Saved the final MP4 ${sound}. Sampled-frame review does not establish product facts or inspect every frame.`,
           'complete',
         );
       }

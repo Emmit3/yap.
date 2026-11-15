@@ -10,6 +10,7 @@ import { creatorQuoteSchema } from '@yap/contracts/creator';
 import type { Workflow } from '@yap/contracts/workflow';
 import { creatorVideoPrompt } from './creator-video-provider.js';
 import { ApiError } from './errors.js';
+import { createSubtitleSnapshot, sceneSubtitleWindows } from './creator-subtitles.js';
 import {
   VOICEOVER_CENTS_PER_LINE,
   assertVoiceoverContiguous,
@@ -177,6 +178,12 @@ export function quoteFingerprint(
         model: profile.model,
         ratio: '720:1280',
         hasAudio: plan?.hasAudio ?? false,
+        ...(plan?.subtitlesEnabled === undefined
+          ? {}
+          : { subtitlesEnabled: plan.subtitlesEnabled }),
+        ...(plan?.subtitlesEnabled
+          ? { subtitleSources: sceneSubtitleWindows(plan, workflow) }
+          : {}),
         // Editing a spoken line, its timing, the voice or the music needs a new quote.
         ...(plan?.hasAudio ? { audio: plan.audio, narration: voiceoverLines(plan, workflow) } : {}),
         profile,
@@ -262,6 +269,7 @@ export function buildCreatorQuote(
     };
   });
   assertVoiceoverContiguous(plan, workflow);
+  if (plan.subtitlesEnabled) createSubtitleSnapshot(plan, workflow);
   const narration = voiceoverLines(plan, workflow);
   assertVoiceoverFits(
     narration,
@@ -281,6 +289,7 @@ export function buildCreatorQuote(
     ratio: '720:1280',
     hasAudio: plan.hasAudio,
     ...(plan.audio ? { audio: plan.audio } : {}),
+    ...(plan.subtitlesEnabled === undefined ? {} : { subtitlesEnabled: plan.subtitlesEnabled }),
     audioCents,
     narratedSegments: narration.length,
     currency: 'USD',

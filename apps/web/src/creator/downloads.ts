@@ -1,6 +1,7 @@
 import { apiErrorSchema } from '@yap/contracts';
 
 const MAX_VIDEO_BYTES = 256 * 1024 * 1024;
+const MAX_SUBTITLE_BYTES = 1024 * 1024;
 const MAX_ERROR_BYTES = 64 * 1024;
 export const CREATOR_VIDEO_DOWNLOAD_TIMEOUT_MS = 90_000;
 
@@ -90,14 +91,38 @@ export async function fetchCreatorVideo(
   signal?: AbortSignal,
   transport: typeof fetch = fetch,
 ): Promise<Blob> {
+  return fetchCreatorDownload(url, expected, 'video', signal, transport);
+}
+
+/** Downloads the saved SRT artifact, independently of the social post caption. */
+export async function fetchCreatorSubtitles(
+  url: string,
+  expected: { bytes: number; sha256: string },
+  signal?: AbortSignal,
+  transport: typeof fetch = fetch,
+): Promise<Blob> {
+  return fetchCreatorDownload(url, expected, 'subtitles', signal, transport);
+}
+
+async function fetchCreatorDownload(
+  url: string,
+  expected: { bytes: number; sha256: string },
+  kind: 'video' | 'subtitles',
+  signal: AbortSignal | undefined,
+  transport: typeof fetch,
+): Promise<Blob> {
+  const subtitles = kind === 'subtitles';
+  const limit = subtitles ? MAX_SUBTITLE_BYTES : MAX_VIDEO_BYTES;
   if (
     !Number.isSafeInteger(expected.bytes) ||
     expected.bytes < 1 ||
-    expected.bytes > MAX_VIDEO_BYTES ||
+    expected.bytes > limit ||
     !/^[a-f0-9]{64}$/i.test(expected.sha256)
   )
     throw new CreatorDownloadError(
-      'The saved video receipt is invalid or exceeds the 256 MiB download limit. Reload the film before downloading.',
+      subtitles
+        ? 'The saved subtitle receipt is invalid or exceeds the 1 MiB download limit. Reload the film before downloading.'
+        : 'The saved video receipt is invalid or exceeds the 256 MiB download limit. Reload the film before downloading.',
       'DOWNLOAD_INVALID_RECEIPT',
     );
   const controller = new AbortController();
@@ -151,11 +176,15 @@ export async function fetchCreatorVideo(
     }
     if (
       response.status !== 200 ||
-      !/^video\/mp4(?:\s*;|$)/i.test(response.headers.get('content-type') ?? '')
+      !(subtitles ? /^application\/x-subrip(?:\s*;|$)/i : /^video\/mp4(?:\s*;|$)/i).test(
+        response.headers.get('content-type') ?? '',
+      )
     ) {
       void response.body?.cancel().catch(() => undefined);
       throw new CreatorDownloadError(
-        'The server did not return a complete MP4. Reload the saved film before trying again.',
+        subtitles
+          ? 'The server did not return a complete SRT file. Reload the saved film before trying again.'
+          : 'The server did not return a complete MP4. Reload the saved film before trying again.',
         'DOWNLOAD_INVALID_TYPE',
         response.status,
       );
@@ -164,7 +193,7 @@ export async function fetchCreatorVideo(
     if (declared !== null && Number(declared) !== expected.bytes) {
       void response.body?.cancel().catch(() => undefined);
       throw new CreatorDownloadError(
-        'The download size does not match the saved video. Reload the film before downloading.',
+        'The download size does not match the saved file. Reload the film before downloading.',
         'DOWNLOAD_SIZE_MISMATCH',
         response.status,
       );
@@ -172,7 +201,7 @@ export async function fetchCreatorVideo(
     const bytes = await readBounded(response, expected.bytes, controller.signal);
     if (bytes.byteLength !== expected.bytes)
       throw new CreatorDownloadError(
-        'The download ended before the whole film arrived. Try downloading it again.',
+        'The download ended before the whole file arrived. Try downloading it again.',
         'DOWNLOAD_TRUNCATED',
         response.status,
       );
@@ -184,13 +213,15 @@ export async function fetchCreatorVideo(
         .join('');
       if (hash !== expected.sha256.toLowerCase())
         throw new CreatorDownloadError(
-          'The downloaded film failed its integrity check. Reload the saved studio before trying again.',
+          'The downloaded file failed its integrity check. Reload the saved studio before trying again.',
           'DOWNLOAD_INTEGRITY',
           response.status,
         );
     }
     controller.signal.throwIfAborted();
-    return new Blob([bytes], { type: 'video/mp4' });
+    return new Blob([bytes], {
+      type: subtitles ? 'application/x-subrip;charset=utf-8' : 'video/mp4',
+    });
   } catch (error) {
     if (controller.signal.aborted)
       throw new CreatorDownloadError(

@@ -1,10 +1,28 @@
 # UI interaction audit
 
-Source review on November 14, 2026, in the creator budget integration worktree. This is a control and state audit of `apps/web/src` and the public showcase, using the existing product brief and Impeccable audit/product guidance. No browser, screenshot, viewport, live provider, or assistive technology testing was performed. Visual contrast, clipping, actual target sizes and rendered focus order remain unverified; a visual health score would imply checks that were not performed.
+Initial source review on November 14, 2026, in the creator budget integration worktree. That stage covered controls and state in `apps/web/src` and the public showcase, using the existing product brief and Impeccable audit/product guidance. It did not include browser or provider testing. The browser follow-up below records the later executed checks; assistive technology, full contrast and physical-device testing remain unverified.
 
 Follow-up on November 15, 2026: the new script project form (`#/new`) now uses actionable field errors and focuses its first invalid input after submission. Actual Chrome checks at 1365×900 and 390×844 verified empty submission, then successive correction of the project name and idea, with preserved values and valid error-description links. These checks do not establish assistive-technology or live-provider coverage for the other inventory items.
 
 The main task remains: supply an idea and photos, refine a proposal, explicitly review production cost, then download a real film and caption. Decorative artwork and progress labels do not need click handlers. Controls that claim to save, share, approve or copy must complete that action or offer a usable recovery.
+
+## Browser follow-up: November 15, 2026
+
+Issue [#6](https://github.com/Emmit3/yap./issues/6), Track B Phase 0: every inventory route was exercised in installed Chrome using separate desktop (1365×900) and phone (390×844, mobile/touch emulation) contexts. The baseline was `ef7bb54`; the form fix in [#16](https://github.com/Emmit3/yap./pull/16) was checked in a separate preview. Reduced motion was enabled. This is local browser evidence, not paid-provider, physical-device or assistive-technology acceptance.
+
+| Surface                                         | Executed checks                                                                                                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Landing and creator intake                      | Embedded creation CTA, intake rendering, desktop saved creation, route-preserving skip link.                                                                                          |
+| Saved creator and film library                  | Guided/Director, unsaved answer retention through analytics, direction save, loaded library search/open. Missing live sources stayed explicitly unavailable.                          |
+| Photo promo intake, library and saved editor    | Desktop photo upload, proposal, explicit local render; both widths reopened the saved promo and downloaded MP4 and post caption.                                                      |
+| Social                                          | Labeled synthetic replay, evidence list, source inspector, graph and zoom/fit.                                                                                                        |
+| Script project intake, library and saved editor | Desktop creation and guided draft; both widths opened the saved project, switched tabs, edited/saved and downloaded JSON. Six form-error/focus checks passed against the fix preview. |
+| Reference room                                  | Film search/detail, save/reload retention and creation handoff. Installed poster library: keyboard/next/drag, search/clear, direction save and tab-switch retention.                  |
+| Standalone showcase and film catalog            | Like/save, next/previous, documented concept-preview modal and Bird collection filtering.                                                                                             |
+
+The real local photo output was a 15-second, 1080×1920, 24 fps H.264 MP4. Complete decoding and extracted opening/middle/ending frames passed; browser downloads at both widths matched its SHA-256. Video seek/reset followed by download produced no error overlay after the isolated preview was changed to use the normal HTTP proxy. That bridge repair and a dependency-font allow-list repair were preview setup changes, not tracked application defects.
+
+The confirmed product finding was [#14](https://github.com/Emmit3/yap./issues/14), raw new-project validation messages and missing focus recovery, fixed by #16. No unresolved critical tracked defect was found in these local checks. Phone creation forms were entry checks; their saved-record actions were exercised on both widths. Generated footage, live research, real narration, subtitles and the two full paid rehearsals were outside this Phase 0 output proof.
 
 ## Release reconciliation
 
@@ -99,7 +117,7 @@ The findings and inventory below record the starting snapshot and its original l
 - Source-level form labels are present for the inspected entry, interview, promo, research, search and shot controls; no unlabeled visible form control was identified. Generated icon controls generally provide explicit accessible names.
 - Main app, creator, research and film-room styles contain focus-visible rules, disabled states and reduced-motion overrides. Their rendered contrast and target sizes are not verified by this report.
 - Shared navigation, genuine save/download handlers, explicit destructive confirmations, version conflict recovery, safe external citations and real job polling are strengths to preserve.
-- Quote integration, clipboard recovery, personal actions, keyboard navigation and filter recovery are implemented and checked at source/HTTP level. Browser verification remains unperformed under the user's explicit no-computer-use instruction.
+- Quote integration, clipboard recovery, personal actions, keyboard navigation and filter recovery were initially checked at source/HTTP level. The later browser follow-up above records its specific additional coverage.
 
 ## Follow-up ownership
 

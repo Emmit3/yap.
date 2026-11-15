@@ -11,7 +11,7 @@ import { readBounded } from './creator-video-provider.js';
 
 const installed: unknown = createRequire(import.meta.url)('ffmpeg-static');
 const encoder = typeof installed === 'string' ? installed : undefined;
-async function ffmpeg(args: string[], signal: AbortSignal): Promise<string> {
+async function ffmpeg(args: string[], signal: AbortSignal, cwd?: string): Promise<string> {
   if (!encoder)
     throw new ApiError(503, 'CREATOR_ENCODER_UNAVAILABLE', 'The video encoder is unavailable.');
   signal.throwIfAborted();
@@ -21,6 +21,7 @@ async function ffmpeg(args: string[], signal: AbortSignal): Promise<string> {
     const process = spawn(encoder, args, {
       shell: false,
       windowsHide: true,
+      ...(cwd ? { cwd } : {}),
       stdio: ['ignore', 'ignore', 'pipe'],
     });
     const finish = (error?: Error) => {
@@ -510,6 +511,7 @@ export async function assembleCreatorClips(
   durations: number[],
   signal: AbortSignal,
   soundtrack?: CreatorSoundtrack,
+  subtitles = false,
 ): Promise<{
   bytes: number;
   sha256: string;
@@ -519,7 +521,8 @@ export async function assembleCreatorClips(
   hasAudio: boolean;
 }> {
   const hasAudio = Boolean(soundtrack && (soundtrack.voices.length > 0 || soundtrack.music));
-  const silent = hasAudio ? join(directory, 'silent.mp4') : output;
+  const finalBase = subtitles ? join(directory, 'unsubtitled.mp4') : output;
+  const silent = hasAudio ? join(directory, 'silent.mp4') : finalBase;
   if (
     paths.length !== durations.length ||
     durations.some((duration) => !Number.isInteger(duration) || duration < 2 || duration > 10)
@@ -599,7 +602,55 @@ export async function assembleCreatorClips(
     ],
     signal,
   );
-  if (hasAudio) await mixCreatorAudio(silent, output, soundtrack!, duration, signal);
+  if (hasAudio) await mixCreatorAudio(silent, finalBase, soundtrack!, duration, signal);
+  if (subtitles) {
+    // The filename and style are server constants. Running inside the job directory
+    // avoids filter parsing of Windows drive letters, apostrophes or user paths.
+    const subtitleLog = await ffmpeg(
+      [
+        '-hide_banner',
+        '-nostdin',
+        '-protocol_whitelist',
+        'file,pipe',
+        '-i',
+        finalBase,
+        '-vf',
+        'ass=filename=subtitles.ass',
+        '-map',
+        '0:v:0',
+        '-map',
+        '0:a?',
+        '-c:v',
+        'libx264',
+        '-preset',
+        'ultrafast',
+        '-crf',
+        '21',
+        '-threads',
+        '2',
+        '-pix_fmt',
+        'yuv420p',
+        '-c:a',
+        'copy',
+        '-t',
+        String(duration),
+        '-movflags',
+        '+faststart',
+        '-map_metadata',
+        '-1',
+        '-y',
+        output,
+      ],
+      signal,
+      directory,
+    );
+    if (/failed to find any fallback|fontselect: failed to find/iu.test(subtitleLog))
+      throw new ApiError(
+        422,
+        'CREATOR_SUBTITLE_GLYPH',
+        'The subtitle font cannot display some script characters. Edit the text or turn subtitles off and review a new quote.',
+      );
+  }
   const log = await ffmpeg(
       [
         '-hide_banner',

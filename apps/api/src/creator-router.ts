@@ -250,6 +250,7 @@ function makePlan(
     ratio: '720:1280',
     hasAudio: Boolean(audio.voice || audio.musicTrackId),
     audio,
+    subtitlesEnabled: session.plan?.subtitlesEnabled ?? true,
     maxAttemptsPerClip: 2,
     maxGeneratedSeconds: total * 2,
     createdAt: new Date().toISOString(),
@@ -696,6 +697,9 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
           clips: input.clips,
           hasAudio: Boolean(audio?.voice || audio?.musicTrackId),
           ...(audio ? { audio } : {}),
+          ...(input.subtitlesEnabled === undefined
+            ? {}
+            : { subtitlesEnabled: input.subtitlesEnabled }),
           maxGeneratedSeconds: input.clips.reduce((total, clip) => total + clip.seconds, 0) * 2,
         },
       }));
@@ -872,6 +876,27 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
     response.type('video/mp4');
     if (request.query.download === '1') response.attachment('yap-creation.mp4');
     response.sendFile(path, (error) => {
+      if (error) next(error);
+    });
+  });
+  router.get('/sessions/:id/jobs/:jobId/subtitles.srt', async (request, response, next) => {
+    const session = await repository.get(idOf(request)),
+      job = await repository.job(session.id, idOf(request, 'jobId')),
+      workflow = await options.workflows.get(session.workflowId);
+    if (job.approvalId !== session.approval?.id || job.workflowVersion !== workflow.version)
+      throw new ApiError(
+        409,
+        'CREATOR_VIDEO_STALE',
+        'These subtitles belong to an older approval. Review the current creation before publishing.',
+      );
+    const path = await jobs.verifySubtitles(job);
+    response.attachment('yap-creation.srt');
+    response.set({
+      'Content-Type': 'application/x-subrip; charset=utf-8',
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    response.sendFile(path, { cacheControl: false }, (error) => {
       if (error) next(error);
     });
   });

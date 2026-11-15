@@ -125,6 +125,7 @@ export function planDraft(plan: CreatorPlan | null) {
         clips: plan.clips.map((clip) => ({ ...clip })),
         caption: plan.caption,
         audio: { voice: plan.audio?.voice ?? null, musicTrackId: plan.audio?.musicTrackId ?? null },
+        ...(plan.subtitlesEnabled !== undefined ? { subtitlesEnabled: plan.subtitlesEnabled } : {}),
       }
     : null;
 }

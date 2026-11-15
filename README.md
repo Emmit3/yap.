@@ -30,7 +30,7 @@ The **[Inspiration gallery](http://127.0.0.1:5173/#/references)** keeps 103 camp
 
 **Director** exposes the same brief, script, source assignments, camera and lighting instructions, clip timing, and production limit. Generated clips default to silent 720p Seedance 1.5 Pro through fal.ai; Runway Gen-4.5 is an explicit alternative. Full-clip decoding and three-frame visual review precede final assembly. Production requires an exact cost quote and explicit approval. Paid retries are manual, and reapproving an unchanged plan does not renew its two-attempt limit. The durable app budget defaults to USD 30. Provider access is optional; missing keys do not become claimed live research or generated footage.
 
-The existing photo editor remains available without generation credentials. Generated clips are silent, and the creator studio then adds optional AI narration of the approved script and a bundled music bed to the assembled film. The photo editor output stays silent. Captions are supplied separately and publishing remains manual. See the [creator backend guide](docs/creator-backend.md) for supported behavior and audit limits.
+The existing photo editor remains available without generation credentials. Generated clips are silent, and the creator studio then adds optional AI narration of the approved script and a bundled music bed to the assembled film. New creator plans also enable free burned-in subtitles, timed from narration or ordered scenes, with a separate SRT download. The photo editor output stays silent. The social post caption is supplied separately and publishing remains manual. See the [creator backend guide](docs/creator-backend.md) for supported behavior and audit limits.
 
 ## Agent architecture
 

@@ -12,7 +12,7 @@ import {
 } from '@yap/contracts/creator';
 import { CreatorRepository } from '../src/creator-repository.js';
 import { buildCreatorQuote, productionProfile, quoteFingerprint } from '../src/creator-budget.js';
-import { createWorkflow } from '../src/workflow-engine.js';
+import { createWorkflow, buildGuidedScript, buildGuidedScenes } from '../src/workflow-engine.js';
 
 async function storage(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'yap-creator-budget-'));
@@ -60,6 +60,35 @@ function creation() {
   });
   return { workflow, session, profile: productionProfile({}) };
 }
+
+test('free subtitle choice and exact script text bind quotes without changing legacy fingerprints', () => {
+  const { workflow, session, profile } = creation();
+  workflow.brief = {
+    ...workflow.brief,
+    productName: 'Cup',
+    productDescription: 'A ceramic cup.',
+    audience: 'Cup lovers',
+    callToAction: 'See the cup',
+  };
+  workflow.script = buildGuidedScript(workflow, { requireApproval: false });
+  workflow.scenes = buildGuidedScenes(workflow, { requireApproval: false });
+  session.plan!.clips.forEach((clip, index) => {
+    clip.sceneId = workflow.scenes!.scenes[index]!.id;
+  });
+  const legacy = quoteFingerprint(session, workflow, profile);
+  assert.equal(buildCreatorQuote(session, workflow, profile, []).subtitlesEnabled, undefined);
+  session.plan!.subtitlesEnabled = false;
+  assert.notEqual(quoteFingerprint(session, workflow, profile), legacy);
+  const off = buildCreatorQuote(session, workflow, profile, []);
+  session.plan!.subtitlesEnabled = true;
+  const on = buildCreatorQuote(session, workflow, profile, []);
+  assert.equal(on.maxCostCents, off.maxCostCents);
+  assert.notEqual(on.fingerprint, off.fingerprint);
+  workflow.script.segments[0]!.text = 'Changed words with the same script identifier.';
+  assert.notEqual(quoteFingerprint(session, workflow, profile), on.fingerprint);
+  delete session.plan!.subtitlesEnabled;
+  assert.equal(quoteFingerprint(session, workflow, profile), legacy);
+});
 async function approve(
   repository: CreatorRepository,
   session: CreatorSession,

@@ -116,6 +116,20 @@ function fixture() {
   return { now, workflow, session, quote };
 }
 
+test('subtitle choices must match the saved quote, including historical omission', () => {
+  const { session, workflow, quote, now } = fixture();
+  assert.ok(session.plan);
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+  session.plan.subtitlesEnabled = true;
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), false);
+  quote.subtitlesEnabled = true;
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+  session.plan.subtitlesEnabled = false;
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), false);
+  quote.subtitlesEnabled = false;
+  assert.equal(quoteIsCurrent(quote, session, workflow, now), true);
+});
+
 test('displayed money preserves exact server cents, including zero, and refuses invalid costs', () => {
   assert.equal(formatUsd(105), '$1.05');
   assert.equal(formatUsd(0), '$0.00');

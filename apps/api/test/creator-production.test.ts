@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -222,6 +222,10 @@ test('production audits actual decoded clips, requires a new quote for retries a
   assert.equal(next.session.plan?.audio?.voice, null);
   assert.ok(next.session.plan?.audio?.musicTrackId);
   assert.equal(result.job.output?.hasAudio, true);
+  assert.equal(result.job.output?.subtitles?.timingSource, 'scene');
+  assert.ok(
+    result.job.events.some(({ message }) => message.startsWith('Saved the final MP4 with music.')),
+  );
   assert.ok(failed.job.clips[1]?.audit?.issues.includes('Keep the subject centered.'));
   assert.equal(
     result.job.clips[1]!.prompt,
@@ -249,6 +253,7 @@ test('production audits actual decoded clips, requires a new quote for retries a
     }),
   );
   assert.equal((await f.request(`/sessions/${id}/jobs/${retry.job.id}/video`)).status, 409);
+  assert.equal((await f.request(`/sessions/${id}/jobs/${retry.job.id}/subtitles.srt`)).status, 409);
 });
 
 test('one global paid worker spans sessions and cancellation preserves submitted attempt receipts', async (t) => {
@@ -629,7 +634,7 @@ test('narration is quoted, held, recorded before any clip and mixed with music i
     },
   });
   clip = await makeVideo(f.directory);
-  speech = await makeSpeech(f.directory, 2);
+  speech = await makeSpeech(f.directory, 4);
   const capabilities = (await (await f.request('/capabilities')).json()) as {
     voices: string[];
     musicTracks: Array<{ id: string }>;
@@ -665,12 +670,44 @@ test('narration is quoted, held, recorded before any clip and mixed with music i
   assert.equal(spoken.length, 1);
   assert.equal(spoken[0]!.length, quote.narratedSegments);
   assert.equal(result.job.output?.hasAudio, true);
+  assert.equal(result.job.output?.subtitles?.timingSource, 'narration');
+  assert.ok(
+    result.job.events.some(({ message }) =>
+      message.startsWith('Saved the final MP4 with narration and music.'),
+    ),
+  );
+  const subtitlePath = `/sessions/${draft.session.id}/jobs/${result.job.id}/subtitles.srt`;
+  const subtitleResponse = await f.request(subtitlePath);
+  assert.equal(subtitleResponse.status, 200);
+  assert.match(subtitleResponse.headers.get('content-type') ?? '', /application\/x-subrip/);
+  assert.match(subtitleResponse.headers.get('content-type') ?? '', /charset=utf-8/);
+  assert.equal(subtitleResponse.headers.get('cache-control'), 'private, no-store');
+  assert.equal(subtitleResponse.headers.get('x-content-type-options'), 'nosniff');
+  assert.match(subtitleResponse.headers.get('content-disposition') ?? '', /yap-creation.srt/);
+  const subtitleBytes = Buffer.from(await subtitleResponse.arrayBuffer());
+  assert.equal(
+    createHash('sha256').update(subtitleBytes).digest('hex'),
+    result.job.output!.subtitles!.sha256,
+  );
+  const subtitleFile = join(f.directory, 'creator-videos', result.job.id, 'subtitles.srt');
+  await writeFile(subtitleFile, 'tampered');
+  assert.equal((await f.request(subtitlePath)).status, 500);
+  await writeFile(subtitleFile, subtitleBytes);
+  const other = await prepared(f);
+  assert.equal(
+    (await f.request(`/sessions/${other.session.id}/jobs/${result.job.id}/subtitles.srt`)).status,
+    404,
+  );
   assert.equal(result.job.output?.duration, 15);
   const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
   const log = await streams(f.directory, Buffer.from(await final.arrayBuffer()));
   assert.match(log, /Video: h264[^\n]* 1080x1920/);
   assert.match(log, /Audio: aac[^\n]*48000 Hz, stereo/);
   const ledger = await CreatorRepository.open(join(f.directory, 'creator-sessions.json'));
+  assert.deepEqual(
+    (await ledger.job(draft.session.id, result.job.id)).output?.subtitles,
+    result.job.output?.subtitles,
+  );
   const budget = await ledger.budget();
   assert.equal(
     budget.reservedCents + budget.chargedCents,
@@ -735,6 +772,7 @@ test('a creator can turn sound off, and a rejected narration key stops productio
       clips: current.session.plan!.clips,
       caption: current.session.plan!.caption,
       audio: { voice: null, musicTrackId: null },
+      subtitlesEnabled: false,
     }),
   );
   assert.equal(muted.status, 200, await muted.clone().text());
@@ -743,6 +781,16 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   const result = await produce(f, await reviewQuote(f, silent));
   assert.equal(result.job.status, 'succeeded', JSON.stringify(result.job.error));
   assert.equal(result.job.output?.hasAudio, false);
+  assert.equal(result.job.output?.subtitles, undefined);
+  assert.ok(
+    result.job.events.some(({ message }) =>
+      message.startsWith('Saved the final MP4 without sound.'),
+    ),
+  );
+  assert.equal(
+    (await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/subtitles.srt`)).status,
+    409,
+  );
   const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
   assert.doesNotMatch(await streams(f.directory, Buffer.from(await final.arrayBuffer())), /Audio:/);
 });
@@ -818,5 +866,118 @@ test('the narration hold is released when nothing was submitted and kept once a 
     budget.reservedCents + budget.chargedCents,
     lineCount * 10,
     'an uncertain outcome after a line left keeps the conservative narration hold',
+  );
+});
+
+test('subtitle preference is free, defaults on for new plans, survives sparse saves and invalidates approval', async (t) => {
+  const f = await fixture(
+    t,
+    passingProduction(() => {
+      throw new Error('No paid calls');
+    }),
+  );
+  const draft = await prepared(f);
+  assert.equal(draft.session.plan?.subtitlesEnabled, true);
+  const quote = async (value: CreatorSessionResponse) => {
+    const response = await f.request(
+      `/sessions/${value.session.id}/quote`,
+      json('POST', {
+        expectedVersion: value.session.version,
+        expectedWorkflowVersion: value.workflow.version,
+      }),
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    return creatorQuoteResponseSchema.parse(await response.json()).quote;
+  };
+  const original = await quote(draft),
+    approved = await reviewQuote(f, draft);
+  assert.equal(original.subtitlesEnabled, true);
+  const patch = async (value: CreatorSessionResponse, option?: boolean) => {
+    const response = await f.request(
+      `/sessions/${value.session.id}/plan`,
+      json('PATCH', {
+        expectedVersion: value.session.version,
+        expectedWorkflowVersion: value.workflow.version,
+        caption: value.session.plan!.caption,
+        clips: value.session.plan!.clips,
+        ...(option === undefined ? {} : { subtitlesEnabled: option }),
+      }),
+    );
+    assert.equal(response.status, 200, await response.clone().text());
+    return creatorSessionResponseSchema.parse(await response.json());
+  };
+  const off = await patch(approved, false);
+  assert.equal(off.session.approval, null);
+  assert.equal(off.session.plan!.subtitlesEnabled, false);
+  const offQuote = await quote(off);
+  assert.equal(offQuote.subtitlesEnabled, false);
+  assert.equal(offQuote.maxCostCents, original.maxCostCents);
+  assert.notEqual(offQuote.fingerprint, original.fingerprint);
+  const sparse = await patch(off);
+  assert.equal(sparse.session.plan!.subtitlesEnabled, false);
+  const stale = await f.request(
+    `/sessions/${sparse.session.id}/approve`,
+    json('POST', {
+      expectedVersion: sparse.session.version,
+      expectedWorkflowVersion: sparse.workflow.version,
+      planId: sparse.session.plan!.id,
+      quoteId: original.id,
+      reviewed: true,
+      costReviewed: true,
+    }),
+  );
+  assert.equal(stale.status, 409);
+});
+
+test('a restored historical plan stays subtitle-free on an unrelated plan save and quote', async (t) => {
+  const options = passingProduction(() => {
+    throw new Error('No paid calls');
+  });
+  const f = await fixture(t, options),
+    draft = await prepared(f);
+  await f.shutdown();
+  const path = join(f.directory, 'creator-sessions.json');
+  const state = JSON.parse(await readFile(path, 'utf8'));
+  delete state.sessions.find((item: { id: string }) => item.id === draft.session.id).plan
+    .subtitlesEnabled;
+  await writeFile(path, JSON.stringify(state));
+  const app = await createApp({
+    dataFile: join(f.directory, 'projects.json'),
+    workflowProviderConfig: { provider: 'guided' },
+    creatorOptions: options,
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const base = `http://127.0.0.1:${address.port}/api/creator`;
+  t.after(async () => {
+    await app.locals.shutdown();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+  const saved = await fetch(
+    `${base}/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: draft.session.version,
+      expectedWorkflowVersion: draft.workflow.version,
+      caption: draft.session.plan!.caption,
+      clips: draft.session.plan!.clips,
+    }),
+  );
+  assert.equal(saved.status, 200, await saved.clone().text());
+  const value = creatorSessionResponseSchema.parse(await saved.json());
+  assert.equal(Object.hasOwn(value.session.plan!, 'subtitlesEnabled'), false);
+  const quoted = await fetch(
+    `${base}/sessions/${value.session.id}/quote`,
+    json('POST', {
+      expectedVersion: value.session.version,
+      expectedWorkflowVersion: value.workflow.version,
+    }),
+  );
+  assert.equal(quoted.status, 200, await quoted.clone().text());
+  assert.equal(
+    Object.hasOwn(creatorQuoteResponseSchema.parse(await quoted.json()).quote, 'subtitlesEnabled'),
+    false,
   );
 });

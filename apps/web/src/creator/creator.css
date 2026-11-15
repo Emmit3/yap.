@@ -2333,6 +2333,27 @@
   border-top: 1px solid var(--creator-line);
 }
 
+.creator-inspector .creator-subtitle-controls {
+  display: block;
+  margin: 24px 0 0;
+  padding: 20px 0 0;
+  border: 0;
+  border-top: 1px solid var(--creator-line);
+}
+
+.creator-subtitle-controls legend {
+  float: left;
+  width: 100%;
+  margin-bottom: 16px;
+  padding: 0;
+  font-weight: 700;
+}
+
+.creator-subtitle-controls .creator-review-checkbox {
+  clear: both;
+  display: flex;
+}
+
 .creator-sound-controls legend {
   float: left;
   width: 100%;

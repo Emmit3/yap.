@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import test from 'node:test';
 import {
   fetchCreatorVideo,
+  fetchCreatorSubtitles,
   CreatorDownloadError,
   CREATOR_VIDEO_DOWNLOAD_TIMEOUT_MS,
 } from '../src/creator/downloads.js';
@@ -18,6 +19,62 @@ const transport =
   (value: Response): typeof fetch =>
   async () =>
     value;
+
+test('downloads exact UTF-8 SRT bytes independently of the MP4 and caption', async () => {
+  const srt = new TextEncoder().encode('1\n00:00:01,200 --> 00:00:02,400\nCafé & matcha.\n');
+  const receipt = { bytes: srt.length, sha256: createHash('sha256').update(srt).digest('hex') };
+  const blob = await fetchCreatorSubtitles(
+    '/subtitles.srt',
+    receipt,
+    undefined,
+    transport(
+      new Response(srt, {
+        headers: {
+          'Content-Type': 'application/x-subrip; charset=utf-8',
+          'Content-Length': String(srt.length),
+        },
+      }),
+    ),
+  );
+  assert.equal(blob.type, 'application/x-subrip;charset=utf-8');
+  assert.deepEqual(new Uint8Array(await blob.arrayBuffer()), srt);
+});
+
+test('subtitle downloads reject replaced bytes, wrong content types and excessive receipts', async () => {
+  const srt = new TextEncoder().encode('1\n00:00:00,000 --> 00:00:01,000\nHello.\n');
+  const receipt = { bytes: srt.length, sha256: createHash('sha256').update(srt).digest('hex') };
+  const replaced = srt.slice();
+  replaced[replaced.length - 2] = 63;
+  await assert.rejects(
+    fetchCreatorSubtitles(
+      '/srt',
+      receipt,
+      undefined,
+      transport(
+        new Response(replaced, {
+          headers: { 'Content-Type': 'application/x-subrip' },
+        }),
+      ),
+    ),
+    (error: unknown) =>
+      error instanceof CreatorDownloadError && error.code === 'DOWNLOAD_INTEGRITY',
+  );
+  await assert.rejects(
+    fetchCreatorSubtitles('/srt', receipt, undefined, transport(response(srt))),
+    (error: unknown) =>
+      error instanceof CreatorDownloadError && error.code === 'DOWNLOAD_INVALID_TYPE',
+  );
+  let requested = false;
+  await assert.rejects(
+    fetchCreatorSubtitles('/srt', { ...receipt, bytes: 1024 * 1024 + 1 }, undefined, async () => {
+      requested = true;
+      return response(srt);
+    }),
+    (error: unknown) =>
+      error instanceof CreatorDownloadError && error.code === 'DOWNLOAD_INVALID_RECEIPT',
+  );
+  assert.equal(requested, false);
+});
 
 test('downloads the complete reviewed MP4, verifies its receipt and removes the caller abort listener', async () => {
   const controller = new AbortController();

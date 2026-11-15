@@ -174,6 +174,7 @@ export function createCreatorApi(origin = '', transport: typeof fetch = fetch) {
     musicUrl: (trackId: string) => `${base}/music/${encodeURIComponent(trackId)}`,
     outputUrl: (id: string, jobId: string, download = false) =>
       `${base}${jobPath(id, jobId)}/video${download ? '?download=1' : ''}`,
+    subtitlesUrl: (id: string, jobId: string) => `${base}${jobPath(id, jobId)}/subtitles.srt`,
     clipUrl: (id: string, jobId: string, clipId: string, attempt: number) =>
       `${base}${jobPath(id, jobId)}/clips/${encodeURIComponent(clipId)}/video?attempt=${attempt}`,
   };

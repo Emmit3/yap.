@@ -59,7 +59,7 @@ Every returned clip is downloaded from the documented HTTPS artifact CDN into se
 
 An entire clip is decoded and checked for portrait dimensions and approved duration. Three sampled frames are then reviewed against its approved shot and creator image by the configured vision model, with bounded image sizes and output tokens. Reviewer/provider failures do not approve a clip and **never automatically trigger another paid generation**. Each deliberate retry requires a fresh quote and explicit cost approval. Failed/unknown attempts consume their recorded slot; the same plan allows at most two paid attempts per clip and at most 120 generated seconds. Reapproving an unchanged plan does not renew attempts. Passed clips can be reused after integrity verification.
 
-Only passed clips are assembled. Each is padded/trimmed to its approved duration, encoded to 1080×1920 H.264/yuv420p at 24 fps, and stripped of any clip audio. The final MP4 is decoded again to verify its measured duration, dimensions and lack of audio before saving its receipt. Frame sampling does not inspect every frame or prove factual claims; script and source accuracy still require the creator's review. The caption stays editable and posting remains manual.
+Only passed clips are assembled. Each is padded/trimmed to its approved duration, encoded to 1080×1920 H.264/yuv420p at 24 fps, and stripped of any clip audio. The final MP4 is decoded again to verify its measured duration, dimensions and approved soundtrack before saving its receipt. Frame sampling does not inspect every frame or prove factual claims; script and source accuracy still require the creator's review. The social caption stays editable and posting remains manual.
 
 ## Narration and music
 
@@ -73,6 +73,18 @@ The assembled film can carry a soundtrack chosen in the plan's `audio` setting: 
 **Deprecation:** OpenAI has scheduled every model on `/v1/audio/speech`, including `gpt-4o-mini-tts`, to shut down on **January 6, 2027**. Its named replacement, `gpt-realtime-2.1-mini`, runs only on the Realtime API. Narration must be moved to that transport before then. See [the deprecations page](https://developers.openai.com/api/docs/deprecations).
 
 Jobs, quotes, budget reservations and attempt receipts persist. On server restart, queued/running jobs become failed with an interruption explanation, and no paid request is resumed automatically. Uncertain submitted costs stay reserved. Shutdown waits for signal-aware provider cancellation and receipt cleanup. This is a bounded single-process local implementation; it does not claim distributed queue recovery or account/tenant isolation. Preserve the data file: deleting it removes the app's spending history rather than refunding provider charges.
+
+## Burned-in subtitles
+
+New prepared plans enable the free `subtitlesEnabled` option. An explicit saved choice is retained on preparation; historical plans with the field omitted stay off until prepared again or explicitly changed. Plan PATCH accepts an optional boolean and preserves omission on unrelated saves. The choice and approved subtitle source text bind into the quote fingerprint and require a new approval when changed. Quotes expose the optional choice without adding a provider, price or reservation.
+
+Subtitles use the approved script segments mapped to the actual ordered clips, independently of the social caption. Without narration, adjacent clips of one segment share their combined scene window; silent and music-only clip orders remain supported. With narration, each line starts at the final audio placement and ends after its trimmed PCM duration divided by its applied tempo. Phrase splits inside those measured windows are derived timing, not word alignment. Both SRT and burn-in use the same centisecond-rounded cue windows.
+
+A versioned private snapshot records plan, workflow and script identity, exact source text, windows and display cues inside the production job directory. Text wraps to at most two bounded lines per cue with a minimum display time and reading-rate check. Copy that cannot fit fails with `CREATOR_SUBTITLES_TOO_DENSE` and asks the creator to shorten it, allow more time or turn subtitles off. FFmpeg burns a server-generated ASS file with escaped literal text, a single outlined font style and portrait safe margins; it preserves the approved audio. Unsupported font glyphs fail with an editable recovery message rather than a claimed completed output.
+
+Successful jobs optionally include `output.subtitles` containing format, bytes, SHA-256, cue count and `timingSource` (`narration` or `scene`), without a private path. `GET /api/creator/sessions/:id/jobs/:jobId/subtitles.srt` downloads that saved UTF-8 SRT separately from the MP4 and social caption. The route checks the same session, current approval and workflow rules as video, plus successful status, artifact presence, byte bound and receipt hash. Changed or missing files fail integrity checks; failed/canceled jobs and historical jobs without a subtitle receipt have no completed subtitle export. Older artifacts are never rebuilt from a newer script.
+
+Automated verification uses synthetic tones and local FFmpeg fixtures, including actual Unicode glyph frames, literal markup, Windows paths, post-trim/tempo timing, portrait margins, full video/audio decoding, disabled mode, sparse historical saves and guarded/tampered downloads. It does not claim a live TTS quality or word-alignment test.
 
 ## Verified provider documentation
 
