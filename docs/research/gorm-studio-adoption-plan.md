@@ -1,5 +1,7 @@
 # Gorm Studio comparison and Yap adoption plan
 
+> Historical plan, superseded for current setup on November 15, 2026: provider and capability comparisons below describe the pinned November 14 baseline. New generation now defaults to fal Seedance 2.5; Seedance 1.5 is retired and the retained Runway adapter is unselected. Use [API setup](../api-setup.md) and [creator backend](../creator-backend.md) for implemented tools and current configuration.
+
 Researched November 14, 2026. Yap baseline: main `f866837`, pulled before publication; core production source remains unchanged from audited `b52f273`. This is an implementation plan, not a new provider integration or a paid output benchmark.
 
 ## Recommendation

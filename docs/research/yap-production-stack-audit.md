@@ -1,5 +1,7 @@
 # Yap production stack audit
 
+> Superseded for current setup on November 15, 2026: this audit describes the pinned historical commits below. Current generation defaults to fal Seedance 2.5; Seedance 1.5 is retired, and the retained Runway adapter is unselected. Capability gaps here describe that earlier snapshot. Use [API setup](../api-setup.md) and [creator backend](../creator-backend.md) for current behavior.
+
 Audited on November 14, 2026 against core production commit `b52f273`, then rechecked after pulling main `f866837`. The intervening changes add the poster reference/direction workspace without changing the audited video providers, paid-request gate or production worker. Core source links remain pinned to `b52f273`. This note describes implementation, not verified paid-account access. No private workspace guidance, credentials, or private reference material is included.
 
 ## Main finding

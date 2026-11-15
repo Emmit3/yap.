@@ -1,9 +1,10 @@
 ﻿# API providers and configuration
 
 The configuration format is published in the root [`.env.example`](../.env.example).
-Copy it to `apps/api/.env` and fill in only the services you want to use. The
-API workspace loads that file when started with `npm run dev` or `npm run dev:api`
-from the repository root. Restart the API after editing it.
+Copy it to the root `.env` or `apps/api/.env` and fill in only the services you
+want to use. API commands load the optional root `.env` first, then
+`apps/api/.env`; existing process environment values take precedence.
+Restart the API after editing either file.
 
 Guided photo preparation, photo-to-MP4 rendering, and labeled synthetic research
 replay work without external keys. Generated video and live research require the
@@ -14,11 +15,11 @@ the selected stack in detail.
 
 | Integration                       | Implemented use                                                                                        | Server configuration                                                                                                              |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
-| fal.ai                            | Silent Seedance 1.5 Pro generated clips                                                                | `CREATOR_VIDEO_PROVIDER=fal`, `FAL_KEY`, and `OPENAI_API_KEY` for required visual review                                          |
+| fal.ai                            | Silent Seedance 2.5 generated clips, with native portrait/landscape 720p profiles                      | `CREATOR_VIDEO_PROVIDER=fal`, `CREATOR_VIDEO_MODEL=seedance-2.5`, `FAL_KEY`, and `OPENAI_API_KEY` for required visual review      |
 | OpenAI Responses                  | Required generated-clip frame review; optional text/photo interpretation and editable script proposals | `OPENAI_API_KEY`, `OPENAI_MODEL=gpt-6-luna`; set `WORKFLOW_PROVIDER=openai` for interpretation                                    |
 | Firecrawl Search                  | Live public web and indexed social discovery                                                           | `FIRECRAWL_API_KEY`                                                                                                               |
 | LangChain Deep Agents with OpenAI | Optional model-driven evidence review with bounded source research and analysis                        | `DEEPAGENTS_MODEL=gpt-6-luna`, plus `DEEPAGENTS_OPENAI_API_KEY` or fallback `OPENAI_API_KEY`; also needs a public-source provider |
-| Runway                            | Explicit alternative generated-video adapter                                                           | `CREATOR_VIDEO_PROVIDER=runway`, `RUNWAYML_API_SECRET`, and `OPENAI_API_KEY` for visual review                                    |
+| Runway (historical, unselected)   | Retained legacy adapter and records                                                                    | Not part of the current fal setup; never selected as a default or automatic fallback                                              |
 | AWS S3                            | Optional command to upload a finished MP4 and create a temporary download link                         | `AWS_REGION`, `AWS_S3_BUCKET`, optional `AWS_S3_PREFIX`, and standard AWS credentials                                             |
 
 Direct X and Grok adapters are **disabled in the current budget profile**.
@@ -33,6 +34,7 @@ Set these values in `apps/api/.env`, replacing the key placeholders:
 
 ```dotenv
 CREATOR_VIDEO_PROVIDER=fal
+CREATOR_VIDEO_MODEL=seedance-2.5
 FAL_KEY=replace-with-your-fal-key
 OPENAI_API_KEY=replace-with-your-openai-key
 OPENAI_MODEL=gpt-6-luna
@@ -45,6 +47,10 @@ Generated clips still require exact quote approval and visual review. The
 durable app reservation cap can be lowered through `CREATOR_BUDGET_LIMIT_USD`,
 but cannot exceed 30. It does not limit an entire provider account's billing.
 There is no automatic paid provider fallback.
+
+New video generation uses fal Seedance 2.5. Seedance 1.5 Pro is retired and
+cannot start new generation; change an old explicit retired profile and review
+a new quote. A Runway key alone never adds Runway choices to the fal registry.
 
 For optional live research, add `FIRECRAWL_API_KEY`. To enable model-driven
 evidence review, also set `DEEPAGENTS_MODEL=gpt-6-luna`. Leave

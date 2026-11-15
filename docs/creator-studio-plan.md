@@ -1,5 +1,7 @@
 # Creator studio: from an idea to reviewed cinematic clips
 
+> Planning record, updated November 15, 2026: the provider section follows the current fal Seedance 2.5 setup. Other checkpoint descriptions below record the earlier design plan; see [API setup](api-setup.md) and [creator backend](creator-backend.md) for implemented behavior and current budget controls.
+
 ## Product direction
 
 The landing page is the entrance to a working creative studio. A person can click the phone, describe something they want to promote, attach their own media, and develop a video without first understanding a production form.
@@ -145,7 +147,7 @@ The follow-up budget requirement is a **USD 35 total application API budget**, w
 
 ### 8. Generate small clips and audit them
 
-Use a currently supported provider through a server-only adapter. The initial candidate is Runway's active Gen-4.5 REST interface, verified against its official reference. Do not use the retired OpenAI Sora/Videos API or retired Gemini preview model identifiers.
+Use fal Seedance 2.5 through the server-only adapter, with `CREATOR_VIDEO_PROVIDER=fal` and `CREATOR_VIDEO_MODEL=seedance-2.5`. Current profiles support native portrait or landscape 720p clips, with optional supplied images and no generated audio. Seedance 1.5 Pro is retired and cannot start new generation. The retained Runway adapter is historical and unselected in this setup; no provider error selects it automatically.
 
 Each shot is a small independently inspectable job. Save request identity, provider task ID, attempt count, source plan, status, and output receipt. Poll at the provider's documented interval. Keep API keys and raw provider failures out of browser state.
 
@@ -241,7 +243,7 @@ Do not open a second writer on the same workflow JSON file. The creator router s
 
 ## Current official implementation references
 
-- [Runway API reference](https://docs.dev.runwayml.com/api/) for current text/image-to-video requests, task polling, and cancellation.
+- [fal Seedance 2.5 text-to-video API](https://fal.ai/models/bytedance/seedance-2.5/text-to-video/api), [image-to-video API](https://fal.ai/models/bytedance/seedance-2.5/image-to-video/api), and [queue guide](https://fal.ai/docs/documentation/model-apis/inference/queue) for supported requests, polling and cancellation.
 - [OpenAI video generation documentation](https://developers.openai.com/api/docs/guides/video-generation) records the September 2026 retirement of Sora and the Videos API; it is not a supported integration target.
 - Existing repository guides: [promo backend](promo-backend.md), [research harness](deepagents-demo.md), and [social research](social-analysis.md).
 
