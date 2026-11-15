@@ -1,6 +1,6 @@
 # Live demo runbook
 
-How to run the creator flow live and what to do if a provider is slow or fails. The click path and sample business belong to roadmap item D2 in [issue 6](https://github.com/Emmit3/yap./issues/6); this page covers the safety net (D3).
+How to run the creator flow live and what to do if a provider is slow or fails. Use the [Mori Drinks seed and presenter path](demo-presenter.md) for the starting business and click sequence (D2 in [issue #6](https://github.com/Emmit3/yap./issues/6)); this page covers the safety net (D3).
 
 ## The day before
 

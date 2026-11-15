@@ -15,6 +15,7 @@
     "dev": "node scripts/dev.mjs",
     "check:connections": "node scripts/check-api-connections.mjs",
     "demo:snapshot": "node scripts/demo-snapshot.mjs",
+    "demo:seed": "npm run build --workspace=@yap/contracts && node scripts/demo-seed.mjs",
     "dev:web": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/web",
     "dev:api": "npm run build --workspace=@yap/contracts && npm run dev --workspace=@yap/api",
     "dev:showcase": "node scripts/serve.mjs",
