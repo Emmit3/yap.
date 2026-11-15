@@ -33,7 +33,7 @@ import type {
 import { LoadingState } from '../components';
 import { promoApi } from '../promo/api';
 import { creatorApi } from './api';
-import { fetchCreatorVideo } from './downloads';
+import { fetchCreatorVideo, fetchCreatorSubtitles } from './downloads';
 import { rovingIndex } from './keyboard';
 import {
   approvalCurrent,
@@ -1450,6 +1450,25 @@ function ShotInspector({
         </label>
       </fieldset>
       <SoundControls c={c} disabled={disabled} />
+      <fieldset className="creator-subtitle-controls" disabled={disabled}>
+        <legend>Subtitles for the whole film</legend>
+        <label className="creator-review-checkbox">
+          <input
+            type="checkbox"
+            checked={c.plan?.subtitlesEnabled === true}
+            onChange={(event) =>
+              c.setPlan((previous) =>
+                previous ? { ...previous, subtitlesEnabled: event.target.checked } : null,
+              )
+            }
+          />
+          <span>Burned-in subtitles</span>
+        </label>
+        <p className="creator-fineprint">
+          Included. Uses your script, timed to narration when present. A separate SRT download is
+          available with the finished film.
+        </p>
+      </fieldset>
       <button
         className="creator-primary-button"
         disabled={disabled || !c.planDirty || c.inputDirty || c.scriptDirty}
@@ -1606,6 +1625,7 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
   const [captionFeedback, setCaptionFeedback] = useState('');
   const downloadController = useRef<AbortController | null>(null);
   const [downloading, setDownloading] = useState(false);
+  const [downloadKind, setDownloadKind] = useState<'film' | 'subtitles'>('film');
   const [downloadFeedback, setDownloadFeedback] = useState('');
   const [downloadError, setDownloadError] = useState('');
   const [playbackError, setPlaybackError] = useState(false);
@@ -1634,27 +1654,47 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
   }
-  async function downloadFilm() {
+  async function downloadFilm(kind: 'film' | 'subtitles' = 'film') {
     const output = job.output;
-    if (!current || !output || downloadController.current) return;
+    if (
+      !current ||
+      !output ||
+      downloadController.current ||
+      (kind === 'subtitles' && !output.subtitles)
+    )
+      return;
     const active = new AbortController();
     downloadController.current = active;
     setDownloading(true);
+    setDownloadKind(kind);
     setDownloadError('');
-    setDownloadFeedback('Checking the completed film before download.');
+    setDownloadFeedback(
+      kind === 'film'
+        ? 'Checking the completed film before download.'
+        : 'Checking the saved subtitles before download.',
+    );
     try {
-      const blob = await fetchCreatorVideo(
-        creatorApi.outputUrl(job.sessionId, job.id, true),
-        output,
-        active.signal,
-      );
+      const blob =
+        kind === 'subtitles' && output.subtitles
+          ? await fetchCreatorSubtitles(
+              creatorApi.subtitlesUrl(job.sessionId, job.id),
+              output.subtitles,
+              active.signal,
+            )
+          : await fetchCreatorVideo(
+              creatorApi.outputUrl(job.sessionId, job.id, true),
+              output,
+              active.signal,
+            );
       if (active.signal.aborted || downloadController.current !== active) return;
-      saveBlob(blob, 'yap-film.mp4');
-      setDownloadFeedback('Film download requested.');
+      saveBlob(blob, kind === 'film' ? 'yap-film.mp4' : 'yap-subtitles.srt');
+      setDownloadFeedback(
+        kind === 'film' ? 'Film download requested.' : 'Subtitle download requested.',
+      );
     } catch (error) {
       if (downloadController.current !== active) return;
       if (active.signal.aborted)
-        setDownloadFeedback('Film download canceled. You can request it again.');
+        setDownloadFeedback('Download canceled. You can request it again.');
       else {
         setDownloadFeedback('');
         setDownloadError(
@@ -1880,19 +1920,36 @@ function JobPanel({ c, job }: { c: CreatorController; job: CreatorJob }) {
                 ? 'Watch the whole film. Take the file and caption to the platform you choose.'
                 : 'Your current edits and approvals are kept separate from this completed export.'}
             </p>
-            <button
-              type="button"
-              className="creator-primary-button"
-              onClick={() => void downloadFilm()}
-              disabled={!current || downloading || Boolean(c.busy)}
-            >
-              <DownloadSimple size={18} />{' '}
-              {downloading
-                ? 'Checking film download'
-                : downloadError
-                  ? 'Retry film download'
-                  : 'Download film'}
-            </button>
+            <div className="creator-review-actions">
+              <button
+                type="button"
+                className="creator-primary-button"
+                onClick={() => void downloadFilm()}
+                disabled={!current || downloading || Boolean(c.busy)}
+              >
+                <DownloadSimple size={18} />{' '}
+                {downloading && downloadKind === 'film'
+                  ? 'Checking film download'
+                  : downloadError && downloadKind === 'film'
+                    ? 'Retry film download'
+                    : 'Download film'}
+              </button>
+              {job.output.subtitles && (
+                <button
+                  type="button"
+                  className="creator-secondary-button"
+                  onClick={() => void downloadFilm('subtitles')}
+                  disabled={!current || downloading || Boolean(c.busy)}
+                >
+                  <DownloadSimple size={18} />{' '}
+                  {downloading && downloadKind === 'subtitles'
+                    ? 'Checking subtitle download'
+                    : downloadError && downloadKind === 'subtitles'
+                      ? 'Retry subtitle download'
+                      : 'Subtitles (.srt)'}
+                </button>
+              )}
+            </div>
             {downloading && (
               <button
                 className="creator-text-button"

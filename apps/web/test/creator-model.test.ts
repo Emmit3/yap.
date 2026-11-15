@@ -13,6 +13,7 @@ import {
   nextQuestion,
   outputIsCurrent,
   planCurrent,
+  planDraft,
   sourceInput,
   startingPrompt,
   withAnswer,
@@ -127,6 +128,20 @@ function fixture() {
   });
   return { session, workflow, job };
 }
+
+test('editing a historical plan preserves omitted subtitle settings until explicitly changed', () => {
+  const { session } = fixture();
+  assert.ok(session.plan);
+  const legacy = planDraft(session.plan);
+  assert.ok(legacy);
+  assert.equal(Object.hasOwn(legacy, 'subtitlesEnabled'), false);
+  legacy.caption = 'An edited social post caption.';
+  assert.equal(Object.hasOwn(legacy, 'subtitlesEnabled'), false);
+  session.plan.subtitlesEnabled = false;
+  assert.equal(planDraft(session.plan)?.subtitlesEnabled, false);
+  session.plan.subtitlesEnabled = true;
+  assert.equal(planDraft(session.plan)?.subtitlesEnabled, true);
+});
 
 test('media can start with a neutral request while an empty text-only start is rejected', () => {
   const prompt = startingPrompt('', 2);

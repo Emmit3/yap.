@@ -47,6 +47,7 @@ export function quoteIsCurrent(
     quote.provider !== (plan.provider ?? 'runway') ||
     quote.ratio !== plan.ratio ||
     quote.hasAudio !== plan.hasAudio ||
+    quote.subtitlesEnabled !== plan.subtitlesEnabled ||
     quote.consumedByJobId ||
     !Number.isFinite(nowMs) ||
     Date.parse(quote.expiresAt) <= nowMs ||

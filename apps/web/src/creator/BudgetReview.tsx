@@ -122,6 +122,10 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
           </dd>
         </div>
         <div>
+          <dt>Subtitles</dt>
+          <dd>{plan.subtitlesEnabled === true ? 'Burned in / included' : 'Off'}</dd>
+        </div>
+        <div>
           <dt>Clip duration</dt>
           <dd>{minimumSeconds}–10s per shot</dd>
         </div>
@@ -247,6 +251,15 @@ export function BudgetReview({ c, onOpenPromo }: { c: CreatorController; onOpenP
                     <td>—</td>
                     <td>—</td>
                     <td>{formatUsd(quote.audioCents)}</td>
+                  </tr>
+                )}
+                {quote.subtitlesEnabled === true && (
+                  <tr>
+                    <th scope="row">Subtitles</th>
+                    <td>Burned in + SRT download</td>
+                    <td>—</td>
+                    <td>—</td>
+                    <td>Included</td>
                   </tr>
                 )}
               </tbody>
