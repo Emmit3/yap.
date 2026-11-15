@@ -322,9 +322,15 @@ export function PosterWorkspace({
             </button>
           </div>
         ) : !styles.length ? (
-          <div className="poster-studio-empty">
-            <h2>A place for your next favorite design.</h2>
-            <p>There are no poster styles in this workspace yet.</p>
+          <div className="poster-studio-empty" role="status">
+            <h2>The poster collection isn’t available yet.</h2>
+            <p>Try loading it again. You can still explore videos in the meantime.</p>
+            <button
+              className="button button-secondary"
+              onClick={() => setRevision((value) => value + 1)}
+            >
+              Try again
+            </button>
           </div>
         ) : !filtered.length ? (
           <div className="poster-studio-empty">

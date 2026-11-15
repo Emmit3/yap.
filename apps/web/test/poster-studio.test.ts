@@ -58,7 +58,7 @@ function deferred<T>() {
 
 // Execute the component's actual hooks, JSX and callbacks. The carousel is a boundary:
 // these tests drive its public selection callback rather than reimplementing its motion.
-function mount(restoredDesign?: PosterDesign) {
+function mount(restoredDesign?: PosterDesign, styleResponses: PosterStyle[][] = [styles]) {
   let cursor = 0;
   const slots: Slot[] = [];
   let effects: Array<() => void> = [];
@@ -70,6 +70,7 @@ function mount(restoredDesign?: PosterDesign) {
     result: ReturnType<typeof deferred<{ design: PosterDesign }>>;
   }> = [];
   const reads: Array<{ id: string; signal: AbortSignal }> = [];
+  let styleReads = 0;
   const listeners = new Map<string, Set<(event: unknown) => void>>();
   const window = {
     addEventListener(name: string, listener: (event: unknown) => void) {
@@ -143,7 +144,9 @@ function mount(restoredDesign?: PosterDesign) {
     return null;
   }
   const api = {
-    styles: async () => ({ styles }),
+    styles: async () => ({
+      styles: styleResponses[Math.min(styleReads++, styleResponses.length - 1)] ?? [],
+    }),
     createDesign(...args: unknown[]) {
       const result = deferred<{ design: PosterDesign }>();
       saves.push({ args, result });
@@ -201,6 +204,9 @@ function mount(restoredDesign?: PosterDesign) {
     storage,
     saves,
     reads,
+    get styleReads() {
+      return styleReads;
+    },
     listeners,
     emit(name: string, event: unknown = {}) {
       listeners.get(name)?.forEach((listener) => listener(event));
@@ -283,6 +289,31 @@ function back(studio: ReturnType<typeof mount>, tree: Node[]) {
 function savedStatus(tree: Node[]) {
   return editor(tree).find((node) => node.props.role === 'status');
 }
+
+test('an empty poster library can be retried and recover when its styles become available', async () => {
+  const studio = mount(undefined, [[], styles]);
+  try {
+    let tree = await studio.load();
+    assert.equal(studio.styleReads, 1);
+    assert.equal(
+      tree.some((node) => node.type === studio.PosterCarousel),
+      false,
+    );
+    const retry = tree.find((node) => node.type === 'button' && words(node).trim() === 'Try again');
+    assert.ok(retry, 'an empty catalog must expose a recovery action instead of a dead end');
+    call(retry.props.onClick);
+    tree = await studio.load();
+    assert.equal(studio.styleReads, 2);
+    assert.deepEqual(
+      tree.find((node) => node.type === studio.PosterCarousel)?.props.styles,
+      styles,
+    );
+    assert.equal(studio.saves.length, 0);
+    assert.equal(studio.dirty.at(-1), false);
+  } finally {
+    studio.unmount();
+  }
+});
 
 test('selecting a style saves only its public identity, crop hash and requested changes', async () => {
   const studio = mount();
