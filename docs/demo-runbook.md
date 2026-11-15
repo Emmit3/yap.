@@ -6,7 +6,7 @@ How to run the creator flow live and what to do if a provider is slow or fails. 
 
 1. Put the keys in `apps/api/.env` (see [API setup](api-setup.md)). Narration and frame review both use `OPENAI_API_KEY`.
 2. Start the app with `npm run dev` and run `npm run check:connections`. Every provider you plan to show must report ready.
-3. Open the cost review in the studio and confirm the available budget covers at least two full films. One 15-second film with narration is quoted at about USD 1.35.
+3. Request the current server quote in the studio and confirm the available budget covers the runs you intend to approve. Review the selected model, clip timing, audits and audio costs; historical demo estimates do not apply to a new quote.
 4. Make one complete film end to end, with the same idea and photos you will use live. Watch and listen to it.
 5. Save it as the fallback:
 
