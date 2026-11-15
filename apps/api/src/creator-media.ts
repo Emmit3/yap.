@@ -13,7 +13,12 @@ import { readBounded } from './creator-video-provider.js';
 
 const installed: unknown = createRequire(import.meta.url)('ffmpeg-static');
 const encoder = typeof installed === 'string' ? installed : undefined;
-async function ffmpeg(args: string[], signal: AbortSignal, cwd?: string): Promise<string> {
+async function ffmpeg(
+  args: string[],
+  signal: AbortSignal,
+  cwd?: string,
+  observe?: (chunk: string) => void,
+): Promise<string> {
   if (!encoder)
     throw new ApiError(503, 'CREATOR_ENCODER_UNAVAILABLE', 'The video encoder is unavailable.');
   signal.throwIfAborted();
@@ -49,7 +54,9 @@ async function ffmpeg(args: string[], signal: AbortSignal, cwd?: string): Promis
     }, 180000);
     signal.addEventListener('abort', abort, { once: true });
     process.stderr.on('data', (value: Buffer) => {
-      log = (log + value.toString('utf8')).slice(-64000);
+      const chunk = value.toString('utf8');
+      observe?.(chunk);
+      log = (log + chunk).slice(-64000);
     });
     process.once('error', () =>
       finish(
@@ -69,6 +76,119 @@ async function ffmpeg(args: string[], signal: AbortSignal, cwd?: string): Promis
     );
     if (signal.aborted) abort();
   });
+}
+/**
+ * Only remove strong, stable opposing black strips. Observe every decoded frame,
+ * rather than representative stills or the bounded diagnostic-log tail. Ambiguous
+ * dark scenes, changing borders and large picture loss keep the original framing.
+ */
+async function stablePaddingCrop(
+  path: string,
+  duration: number,
+  signal: AbortSignal,
+): Promise<string | undefined> {
+  let pending = '',
+    width = 0,
+    height = 0,
+    frames = 0,
+    brightnessFrames = 0;
+  let firstTime = Infinity,
+    lastTime = -Infinity,
+    darkestMean = Infinity,
+    invalid = false;
+  const minima = [Infinity, Infinity, Infinity, Infinity];
+  const maxima = [-Infinity, -Infinity, -Infinity, -Infinity];
+  const line = (value: string) => {
+    if (!width) {
+      const size = /Video:[^\r\n]*? (\d{2,5})x(\d{2,5})/.exec(value);
+      if (size) {
+        width = Number(size[1]);
+        height = Number(size[2]);
+      }
+    }
+    if (/rotation of|rotate\s*:/i.test(value)) invalid = true;
+    const bounds = /x1:(-?\d+) x2:(-?\d+) y1:(-?\d+) y2:(-?\d+).*?\bt:(-?[\d.]+)/.exec(value);
+    if (bounds) {
+      const edges = bounds.slice(1, 5).map(Number);
+      const [left, right, top, bottom] = edges as [number, number, number, number];
+      if (left < 0 || top < 0 || right < left || bottom < top || right >= width || bottom >= height)
+        invalid = true;
+      edges.forEach((edge, index) => {
+        minima[index] = Math.min(minima[index]!, edge);
+        maxima[index] = Math.max(maxima[index]!, edge);
+      });
+      const at = Number(bounds[5]);
+      firstTime = Math.min(firstTime, at);
+      lastTime = Math.max(lastTime, at);
+      frames++;
+    }
+    const mean = /lavfi\.signalstats\.YAVG=([\d.]+)/.exec(value);
+    if (mean) {
+      darkestMean = Math.min(darkestMean, Number(mean[1]));
+      brightnessFrames++;
+    }
+  };
+  await ffmpeg(
+    [
+      '-hide_banner',
+      '-nostdin',
+      '-protocol_whitelist',
+      'file,pipe',
+      '-i',
+      path,
+      '-map',
+      '0:v:0',
+      '-an',
+      '-vf',
+      // Limited-range black is 16/255; 20/255 permits only small compression noise.
+      'format=yuv420p,cropdetect=limit=0.07843137:round=2:reset=1:skip=0:max_outliers=0,signalstats,metadata=mode=print:key=lavfi.signalstats.YAVG',
+      '-f',
+      'null',
+      '-',
+    ],
+    signal,
+    undefined,
+    (chunk) => {
+      const lines = (pending + chunk).split(/[\r\n]+/);
+      pending = lines.pop() ?? '';
+      for (const value of lines) line(value);
+    },
+  );
+  if (pending) line(pending);
+  if (
+    invalid ||
+    !width ||
+    !height ||
+    frames < 24 ||
+    brightnessFrames !== frames ||
+    firstTime > 0.05 ||
+    lastTime < duration - 0.1 ||
+    darkestMean < 48 ||
+    maxima.some((edge, index) => edge - minima[index]! > 2)
+  )
+    return undefined;
+  // The union includes every frame's nonblack pixels. Round outward for 4:2:0;
+  // never round inward and remove a detected picture pixel.
+  const left = Math.floor(minima[0]! / 2) * 2;
+  const right = Math.min(width, Math.ceil((maxima[1]! + 1) / 2) * 2);
+  const top = Math.floor(minima[2]! / 2) * 2;
+  const bottom = Math.min(height, Math.ceil((maxima[3]! + 1) / 2) * 2);
+  const horizontal =
+    left <= 2 &&
+    width - right <= 2 &&
+    top >= Math.max(8, height * 0.025) &&
+    height - bottom >= Math.max(8, height * 0.025) &&
+    Math.abs(top - (height - bottom)) <= Math.max(8, height * 0.01);
+  const vertical =
+    top <= 2 &&
+    height - bottom <= 2 &&
+    left >= Math.max(8, width * 0.025) &&
+    width - right >= Math.max(8, width * 0.025) &&
+    Math.abs(left - (width - right)) <= Math.max(8, width * 0.01);
+  if (horizontal && (bottom - top) / height >= 0.65)
+    return `crop=${width}:${bottom - top}:0:${top}`;
+  if (vertical && (right - left) / width >= 0.65) return `crop=${right - left}:${height}:${left}:0`;
+  return undefined;
 }
 export async function inspectCreatorClip(
   path: string,
@@ -540,6 +660,7 @@ export async function assembleCreatorClips(
   const normalized: string[] = [];
   for (let index = 0; index < paths.length; index++) {
     const target = join(directory, `normalized-${index}.mp4`);
+    const paddingCrop = await stablePaddingCrop(paths[index]!, durations[index]!, signal);
     normalized.push(target);
     await ffmpeg(
       [
@@ -552,7 +673,7 @@ export async function assembleCreatorClips(
         '-map',
         '0:v:0',
         '-vf',
-        `scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,tpad=stop_mode=clone:stop_duration=1,fps=24`,
+        `${paddingCrop ? `${paddingCrop},` : ''}scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height},setsar=1,tpad=stop_mode=clone:stop_duration=1,fps=24`,
         '-t',
         String(durations[index]),
         '-an',

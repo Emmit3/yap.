@@ -797,17 +797,17 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
       for (const clip of session.plan!.clips)
         if (clip.storyboardFrameId)
           await tools.images.verifyImage(session.id, clip.storyboardFrameId);
+      await jobs.captureCurrentPlanProvenance(session, workflow);
       const quote = buildCreatorQuote(
         session,
         workflow,
         productionProfiles(video, session.plan!.clips, registry),
         history,
+        new Date(),
+        10,
+        await repository.clipProvenance(session.id),
       );
-      for (const item of quote.clips)
-        if (item.reuse) {
-          const oldJob = await repository.job(session.id, item.reuse.jobId);
-          await jobs.verifyClip(oldJob, item.clipId, item.reuse.attempt);
-        }
+      await jobs.preflightReuses(session, workflow, quote);
       response.json({ quote: await repository.addQuote(quote), budget: await repository.budget() });
     }),
   );

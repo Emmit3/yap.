@@ -242,3 +242,77 @@ test('Seedance cancellation and deadlines never replay an uncertain paid submiss
   }
   assert.equal(submits, 2, 'one submission per attempt, with no timeout retry');
 });
+
+test('Seedance content-policy rejections explain the next action without exposing provider details or replaying work', async () => {
+  const sensitiveDetail = {
+    type: 'content_policy_violation',
+    loc: ['body', 'image_url'],
+    msg: 'Private provider response with provider-secret',
+    input: 'https://private.example/reference.jpg?key=provider-secret',
+    ctx: { reason: 'partner_validation_failed' },
+  };
+  for (const detail of [sensitiveDetail, [sensitiveDetail]]) {
+    const id = randomUUID();
+    let submissions = 0;
+    const provider = createSeedance25CreatorVideoProvider(
+      { apiKey: 'provider-secret', pollMs: 1 },
+      async (input, init) => {
+        if (init?.method === 'POST') {
+          submissions++;
+          return Response.json({ request_id: id });
+        }
+        if (String(input).endsWith('/status')) return Response.json({ status: 'COMPLETED' });
+        assert.equal(String(input), `${ROOT}/requests/${id}`);
+        return Response.json({ detail }, { status: 422 });
+      },
+    );
+    await assert.rejects(
+      provider.generate({
+        clip,
+        signal: new AbortController().signal,
+        onSubmitted: async () => {},
+      }),
+      {
+        status: 422,
+        code: 'CREATOR_VIDEO_CONTENT_REJECTED',
+        message:
+          'The video provider rejected this content. Choose a different suitable reference photo and review the shot before trying again.',
+      },
+    );
+    assert.equal(submissions, 1, 'a rejected accepted task must never repeat its paid POST');
+  }
+});
+
+test('Seedance content error classification preserves busy and all unrecognized provider errors', async () => {
+  for (const [status, body] of [
+    [429, { detail: { type: 'content_policy_violation' } }],
+    [500, { detail: { type: 'content_policy_violation' } }],
+    [422, { detail: { type: 'validation_error', msg: 'content_policy_violation' } }],
+    [422, { detail: 'content_policy_violation' }],
+    [422, 'not JSON'],
+  ] as const) {
+    let submissions = 0;
+    const provider = createSeedance25CreatorVideoProvider({ apiKey: 'fixture-key' }, async () => {
+      submissions++;
+      return typeof body === 'string'
+        ? new Response(body, { status })
+        : Response.json(body, { status });
+    });
+    await assert.rejects(
+      provider.generate({
+        clip,
+        signal: new AbortController().signal,
+        onSubmitted: async () => {},
+      }),
+      {
+        status: status === 429 ? 429 : 502,
+        code: 'CREATOR_VIDEO_PROVIDER_ERROR',
+        message:
+          status === 429
+            ? 'The video provider is busy. No paid request was automatically repeated.'
+            : 'The video provider rejected the request. Check its configuration, balance and content restrictions.',
+      },
+    );
+    assert.equal(submissions, 1);
+  }
+});
