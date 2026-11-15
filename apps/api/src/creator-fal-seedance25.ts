@@ -146,8 +146,8 @@ export function createSeedance25CreatorVideoProvider(
             .resize({
               width: profile.nativeWidth!,
               height: profile.nativeHeight!,
-              fit: 'contain',
-              background: '#000000',
+              fit: 'cover',
+              position: 'center',
             })
             .flatten({ background: '#000000' })
             .jpeg({ quality: 88 })

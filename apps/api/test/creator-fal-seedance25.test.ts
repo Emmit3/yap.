@@ -76,12 +76,13 @@ test('Seedance 2.5 text requests use both native ratios, string duration and fix
   }
 });
 
-test('Seedance image input is padded to the exact native canvas and reapproved before a paid POST', async () => {
+test('Seedance image input fills the exact native canvas without padding and is reapproved before a paid POST', async () => {
   const image = await sharp({
-    create: { width: 80, height: 80, channels: 3, background: '#ffffff' },
+    create: { width: 160, height: 25, channels: 3, background: '#ffffff' },
   })
     .png()
     .toBuffer();
+  const original = Buffer.from(image);
   for (const ratio of ['720:1280', '1280:720'] as const) {
     const id = randomUUID();
     let paidBody: Record<string, unknown> | undefined;
@@ -118,14 +119,12 @@ test('Seedance image input is padded to the exact native canvas and reapproved b
     const metadata = await sharp(normalized).metadata();
     assert.equal(metadata.width, ratio === '720:1280' ? 720 : 1280);
     assert.equal(metadata.height, ratio === '720:1280' ? 1280 : 720);
-    const corner = await sharp(normalized)
-      .extract({ left: 0, top: 0, width: 1, height: 1 })
-      .raw()
-      .toBuffer();
+    const stats = await sharp(normalized).stats();
     assert.ok(
-      corner.every((channel) => channel < 10),
-      'contain padding stays black',
+      stats.channels.every((channel) => channel.min > 240),
+      'a solid wide reference must fill every output pixel without invented black bars',
     );
+    assert.deepEqual(image, original, 'the original reference bytes stay unchanged');
   }
   let calls = 0;
   const provider = createSeedance25CreatorVideoProvider({ apiKey: 'fixture-key' }, async () => {
