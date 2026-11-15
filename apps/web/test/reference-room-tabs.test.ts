@@ -25,7 +25,11 @@ const films = parseFilmCatalog(
   ),
 );
 type Slot = { value: unknown; deps?: unknown[]; cleanup?: () => void };
-type Props = { onDirty(value: boolean): void; onUseReferences(ids: string[]): void };
+type Props = {
+  onDirty(value: boolean): void;
+  onUseReferences(ids: string[]): void;
+  posters: boolean;
+};
 
 // Execute the actual parent component and callbacks without a browser. Child component
 // identity/key and continued presence are the React contract for retaining their state.
@@ -175,7 +179,11 @@ function call(value: unknown, ...args: unknown[]) {
 test('switching reference tabs retains both child trees and a stable poster dirty callback', () => {
   const dirty: boolean[] = [],
     latest: boolean[] = [];
-  const room = mount({ onDirty: (value) => dirty.push(value), onUseReferences() {} });
+  const room = mount({
+    onDirty: (value) => dirty.push(value),
+    onUseReferences() {},
+    posters: true,
+  });
   let tree = room.render();
   const poster = tree.find((node) => node.type === room.PosterWorkspace)!;
   const gallery = tree.find((node) => node.type === room.ProductGallery)!;
@@ -207,7 +215,7 @@ test('switching reference tabs retains both child trees and a stable poster dirt
 });
 
 test('reference tabs support roving arrows, Home and End while preserving native shortcuts', () => {
-  const room = mount({ onDirty() {}, onUseReferences() {} });
+  const room = mount({ onDirty() {}, onUseReferences() {}, posters: true });
   let tree = room.render();
   let focused = -1,
     prevented = 0;
@@ -255,7 +263,11 @@ test('reference tabs support roving arrows, Home and End while preserving native
 
 test('workspace navigation toggling preserves child identity and the hidden draft guard, with Escape focus recovery', () => {
   const dirty: boolean[] = [];
-  const room = mount({ onDirty: (value) => dirty.push(value), onUseReferences() {} });
+  const room = mount({
+    onDirty: (value) => dirty.push(value),
+    onUseReferences() {},
+    posters: true,
+  });
   let tree = room.render();
   const poster = tree.find((node) => node.type === room.PosterWorkspace)!;
   const gallery = tree.find((node) => node.type === room.ProductGallery)!;
@@ -305,7 +317,7 @@ test('workspace navigation toggling preserves child identity and the hidden draf
 
 test('native product inspiration forwards selected source IDs without a full-page film iframe', () => {
   const used: string[][] = [];
-  const room = mount({ onDirty() {}, onUseReferences: (ids) => used.push(ids) });
+  const room = mount({ onDirty() {}, onUseReferences: (ids) => used.push(ids), posters: true });
   let tree = room.render();
   const gallery = tree.find((node) => node.type === room.ProductGallery)!;
   assert.equal(
@@ -319,6 +331,20 @@ test('native product inspiration forwards selected source IDs without a full-pag
   assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, false);
   call(byRole(tree, 'tab')[0]!.props.onClick);
   tree = room.render();
+  assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, true);
+  room.unmount();
+});
+
+test('a server without poster styles shows videos only, with no empty Posters tab', () => {
+  const room = mount({ onDirty() {}, onUseReferences() {}, posters: false });
+  const tree = room.render();
+  assert.equal(byRole(tree, 'tablist').length, 0);
+  assert.equal(byRole(tree, 'tab').length, 0);
+  assert.equal(byRole(tree, 'tabpanel').length, 0);
+  assert.equal(
+    tree.find((node) => node.type === room.PosterWorkspace),
+    undefined,
+  );
   assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, true);
   room.unmount();
 });

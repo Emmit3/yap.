@@ -26,7 +26,7 @@ A save requires one available style, its current `crop.sha256`, and nonempty cha
 
 ## Private style packs and saved directions
 
-Repository guidance keeps reference material and its derivatives under ignored `local-context/`. The API reads `local-context/poster-references/manifest.json` relative to the repository, independently of the server's working directory. A fresh clone without an installed pack returns an empty style library.
+Repository guidance keeps reference material and its derivatives under ignored `local-context/`. The API reads `local-context/poster-references/manifest.json` relative to the repository, independently of the server's working directory. A fresh clone without an installed pack returns an empty style library. In that case Inspiration shows videos only: the Posters tab is offered once the server reports at least one style, checked each time Inspiration is opened.
 
 The empty collection has a **Try again** action. Installing or restoring a valid local pack, then retrying, loads its styles without resetting the workspace. An isolated preview in another worktree needs its own installed pack or an explicit `createApp({ posterReferencesDirectory: absolutePackDirectory })` pointing at an existing valid pack. Copying only the UI does not install the private reference images. Keep that pack and its recipes ignored; do not place them in the public asset directory.
 
