@@ -18,9 +18,21 @@ const MAX_OUTPUT_TOKENS = 8000;
 const OPENAI_RESERVATION_CENTS = 50;
 interface CoveredRequest {
   submitted: number;
+  /** Admitted speech slots include requests still awaiting their final check. */
   speech: number;
+  /** Transport attempts after the final check; a lost response may still be billed. */
+  delegatedSpeech: number;
   speechLimit: number;
+  closed: boolean;
   beforeSubmit?: () => Promise<void>;
+}
+
+/** Live proof that narration failed before its first transport call, not an unknown outcome. */
+export class UnsubmittedNarrationError extends Error {
+  constructor(cause: unknown) {
+    super('Narration stopped before a provider request was submitted.', { cause });
+    this.name = 'UnsubmittedNarrationError';
+  }
 }
 
 /** One ledger also covers legacy OpenAI drafting and public search using the same keys. */
@@ -219,11 +231,18 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
     try {
       await parent?.beforeSubmit?.();
       request.signal.throwIfAborted();
+      if (parent && speech && parent.closed)
+        throw new ApiError(
+          503,
+          'CREATOR_BUDGET_AUDIT',
+          'This approved narration operation has already finished.',
+        );
     } catch (error) {
       if (reservation) await settle(reservation, 0);
       throw error;
     }
     // No retry. A disconnect, timeout or uncertain response keeps its reserved ceiling.
+    if (parent && speech) parent.delegatedSpeech++;
     const response = await delegate(request.url, {
       method: request.method,
       headers,
@@ -247,7 +266,26 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
       speechLimit = 0,
     ): Promise<T> {
       if (covered.getStore()) return operation();
-      return covered.run({ submitted: 0, speech: 0, speechLimit, beforeSubmit }, operation);
+      const context = {
+        submitted: 0,
+        speech: 0,
+        delegatedSpeech: 0,
+        speechLimit,
+        closed: false,
+        beforeSubmit,
+      };
+      return covered.run(context, async () => {
+        try {
+          return await operation();
+        } catch (error) {
+          if (speechLimit > 0 && context.delegatedSpeech === 0)
+            throw new UnsubmittedNarrationError(error);
+          throw error;
+        } finally {
+          // A detached request cannot start later after a zero-submission hold was released.
+          context.closed = true;
+        }
+      });
     },
     research(analyze: CreatorAnalyzer, live: boolean): CreatorAnalyzer {
       return async (...args) => {

@@ -17,7 +17,11 @@ import {
 import { createApp, type AppOptions } from '../src/app.js';
 import { CreatorRepository } from '../src/creator-repository.js';
 import { ApiError } from '../src/errors.js';
-import type { CreatorBudgetLedger } from '../src/creator-budget.js';
+import {
+  buildCreatorQuote,
+  productionProfile,
+  type CreatorBudgetLedger,
+} from '../src/creator-budget.js';
 const json = (method: string, body: unknown): RequestInit => ({
   method,
   headers: { 'Content-Type': 'application/json' },
@@ -25,7 +29,11 @@ const json = (method: string, body: unknown): RequestInit => ({
 });
 async function fixture(t: TestContext, creatorOptions: AppOptions['creatorOptions']) {
   const directory = await mkdtemp(join(tmpdir(), 'yap-creator-production-')),
-    app = await createApp({ dataFile: join(directory, 'projects.json'), creatorOptions });
+    app = await createApp({
+      dataFile: join(directory, 'projects.json'),
+      workflowProviderConfig: { provider: 'guided' },
+      creatorOptions,
+    });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const address = server.address();
@@ -46,6 +54,16 @@ async function fixture(t: TestContext, creatorOptions: AppOptions['creatorOption
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
+async function narrationFixture(t: TestContext, options: AppOptions['creatorOptions']) {
+  const previous = process.env.OPENAI_API_KEY;
+  process.env.OPENAI_API_KEY = 'narration-fixture-no-external-requests';
+  try {
+    return await fixture(t, options);
+  } finally {
+    if (previous === undefined) delete process.env.OPENAI_API_KEY;
+    else process.env.OPENAI_API_KEY = previous;
+  }
+}
 async function reviewQuote(f: Fixture, value: CreatorSessionResponse) {
   const response = await f.request(
     '/sessions/' + value.session.id + '/quote',
@@ -734,4 +752,280 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   assert.equal(result.job.output?.hasAudio, false);
   const final = await f.request(`/sessions/${draft.session.id}/jobs/${result.job.id}/video`);
   assert.doesNotMatch(await streams(f.directory, Buffer.from(await final.arrayBuffer())), /Audio:/);
+});
+
+test('a stale plan before the first narration submission releases every unused hold', async (t) => {
+  let request: Fixture['request'] | undefined;
+  let sessionId = '',
+    narrated = 0,
+    submitted = 0,
+    generated = 0;
+  const f = await fixture(t, {
+    video: {
+      configured: true,
+      cancel: async () => {},
+      generate: async () => {
+        generated++;
+        throw new Error('No clip request should be submitted.');
+      },
+    },
+    auditor: {
+      configured: true,
+      audit: async () => {
+        throw new Error('No visual audit should be submitted.');
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (_lines, _voice, _tone, _signal, beforeSubmit) => {
+        narrated++;
+        assert.ok(request);
+        const current = creatorSessionResponseSchema.parse(
+          await (await request(`/sessions/${sessionId}`)).json(),
+        );
+        const edited = await request(
+          `/sessions/${sessionId}/plan`,
+          json('PATCH', {
+            expectedVersion: current.session.version,
+            expectedWorkflowVersion: current.workflow.version,
+            clips: current.session.plan!.clips,
+            caption: current.session.plan!.caption,
+            audio: { voice: 'cedar', musicTrackId: null },
+          }),
+        );
+        assert.equal(edited.status, 200, await edited.clone().text());
+        assert.ok(beforeSubmit);
+        await beforeSubmit();
+        submitted++;
+        throw new Error('The stale source must stop narration before submission.');
+      },
+    },
+  });
+  request = f.request;
+  const draft = await prepared(f);
+  sessionId = draft.session.id;
+  const result = await produce(f, await reviewQuote(f, draft));
+  assert.equal(result.job.status, 'failed');
+  assert.equal(result.job.error?.code, 'CREATOR_SOURCE_CHANGED');
+  assert.deepEqual([narrated, submitted, generated], [1, 0, 0]);
+  await f.shutdown();
+  const { budget } = await (await f.request('/budget')).json();
+  assert.deepEqual([budget.reservedCents, budget.chargedCents], [0, 0]);
+});
+
+test('partial and unknown narration submissions retain the approved audio ceiling', async (t) => {
+  for (const outcome of ['partial', 'unknown'] as const)
+    await t.test(outcome, async (t) => {
+      let request: Fixture['request'] | undefined;
+      let sessionId = '',
+        submitted = 0,
+        generated = 0;
+      const f = await narrationFixture(t, {
+        video: {
+          configured: true,
+          cancel: async () => {},
+          generate: async () => {
+            generated++;
+            throw new Error('No clip should be purchased after narration fails.');
+          },
+        },
+        auditor: {
+          configured: true,
+          audit: async () => {
+            throw new Error('No visual audit should be submitted.');
+          },
+        },
+        fetch: async (input) => {
+          assert.equal(String(input), 'https://api.openai.com/v1/audio/speech');
+          submitted++;
+          if (outcome === 'unknown') throw new Error('The connection lost its response.');
+          assert.ok(request);
+          const current = creatorSessionResponseSchema.parse(
+            await (await request(`/sessions/${sessionId}`)).json(),
+          );
+          const edited = await request(
+            `/sessions/${sessionId}/plan`,
+            json('PATCH', {
+              expectedVersion: current.session.version,
+              expectedWorkflowVersion: current.workflow.version,
+              clips: current.session.plan!.clips,
+              caption: current.session.plan!.caption,
+              audio: { voice: 'cedar', musicTrackId: null },
+            }),
+          );
+          assert.equal(edited.status, 200, await edited.clone().text());
+          return new Response(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(2000)]));
+        },
+      });
+      request = f.request;
+      const draft = await prepared(f);
+      sessionId = draft.session.id;
+      const result = await produce(f, await reviewQuote(f, draft));
+      assert.equal(result.job.status, 'failed');
+      assert.equal(
+        result.job.error?.code,
+        outcome === 'partial' ? 'CREATOR_SOURCE_CHANGED' : 'CREATOR_VOICEOVER_FAILED',
+      );
+      assert.deepEqual([submitted, generated], [1, 0]);
+      await f.shutdown();
+      const { budget } = await (await f.request('/budget')).json();
+      assert.deepEqual([budget.reservedCents, budget.chargedCents], [30, 0]);
+    });
+});
+
+test('live cancellation before narration refunds its hold while a crash snapshot stays conservative', async (t) => {
+  let announce = () => {};
+  const entered = new Promise<void>((resolve) => {
+    announce = resolve;
+  });
+  const f = await fixture(t, {
+    video: {
+      configured: true,
+      cancel: async () => {},
+      generate: async () => {
+        throw new Error('No clip should be submitted.');
+      },
+    },
+    auditor: {
+      configured: true,
+      audit: async () => {
+        throw new Error('No visual audit should be submitted.');
+      },
+    },
+    voiceover: {
+      configured: true,
+      narrate: async (_lines, _voice, _tone, signal) =>
+        new Promise<Buffer[]>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+          announce();
+        }),
+    },
+  });
+  const reviewed = await reviewQuote(f, await prepared(f));
+  const response = await f.request(
+    `/sessions/${reviewed.session.id}/produce`,
+    json('POST', {
+      expectedVersion: reviewed.session.version,
+      approvalId: reviewed.session.approval!.id,
+      quoteId: reviewed.session.approval!.quoteId!,
+      requestId: randomUUID(),
+    }),
+  );
+  assert.equal(response.status, 202, await response.clone().text());
+  const { job } = creatorJobResponseSchema.parse(await response.json());
+  await entered;
+  const snapshot = join(f.directory, 'interrupted-audio.json');
+  await writeFile(snapshot, await readFile(join(f.directory, 'creator-sessions.json')));
+  const restarted = await CreatorRepository.open(snapshot);
+  assert.equal(
+    (await restarted.job(reviewed.session.id, job.id)).error?.code,
+    'CREATOR_INTERRUPTED',
+  );
+  await restarted.releaseUnusedReservations(reviewed.session.id, job.id);
+  assert.equal((await restarted.budget()).reservedCents, 30);
+  const canceled = await f.request(`/sessions/${reviewed.session.id}/jobs/${job.id}`, {
+    method: 'DELETE',
+  });
+  assert.equal(canceled.status, 200);
+  await f.shutdown();
+  const { budget } = await (await f.request('/budget')).json();
+  assert.deepEqual([budget.reservedCents, budget.chargedCents], [0, 0]);
+});
+
+test('narrated plans reject interleaved spoken groups while silent and contiguous clip orders remain valid', async (t) => {
+  let narrated = 0;
+  const video = {
+    configured: true,
+    cancel: async () => {},
+    generate: async () => {
+      throw new Error('Plan validation must not generate a clip.');
+    },
+  };
+  const f = await fixture(t, {
+    video,
+    voiceover: {
+      configured: true,
+      narrate: async () => {
+        narrated++;
+        throw new Error('Plan validation must not record narration.');
+      },
+    },
+  });
+  const draft = await prepared(f);
+  const plan = draft.session.plan!;
+  const [a, b, c] = plan.clips;
+  assert.ok(a && b && c);
+  const splitA = { ...a, id: randomUUID(), seconds: 3 };
+  const interleaved = [{ ...a, seconds: 2 }, b, splitA, c];
+  assert.throws(
+    () =>
+      buildCreatorQuote(
+        { ...draft.session, plan: { ...plan, clips: interleaved } },
+        draft.workflow,
+        productionProfile(video),
+        [],
+      ),
+    (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_SCENE_ORDER',
+    'a previously saved interleaved plan must fail quote preflight',
+  );
+  const rejected = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: draft.session.version,
+      expectedWorkflowVersion: draft.workflow.version,
+      caption: plan.caption,
+      clips: interleaved,
+      audio: plan.audio,
+    }),
+  );
+  assert.equal(rejected.status, 400);
+  assert.equal((await rejected.json()).error.code, 'CREATOR_VOICEOVER_SCENE_ORDER');
+  const silentResponse = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: draft.session.version,
+      expectedWorkflowVersion: draft.workflow.version,
+      caption: plan.caption,
+      clips: interleaved,
+      audio: { voice: null, musicTrackId: null },
+    }),
+  );
+  assert.equal(silentResponse.status, 200, await silentResponse.clone().text());
+  const silent = creatorSessionResponseSchema.parse(await silentResponse.json());
+  assert.doesNotThrow(() =>
+    buildCreatorQuote(silent.session, silent.workflow, productionProfile(video), []),
+  );
+  assert.ok(plan.audio?.musicTrackId);
+  const musicResponse = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: silent.session.version,
+      expectedWorkflowVersion: silent.workflow.version,
+      caption: plan.caption,
+      clips: interleaved,
+      audio: { voice: null, musicTrackId: plan.audio.musicTrackId },
+    }),
+  );
+  assert.equal(musicResponse.status, 200, await musicResponse.clone().text());
+  const music = creatorSessionResponseSchema.parse(await musicResponse.json());
+  assert.equal(music.session.plan?.hasAudio, true);
+  assert.doesNotThrow(() =>
+    buildCreatorQuote(music.session, music.workflow, productionProfile(video), []),
+  );
+  const contiguousResponse = await f.request(
+    `/sessions/${draft.session.id}/plan`,
+    json('PATCH', {
+      expectedVersion: music.session.version,
+      expectedWorkflowVersion: music.workflow.version,
+      caption: plan.caption,
+      clips: [{ ...a, seconds: 2 }, splitA, b, c],
+      audio: { voice: 'marin', musicTrackId: null },
+    }),
+  );
+  assert.equal(contiguousResponse.status, 200, await contiguousResponse.clone().text());
+  const contiguous = creatorSessionResponseSchema.parse(await contiguousResponse.json());
+  assert.doesNotThrow(() =>
+    buildCreatorQuote(contiguous.session, contiguous.workflow, productionProfile(video), []),
+  );
+  assert.equal(narrated, 0);
 });

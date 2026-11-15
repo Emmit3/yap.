@@ -106,13 +106,21 @@ export function voiceoverLines(plan: CreatorPlan, workflow: Workflow): Voiceover
     workflow.scenes.scenes.map((scene) => [scene.id, scene.scriptSegmentId]),
   );
   const slots = new Map<string, { start: number; seconds: number }>();
+  let previousSegmentId: string | undefined;
   let at = 0;
   for (const clip of plan.clips) {
     const segmentId = segmentByScene.get(clip.sceneId);
     if (segmentId) {
       const slot = slots.get(segmentId);
+      if (slot && previousSegmentId !== segmentId)
+        throw new ApiError(
+          400,
+          'CREATOR_VOICEOVER_SCENE_ORDER',
+          'Keep the clips for each spoken line together, or turn narration off.',
+        );
       if (slot) slot.seconds += clip.seconds;
       else slots.set(segmentId, { start: at, seconds: clip.seconds });
+      previousSegmentId = segmentId;
     }
     at += clip.seconds;
   }

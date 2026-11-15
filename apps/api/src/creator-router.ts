@@ -44,6 +44,7 @@ import {
   createCreatorVoiceover,
   defaultMusicTrack,
   loadCreatorMusic,
+  voiceoverLines,
   type CreatorMusicLibrary,
   type CreatorVoiceover,
 } from './creator-audio.js';
@@ -636,6 +637,15 @@ export async function createCreatorRouter(options: CreatorRouterOptions) {
         (scene) => secondsByScene.get(scene.id) !== scene.seconds,
       );
       const audio = input.audio ? checkAudio(input.audio, voiceover, music) : plan.audio;
+      voiceoverLines(
+        {
+          ...plan,
+          clips: input.clips,
+          hasAudio: Boolean(audio?.voice || audio?.musicTrackId),
+          ...(audio ? { audio } : {}),
+        },
+        workflow,
+      );
       if (input.caption !== workflow.script!.caption || timingChanged) {
         workflow = await options.workflows.update(workflow.id, workflow.version, (current) => {
           const scenes = current.scenes!.scenes.map((scene) => ({

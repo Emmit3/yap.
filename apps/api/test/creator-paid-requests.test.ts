@@ -4,7 +4,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CreatorRepository } from '../src/creator-repository.js';
-import { createCreatorPaidRequests } from '../src/creator-paid-requests.js';
+import {
+  createCreatorPaidRequests,
+  UnsubmittedNarrationError,
+} from '../src/creator-paid-requests.js';
 import { ApiError } from '../src/errors.js';
 import type { CreatorResearch } from '@yap/contracts/creator';
 
@@ -304,4 +307,130 @@ test('a definite narration rejection releases its hold, and an approved hold cov
     3000,
     'covered lines draw on the production hold, not new reservations',
   );
+});
+
+test('narration reports zero submissions only when the final gate stopped every transport call', async (t) => {
+  const { ledger } = await fixture(t);
+  let calls = 0,
+    checks = 0;
+  const gate = createCreatorPaidRequests(async () => {
+    calls++;
+    return audio();
+  });
+  gate.attach(ledger);
+  const changed = new ApiError(409, 'CREATOR_SOURCE_CHANGED', 'The approved plan changed.');
+  await assert.rejects(
+    gate.prepaid(
+      () => gate.fetch(speechEndpoint, speech()),
+      async () => {
+        throw changed;
+      },
+      1,
+    ),
+    (error: unknown) => error instanceof UnsubmittedNarrationError && error.cause === changed,
+  );
+  assert.equal(calls, 0);
+  await assert.rejects(
+    gate.prepaid(
+      async () => {
+        await gate.fetch(speechEndpoint, speech());
+        await gate.fetch(speechEndpoint, speech());
+      },
+      async () => {
+        if (++checks === 2) throw changed;
+      },
+      2,
+    ),
+    (error: unknown) => error === changed,
+  );
+  assert.equal(calls, 1, 'a completed first line keeps the outcome conservative');
+  const disconnected = new Error('The provider connection was lost.');
+  const uncertain = createCreatorPaidRequests(async () => {
+    throw disconnected;
+  });
+  uncertain.attach(ledger);
+  await assert.rejects(
+    uncertain.prepaid(() => uncertain.fetch(speechEndpoint, speech()), undefined, 1),
+    (error: unknown) => error === disconnected,
+  );
+});
+
+test('a pending narration gate still consumes its quoted slot before concurrent calls', async (t) => {
+  const { ledger } = await fixture(t);
+  let calls = 0,
+    entered = () => {},
+    release = () => {};
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const gate = createCreatorPaidRequests(async () => {
+    calls++;
+    return audio();
+  });
+  gate.attach(ledger);
+  await gate.prepaid(
+    async () => {
+      const first = gate.fetch(speechEndpoint, speech());
+      await waiting;
+      try {
+        await assert.rejects(
+          gate.fetch(speechEndpoint, speech()),
+          (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_BUDGET_AUDIT',
+        );
+      } finally {
+        release();
+      }
+      await first;
+    },
+    async () => {
+      entered();
+      await blocked;
+    },
+    1,
+  );
+  assert.equal(calls, 1);
+});
+
+test('a failed narration scope cannot dispatch a detached request after releasing its hold', async (t) => {
+  const { ledger } = await fixture(t);
+  let calls = 0,
+    entered = () => {},
+    release = () => {};
+  let pending: Promise<Response> | undefined;
+  const waiting = new Promise<void>((resolve) => {
+    entered = resolve;
+  });
+  const blocked = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const gate = createCreatorPaidRequests(async () => {
+    calls++;
+    return audio();
+  });
+  gate.attach(ledger);
+  await assert.rejects(
+    gate.prepaid(
+      async () => {
+        pending = gate.fetch(speechEndpoint, speech());
+        await waiting;
+        throw new Error('The narration operation failed while its request was pending.');
+      },
+      async () => {
+        entered();
+        await blocked;
+      },
+      1,
+    ),
+    UnsubmittedNarrationError,
+  );
+  assert.ok(pending);
+  release();
+  await assert.rejects(
+    pending,
+    (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_BUDGET_AUDIT',
+  );
+  assert.equal(calls, 0);
 });

@@ -29,6 +29,7 @@ import {
 } from './creator-audio.js';
 import { verifyWorkflow } from './workflow-engine.js';
 import { productionProfile, quoteFingerprint } from './creator-budget.js';
+import { UnsubmittedNarrationError } from './creator-paid-requests.js';
 
 export type CreatorAnalyzer = (
   input: CreatorInput,
@@ -456,12 +457,17 @@ export class CreatorJobs {
               },
             );
           } catch (error) {
-            // A definite rejection of the first line means the provider billed nothing.
-            if (error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_REJECTED')
+            const unsubmitted = error instanceof UnsubmittedNarrationError;
+            const reason = unsubmitted ? error.cause : error;
+            // Live pre-submit proof or a definite rejection of line one means nothing was billed.
+            if (
+              unsubmitted ||
+              (reason instanceof ApiError && reason.code === 'CREATOR_VOICEOVER_REJECTED')
+            )
               await this.options.repository
                 .settle(job.audioReservationId, 0)
                 .catch((failure) => this.options.onError?.(failure));
-            throw error;
+            throw reason;
           }
           if (recorded.length !== lines.length)
             throw new ApiError(
