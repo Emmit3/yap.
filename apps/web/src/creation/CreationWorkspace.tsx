@@ -182,7 +182,6 @@ export function CreationWorkspace({
     <section className="creation-workspace" aria-label="Creation and research workspace">
       <header className="creation-controls">
         <div>
-          <p className="creation-kicker">One idea. Your creative workspace.</p>
           <h1 ref={paneHeading} tabIndex={-1}>
             {view === 'analytics'
               ? 'Research that shapes the story.'

@@ -7,15 +7,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 24px;
-  padding-bottom: 24px;
-  margin-bottom: 28px;
+  padding-bottom: 20px;
+  margin-bottom: 24px;
   border-bottom: 1px solid #dedede;
-}
-
-.creation-kicker {
-  color: #666;
-  font-size: 12px;
-  margin-bottom: 8px;
 }
 
 .creation-controls h1 {

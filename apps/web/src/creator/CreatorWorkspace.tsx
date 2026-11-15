@@ -343,7 +343,12 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
       <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
         {view === 'guided' ? (
           <div className="creator-guided-layout">
-            <h2 ref={panelHeading} tabIndex={-1} className="creator-panel-title">
+            {/* A new creation already opens under two headings; a third only pushes the composer down. */}
+            <h2
+              ref={panelHeading}
+              tabIndex={-1}
+              className={state ? 'creator-panel-title' : 'creator-panel-title sr-only'}
+            >
               {state ? 'Let’s find the story.' : 'What are we making?'}
             </h2>
             <div className="creator-guided-main">
@@ -582,6 +587,8 @@ function SourceComposer({
 }) {
   const set = <K extends keyof SourceForm>(key: K, value: SourceForm[K]) =>
     c.setSource((previous) => ({ ...previous, [key]: value }));
+  // A new creation needs an idea or at least one photo before it can start.
+  const empty = !c.state && !c.source.prompt.trim() && !c.photos.length;
   return (
     <section className="creator-source-composer" aria-label="Your starting sources">
       <div className="creator-composer-tools">
@@ -613,8 +620,50 @@ function SourceComposer({
         disabled={locked}
         placeholder="A short film for my matcha shop. The strawberry matcha is the star. I want it to feel like a quiet Saturday morning…"
       />
+      <div className="creator-format-controls">
+        <label>
+          Format
+          <select
+            value={c.source.platform}
+            onChange={(event) => set('platform', event.target.value as SourceForm['platform'])}
+            disabled={locked}
+          >
+            <option value="instagram">Instagram Reels</option>
+            <option value="tiktok">TikTok</option>
+            <option value="youtube">YouTube Shorts</option>
+          </select>
+        </label>
+        <label>
+          Length
+          <select
+            value={c.source.duration}
+            onChange={(event) =>
+              set('duration', Number(event.target.value) as SourceForm['duration'])
+            }
+            disabled={locked}
+          >
+            {[15, 30, 60].map((seconds) => (
+              <option key={seconds} value={seconds}>
+                {seconds} seconds
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Tone
+          <select
+            value={c.source.tone}
+            onChange={(event) => set('tone', event.target.value as SourceForm['tone'])}
+            disabled={locked}
+          >
+            <option value="conversational">Conversational</option>
+            <option value="educational">Educational</option>
+            <option value="bold">Bold</option>
+          </select>
+        </label>
+      </div>
       <details className="creator-context-fields">
-        <summary>Add a location, source links and format</summary>
+        <summary>Add a location or source links</summary>
         <div className="creator-context-grid">
           <label>
             <span>
@@ -641,58 +690,21 @@ function SourceComposer({
             />
           </label>
         </div>
-        <div className="creator-format-controls">
-          <label>
-            Format
-            <select
-              value={c.source.platform}
-              onChange={(event) => set('platform', event.target.value as SourceForm['platform'])}
-              disabled={locked}
-            >
-              <option value="instagram">Instagram Reels</option>
-              <option value="tiktok">TikTok</option>
-              <option value="youtube">YouTube Shorts</option>
-            </select>
-          </label>
-          <label>
-            Length
-            <select
-              value={c.source.duration}
-              onChange={(event) =>
-                set('duration', Number(event.target.value) as SourceForm['duration'])
-              }
-              disabled={locked}
-            >
-              {[15, 30, 60].map((seconds) => (
-                <option key={seconds} value={seconds}>
-                  {seconds} seconds
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Tone
-            <select
-              value={c.source.tone}
-              onChange={(event) => set('tone', event.target.value as SourceForm['tone'])}
-              disabled={locked}
-            >
-              <option value="conversational">Conversational</option>
-              <option value="educational">Educational</option>
-              <option value="bold">Bold</option>
-            </select>
-          </label>
-        </div>
       </details>
       <div className="creator-composer-bottom">
-        <span>JPEG, PNG or WebP photos / up to 10 MiB each</span>
+        <span>
+          {empty && !locked && !active
+            ? 'Describe your idea or add a photo to start.'
+            : 'JPEG, PNG or WebP photos / up to 10 MiB each'}
+        </span>
         <button
           className="creator-primary-button"
           onClick={c.state ? c.saveSources : c.create}
           disabled={
             locked ||
             active ||
-            (!c.source.prompt.trim() && (Boolean(c.state) || !c.photos.length)) ||
+            empty ||
+            (!c.source.prompt.trim() && Boolean(c.state)) ||
             Boolean(
               c.state && (c.planDirty || c.scriptDirty || c.answersDirty || c.reply.trim()),
             ) ||
