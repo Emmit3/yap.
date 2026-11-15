@@ -46,13 +46,14 @@ async function fixture(t: TestContext, creatorOptions: AppOptions['creatorOption
   };
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
-async function settledBudget(f: Fixture, total: number) {
+// Failed status is saved before the worker's finally block releases unused clip holds.
+async function settledBudget(f: Fixture, expected: number) {
   for (let attempt = 0; attempt < 100; attempt++) {
     const { budget } = await (await f.request('/budget')).json();
-    if (budget.reservedCents + budget.chargedCents === total) return budget;
+    if (budget.reservedCents + budget.chargedCents === expected) return budget;
     await delay(20);
   }
-  throw new Error('Terminal job reservation cleanup did not finish.');
+  throw new Error(`The production budget did not settle to ${expected} cents.`);
 }
 async function reviewQuote(f: Fixture, value: CreatorSessionResponse) {
   const response = await f.request(
@@ -742,9 +743,9 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   assert.equal(rejected.job.status, 'failed');
   assert.equal(rejected.job.error?.code, 'CREATOR_VOICEOVER_REJECTED');
   assert.equal(generated, 0);
-  const released = await settledBudget(f, 0);
+  const budget = await settledBudget(f, 0);
   assert.deepEqual(
-    [released.reservedCents, released.chargedCents],
+    [budget.reservedCents, budget.chargedCents],
     [0, 0],
     'a definite rejection and untouched clip holds are all released',
   );
