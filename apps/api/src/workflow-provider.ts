@@ -80,7 +80,7 @@ const refinementOutput = z
         imageDirection: z.string().trim().min(1).max(2000).nullable(),
         tone: z.enum(['conversational', 'educational', 'bold']).nullable(),
         platform: z.enum(['instagram', 'tiktok', 'youtube']).nullable(),
-        duration: z.union([z.literal(15), z.literal(30), z.literal(60)]).nullable(),
+        duration: z.union([z.literal(15), z.literal(20), z.literal(30), z.literal(60)]).nullable(),
       })
       .strict(),
     message: z.string().trim().min(1).max(12000),
@@ -162,7 +162,7 @@ const schemas = {
       imageDirection: nullable(text),
       tone: nullable({ type: 'string', enum: ['conversational', 'educational', 'bold'] }),
       platform: nullable({ type: 'string', enum: ['instagram', 'tiktok', 'youtube'] }),
-      duration: nullable({ type: 'integer', enum: [15, 30, 60] }),
+      duration: nullable({ type: 'integer', enum: [15, 20, 30, 60] }),
     }),
     message: text,
   }),

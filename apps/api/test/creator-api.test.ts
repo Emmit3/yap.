@@ -94,7 +94,7 @@ async function session(response: Response, status = 200): Promise<CreatorSession
   assert.equal(response.status, status, await response.clone().text());
   return creatorSessionResponseSchema.parse(await response.json());
 }
-async function create(f: Fixture) {
+async function create(f: Fixture, duration: 15 | 20 | 30 | 60 = 15) {
   return session(
     await f.request(
       '/creator/sessions',
@@ -103,7 +103,7 @@ async function create(f: Fixture) {
           mode: 'text',
           prompt: 'A cinematic film for handmade ceramic cups.',
           urls: [],
-          duration: 15,
+          duration,
           platform: 'tiktok',
           tone: 'bold',
         },
@@ -122,6 +122,51 @@ async function poll(f: Fixture, id: string, jobId: string) {
   }
   throw new Error('Job did not finish.');
 }
+
+test('a 20-second creator trailer persists exact timing and quotes four five-second clips', async (t) => {
+  const f = await fixture(t);
+  let current = await create(f, 20);
+  const id = current.session.id;
+  current = await session(
+    await f.request(
+      `/creator/sessions/${id}/prepare`,
+      json('POST', {
+        expectedVersion: current.session.version,
+        expectedWorkflowVersion: current.workflow.version,
+      }),
+    ),
+  );
+  const reloaded = await session(await f.request(`/creator/sessions/${id}`));
+  assert.equal(reloaded.session.input.duration, 20);
+  assert.equal(reloaded.workflow.brief.duration, 20);
+  assert.deepEqual(
+    reloaded.workflow.script!.segments.map((segment) => segment.seconds),
+    [5, 5, 5, 5],
+  );
+  assert.deepEqual(
+    reloaded.session.plan!.clips.map((clip) => clip.seconds),
+    [5, 5, 5, 5],
+  );
+  assert.equal(reloaded.session.approval, null);
+  const response = await f.request(
+    `/creator/sessions/${id}/quote`,
+    json('POST', {
+      expectedVersion: reloaded.session.version,
+      expectedWorkflowVersion: reloaded.workflow.version,
+    }),
+  );
+  assert.equal(response.status, 200, await response.clone().text());
+  const { quote } = creatorQuoteResponseSchema.parse(await response.json());
+  assert.deepEqual(
+    quote.clips.map((clip) => clip.seconds),
+    [5, 5, 5, 5],
+  );
+  assert.equal(
+    quote.clips.reduce((total, clip) => total + clip.seconds, 0),
+    20,
+  );
+  assert.deepEqual(await (await f.request(`/creator/sessions/${id}/jobs`)).json(), { jobs: [] });
+});
 
 test('creator session persists explicit interview/references, prepares bounded editable clips, and never auto-approves', async (t) => {
   const f = await fixture(t);

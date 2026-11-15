@@ -608,7 +608,10 @@ export function buildGuidedScript(
   const brief = workflow.brief;
   const duration = brief.duration!;
   const benefits = brief.keyBenefits ?? [brief.productDescription!];
-  const count = Math.min(duration === 15 ? 3 : duration === 30 ? 4 : 6, benefits.length + 2);
+  const count =
+    duration === 20
+      ? 4
+      : Math.min(duration === 15 ? 3 : duration === 30 ? 4 : 6, benefits.length + 2);
   const baseSeconds = Math.floor(duration / count);
   const seconds = Array.from(
     { length: count },
@@ -625,7 +628,11 @@ export function buildGuidedScript(
     const start = Math.floor((index * benefits.length) / (count - 2));
     const end = Math.floor(((index + 1) * benefits.length) / (count - 2));
     text.push(
-      excerpt(benefits.slice(start, end).join('. '), Math.max(4, seconds[index + 1]! * 2), 2000),
+      excerpt(
+        benefits.slice(start, end).join('. ') || benefits[index % benefits.length]!,
+        Math.max(4, seconds[index + 1]! * 2),
+        2000,
+      ),
     );
   }
   text.push(excerpt(brief.callToAction!, Math.max(4, seconds[count - 1]! * 2), 2000));

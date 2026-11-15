@@ -23,7 +23,7 @@ function sentence(text: string): string {
 export function generateGuidedDraft(brief: ProjectBrief): VideoDraft {
   const topic = words(brief.title, 10).replace(/[.!?]+$/, '');
   const idea = brief.idea.replace(/\s+/g, ' ').trim();
-  const count = brief.duration === 15 ? 3 : brief.duration === 30 ? 4 : 6;
+  const count = brief.duration === 15 ? 3 : brief.duration === 20 || brief.duration === 30 ? 4 : 6;
   const hook =
     researchHook(topic, brief.research) ??
     (brief.tone === 'bold'
@@ -38,7 +38,8 @@ export function generateGuidedDraft(brief: ProjectBrief): VideoDraft {
         ? 'Send this to someone who would get it.'
         : 'Save this idea and try it for yourself.';
   const detailCount = count - 2;
-  const budget = brief.duration === 15 ? 18 : brief.duration === 30 ? 48 : 108;
+  const budget =
+    brief.duration === 15 ? 18 : brief.duration === 20 ? 28 : brief.duration === 30 ? 48 : 108;
   const detailWords = words(idea, budget).split(' ');
   const chunkSize = Math.max(1, Math.ceil(detailWords.length / detailCount));
   const details = Array.from({ length: detailCount }, (_, index) => {

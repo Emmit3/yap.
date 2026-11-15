@@ -30,7 +30,7 @@ export type PublishKit = {
     url: string;
     width: 1080;
     height: 1920;
-    duration: 15 | 30 | 60;
+    duration: 15 | 20 | 30 | 60;
     hasAudio: false;
   };
   ready: true;

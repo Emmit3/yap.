@@ -56,7 +56,7 @@ type BriefForm = {
   imageDirection: string;
   platform: 'instagram' | 'tiktok' | 'youtube';
   tone: 'conversational' | 'educational' | 'bold';
-  duration: 15 | 30 | 60;
+  duration: 15 | 20 | 30 | 60;
 };
 type ScriptForm = {
   hook: string;
@@ -1109,7 +1109,7 @@ export function PromoWorkspace({
               value={draft.brief.duration}
               onChange={(event) => editBrief('duration', Number(event.target.value))}
             >
-              {[15, 30, 60].map((value) => (
+              {[15, 20, 30, 60].map((value) => (
                 <option value={value} key={value}>
                   {value} seconds
                 </option>

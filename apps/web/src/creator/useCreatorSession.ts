@@ -40,7 +40,7 @@ export type SourceForm = {
   location: string;
   urls: string;
   platform: 'instagram' | 'tiktok' | 'youtube';
-  duration: 15 | 30 | 60;
+  duration: 15 | 20 | 30 | 60;
   tone: 'conversational' | 'educational' | 'bold';
 };
 type ScriptDraft = NonNullable<Workflow['script']>;
