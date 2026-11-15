@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { posterStylesResponseSchema, posterDesignResponseSchema } from '@yap/contracts/posters';
 
 const origin = (import.meta.env.VITE_API_BASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
@@ -42,3 +43,21 @@ export const posterApi = {
     return `${origin}${path}`;
   },
 };
+
+/**
+ * Whether this server has any poster styles installed. Style packs are local and absent from
+ * fresh clones, so the Posters tab is offered only once the server reports at least one style.
+ */
+export function usePostersAvailable(enabled: boolean): boolean {
+  const [available, setAvailable] = useState(false);
+  useEffect(() => {
+    if (!enabled || available) return;
+    const controller = new AbortController();
+    posterApi
+      .styles(controller.signal)
+      .then(({ styles }) => setAvailable(styles.length > 0))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [enabled, available]);
+  return available;
+}

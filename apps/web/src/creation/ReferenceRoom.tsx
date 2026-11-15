@@ -9,9 +9,12 @@ import '../posters/poster-room.css';
 export function ReferenceRoom({
   onUseReferences,
   onDirty,
+  posters,
 }: {
   onUseReferences(ids: string[]): void;
   onDirty(value: boolean): void;
+  /** Poster styles are installed on this server. Without them the room shows videos only. */
+  posters: boolean;
 }) {
   const [tab, setTab] = useState<'films' | 'posters'>('films');
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -58,46 +61,50 @@ export function ReferenceRoom({
         >
           {navigationOpen ? <X size={18} /> : <DotsThree size={22} />}
         </button>
-        <div
-          className="creation-view-tabs reference-room-tabs"
-          role="tablist"
-          aria-label="Inspiration formats"
-          aria-orientation="horizontal"
-          onKeyDown={moveTab}
-        >
-          {(['films', 'posters'] as const).map((value) => (
-            <button
-              key={value}
-              id={`${tabId}-${value}-tab`}
-              type="button"
-              role="tab"
-              aria-selected={tab === value}
-              aria-controls={`${tabId}-${value}-panel`}
-              tabIndex={tab === value ? 0 : -1}
-              onClick={() => setTab(value)}
-            >
-              {value === 'films' ? 'Videos' : 'Posters'}
-            </button>
-          ))}
-        </div>
+        {posters && (
+          <div
+            className="creation-view-tabs reference-room-tabs"
+            role="tablist"
+            aria-label="Inspiration formats"
+            aria-orientation="horizontal"
+            onKeyDown={moveTab}
+          >
+            {(['films', 'posters'] as const).map((value) => (
+              <button
+                key={value}
+                id={`${tabId}-${value}-tab`}
+                type="button"
+                role="tab"
+                aria-selected={tab === value}
+                aria-controls={`${tabId}-${value}-panel`}
+                tabIndex={tab === value ? 0 : -1}
+                onClick={() => setTab(value)}
+              >
+                {value === 'films' ? 'Videos' : 'Posters'}
+              </button>
+            ))}
+          </div>
+        )}
         <p>Find a style for your business.</p>
       </div>
       <div
         id={`${tabId}-films-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabId}-films-tab`}
+        role={posters ? 'tabpanel' : undefined}
+        aria-labelledby={posters ? `${tabId}-films-tab` : undefined}
         hidden={tab !== 'films'}
       >
         <ProductGallery onUseReferences={onUseReferences} active={tab === 'films'} />
       </div>
-      <div
-        id={`${tabId}-posters-panel`}
-        role="tabpanel"
-        aria-labelledby={`${tabId}-posters-tab`}
-        hidden={tab !== 'posters'}
-      >
-        <PosterWorkspace onDirty={reportDirty} active={tab === 'posters'} />
-      </div>
+      {posters && (
+        <div
+          id={`${tabId}-posters-panel`}
+          role="tabpanel"
+          aria-labelledby={`${tabId}-posters-tab`}
+          hidden={tab !== 'posters'}
+        >
+          <PosterWorkspace onDirty={reportDirty} active={tab === 'posters'} />
+        </div>
+      )}
     </section>
   );
 }

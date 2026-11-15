@@ -343,10 +343,10 @@ export function CreatorWorkspace(props: CreatorWorkspaceProps) {
       <section id="creator-view-panel" role="tabpanel" aria-labelledby={`creator-${view}-tab`}>
         {view === 'guided' ? (
           <div className="creator-guided-layout">
+            <h2 ref={panelHeading} tabIndex={-1} className="creator-panel-title">
+              {state ? 'Let’s find the story.' : 'What are we making?'}
+            </h2>
             <div className="creator-guided-main">
-              <h2 ref={panelHeading} tabIndex={-1} className="creator-panel-title">
-                {state ? 'Let’s find the story.' : 'What are we making?'}
-              </h2>
               {state && <Conversation c={c} />}
               <SourceComposer
                 c={c}

@@ -20,6 +20,7 @@ import { PromoLibrary } from './promo/PromoLibrary';
 import { CreatorLibrary } from './CreatorLibrary';
 import { CreationWorkspace } from './creation/CreationWorkspace';
 import { ReferenceRoom } from './creation/ReferenceRoom';
+import { usePostersAvailable } from './posters/api';
 import { referenceIdsFromRoute, routePath } from './creation/bridge';
 import { readPendingResearch, savePendingResearch } from './research-context';
 
@@ -32,6 +33,7 @@ export function App() {
   const [creationKey, setCreationKey] = useState(() => crypto.randomUUID());
   const path = routePath(route);
   const referenceIds = useMemo(() => referenceIdsFromRoute(route), [route]);
+  const postersAvailable = usePostersAvailable(path === '/references');
   const analyticsEntry =
     path === '/social' || new URLSearchParams(route.split('?')[1]).get('view') === 'analytics';
   const [projects, setProjects] = useState<Project[]>([]);
@@ -347,6 +349,7 @@ export function App() {
           )}
           {path === '/references' ? (
             <ReferenceRoom
+              posters={postersAvailable}
               onDirty={changeDirty}
               onUseReferences={(ids) =>
                 navigate(
