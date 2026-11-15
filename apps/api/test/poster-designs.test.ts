@@ -116,6 +116,8 @@ function assertPublic(value: unknown) {
   for (const privateValue of [
     'originalStylePrompt',
     'combinedPrompt',
+    'productionPlan',
+    'composition',
     'observed',
     'reconstruction',
     recipeMarker,
@@ -180,6 +182,57 @@ test('saved directions survive a new router without regenerating or exposing pri
   assert.deepEqual(body, saved);
   assertPublic(body);
   assert.equal(await readFile(f.file, 'utf8'), before);
+});
+
+test('structured approved copy survives saves and restarts without exposing the private production plan', async (t) => {
+  const f = await fixture(t);
+  const brief = {
+    copy: { headline: '  FRIDAY NOTES  ', details: 'NOV 28\nLINDEN CAFE' },
+    canvas: { width: 1080, height: 1350 },
+  };
+  const response = await f.request(
+    '/designs',
+    creation(f.style, 'Keep the restrained layout.', { brief }),
+  );
+  assert.equal(response.status, 201);
+  const body = posterDesignResponseSchema.parse(await response.json());
+  assert.deepEqual(body.design.brief, brief);
+  assertPublic(body);
+  const stored = JSON.parse(await readFile(f.file, 'utf8')).designs[0];
+  assert.deepEqual(stored.productionPlan.brief, brief);
+  assert.equal(stored.productionPlan.reference.sha256, f.style.crop.sha256);
+  assert.equal(stored.productionPlan.issues[0].code, 'missing-composition');
+  const reopened = await f.serve();
+  assert.deepEqual(await (await reopened(`/designs/${body.design.id}`)).json(), body);
+});
+
+test('historical directions without a production plan still open without rewriting storage', async (t) => {
+  const f = await fixture(t);
+  const created = await f.request('/designs', creation(f.style, 'Keep the original direction.'));
+  const body = posterDesignResponseSchema.parse(await created.json());
+  const storage = JSON.parse(await readFile(f.file, 'utf8'));
+  delete storage.designs[0].productionPlan;
+  const historical = JSON.stringify(storage);
+  await writeFile(f.file, historical);
+  const response = await f.request(`/designs/${body.design.id}`);
+  assert.equal(response.status, 200);
+  const reopened = posterDesignResponseSchema.parse(await response.json());
+  assert.equal(reopened.design.brief, undefined);
+  assert.equal(reopened.design.changes, body.design.changes);
+  assert.equal(await readFile(f.file, 'utf8'), historical);
+});
+
+test('a changed persisted production plan fails closed without overwriting the saved direction', async (t) => {
+  const f = await fixture(t);
+  const created = await f.request('/designs', creation(f.style, 'Use a quiet layout.'));
+  const body = posterDesignResponseSchema.parse(await created.json());
+  const storage = JSON.parse(await readFile(f.file, 'utf8'));
+  storage.designs[0].productionPlan.brief.copy.headline = 'Unexpected replacement';
+  const changed = JSON.stringify(storage);
+  await writeFile(f.file, changed);
+  assert.equal((await f.request(`/designs/${body.design.id}`)).status, 500);
+  assert.equal((await f.request('/designs', creation(f.style, 'Another direction.'))).status, 500);
+  assert.equal(await readFile(f.file, 'utf8'), changed);
 });
 
 test('unknown, stale or malformed style submissions never create a stored direction', async (t) => {
