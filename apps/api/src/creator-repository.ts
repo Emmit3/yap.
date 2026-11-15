@@ -13,6 +13,12 @@ import {
 } from '@yap/contracts/creator';
 import { ApiError, StorageError } from './errors.js';
 import {
+  clipProvenanceSchema,
+  clipGenerationFingerprint,
+  provenanceMatches,
+  type ClipProvenance,
+} from './creator-clip-provenance.js';
+import {
   creatorBudgetStateSchema,
   budgetSnapshot,
   reserveBudget,
@@ -29,6 +35,7 @@ const stateSchema = z
     sessions: z.array(creatorSessionSchema).max(1000),
     jobs: z.array(creatorJobSchema).max(5000),
     quotes: z.array(creatorQuoteSchema).max(5000).default([]),
+    clipProvenance: z.array(clipProvenanceSchema).max(20000).default([]),
     budget: creatorBudgetStateSchema.default(() => ({
       limitCents: CREATOR_BUDGET_LIMIT_CENTS,
       reservations: [],
@@ -184,6 +191,68 @@ export class CreatorRepository implements CreatorBudgetLedger {
     const job = (await this.jobs(sessionId)).find((item) => item.id === id);
     if (!job) throw new ApiError(404, 'CREATOR_JOB_NOT_FOUND', 'This creation job was not found.');
     return job;
+  }
+  async clipProvenance(sessionId: string): Promise<ClipProvenance[]> {
+    await this.pending;
+    this.find(this.state, sessionId);
+    return structuredClone(
+      this.state.clipProvenance.filter((item) => item.sessionId === sessionId),
+    );
+  }
+  /** Append-only input/output attestations; never rewrite a job's creative identity or spending. */
+  async recordClipProvenance(input: ClipProvenance): Promise<ClipProvenance> {
+    const record = clipProvenanceSchema.parse(input);
+    return this.mutate((state) => {
+      this.find(state, record.sessionId);
+      const job = state.jobs.find(
+        (item) => item.id === record.jobId && item.sessionId === record.sessionId,
+      );
+      const receipt = job?.clips.find(
+        (item) => item.clipId === record.clipId && item.attempt === record.attempt,
+      );
+      if (
+        !job ||
+        job.planId !== record.planId ||
+        !receipt ||
+        clipGenerationFingerprint(record.snapshot) !== record.fingerprint ||
+        (record.output && !provenanceMatches(job, receipt, record, record.fingerprint))
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_PROVENANCE_INVALID',
+          'The clip provenance does not match its saved generation receipt.',
+        );
+      const related = state.clipProvenance.filter(
+        (item) =>
+          item.jobId === record.jobId &&
+          item.clipId === record.clipId &&
+          item.attempt === record.attempt,
+      );
+      if (related.some((item) => item.fingerprint !== record.fingerprint))
+        throw new ApiError(
+          409,
+          'CREATOR_PROVENANCE_CONFLICT',
+          'A generation input cannot be replaced after capture.',
+        );
+      const previous = related.find((item) => Boolean(item.output) === Boolean(record.output));
+      if (previous) {
+        if (
+          JSON.stringify(previous.output) !== JSON.stringify(record.output) ||
+          JSON.stringify(previous.snapshot) !== JSON.stringify(record.snapshot) ||
+          previous.planId !== record.planId
+        )
+          throw new ApiError(
+            409,
+            'CREATOR_PROVENANCE_CONFLICT',
+            'A captured clip attestation is immutable.',
+          );
+        return previous;
+      }
+      if (state.clipProvenance.length >= 20000)
+        throw new ApiError(409, 'CREATOR_PROVENANCE_LIMIT', 'The clip provenance store is full.');
+      state.clipProvenance.push(record);
+      return record;
+    });
   }
   async addJob(job: CreatorJob, expectedVersion: number): Promise<CreatorJob> {
     return this.mutate((state) => {

@@ -8,6 +8,7 @@ import type {
   CreatorAnswer,
   CreatorResearch,
   CreatorClip,
+  CreatorQuote,
 } from '@yap/contracts/creator';
 import type { CreatorImageJob } from '@yap/contracts/reference-assets';
 import type { Workflow } from '@yap/contracts/workflow';
@@ -31,6 +32,12 @@ import {
 } from './creator-audio.js';
 import { verifyWorkflow } from './workflow-engine.js';
 import { productionProfile, productionProfiles, quoteFingerprint } from './creator-budget.js';
+import {
+  clipGenerationSnapshot,
+  clipGenerationFingerprint,
+  clipProvenanceSchema,
+  provenanceMatches,
+} from './creator-clip-provenance.js';
 import {
   resolveCreatorVideoProvider,
   type CreatorVideoProviderRegistry,
@@ -172,7 +179,11 @@ export class CreatorJobs {
     const receipt = job.clips.find(
       (item) => item.clipId === clipId && item.attempt === attempt && item.status === 'passed',
     );
-    if (!receipt?.output)
+    if (
+      !receipt?.output ||
+      receipt.audit?.technicalPassed !== true ||
+      receipt.audit.visionPassed !== true
+    )
       throw new ApiError(409, 'CREATOR_CLIP_NOT_READY', 'This clip has not passed review.');
     const path = this.clipPath(job.id, clipId, attempt);
     let bytes: Buffer;
@@ -187,6 +198,157 @@ export class CreatorJobs {
     )
       throw new ApiError(500, 'CREATOR_CLIP_CORRUPTED', 'This clip changed after review.');
     return path;
+  }
+  private async inputImage(
+    sessionId: string,
+    clip: CreatorClip,
+    workflow: Workflow,
+  ): Promise<Buffer | undefined> {
+    if (clip.assetId) {
+      const asset = workflow.assets.find((value) => value.id === clip.assetId);
+      if (!asset || clip.storyboardFrameId)
+        throw new ApiError(
+          409,
+          'CREATOR_IMAGE_SOURCE',
+          'Choose one available verified image source.',
+        );
+      return this.options.assets.load(workflow.id, asset);
+    }
+    if (!clip.storyboardFrameId) return undefined;
+    if (!this.options.loadStoryboard)
+      throw new ApiError(409, 'CREATOR_IMAGE_SOURCE', 'The storyboard source is unavailable.');
+    const frame = await this.options.loadStoryboard(sessionId, clip.storyboardFrameId);
+    if (
+      !clip.storyboardFrameSha256 ||
+      frame.record.output?.sha256 !== clip.storyboardFrameSha256 ||
+      createHash('sha256').update(frame.bytes).digest('hex') !== clip.storyboardFrameSha256
+    )
+      throw new ApiError(
+        409,
+        'CREATOR_IMAGE_SOURCE_CHANGED',
+        'The storyboard source changed. Review a new quote.',
+      );
+    return frame.bytes;
+  }
+  /** Legacy recovery is permitted only while the exact original approved creative plan still exists. */
+  async captureCurrentPlanProvenance(session: CreatorSession, workflow: Workflow): Promise<number> {
+    const plan = session.plan;
+    if (
+      !plan ||
+      plan.workflowVersion !== workflow.version ||
+      plan.scriptId !== workflow.script?.id ||
+      plan.sourceScenesId !== workflow.scenes?.id
+    )
+      return 0;
+    const history = await this.options.repository.jobs(session.id);
+    if (history.some((job) => !terminal(job)))
+      throw new ApiError(
+        409,
+        'CREATOR_JOB_ACTIVE',
+        'Wait for the current job before capturing clip provenance.',
+      );
+    const profile = productionProfiles(this.options.video, plan.clips, this.options.videoProviders);
+    const fingerprint = quoteFingerprint(session, workflow, profile);
+    let captured = 0;
+    for (const job of history) {
+      if (
+        job.kind !== 'production' ||
+        job.planId !== plan.id ||
+        job.workflowVersion !== workflow.version ||
+        !job.quoteId
+      )
+        continue;
+      const quote = await this.options.repository.quote(job.quoteId).catch(() => null);
+      if (
+        !quote ||
+        quote.sessionId !== session.id ||
+        quote.planId !== plan.id ||
+        quote.consumedByJobId !== job.id ||
+        quote.approvedApprovalId !== job.approvalId ||
+        quote.fingerprint !== fingerprint
+      )
+        continue;
+      for (const receipt of job.clips) {
+        const clip = plan.clips.find((value) => value.id === receipt.clipId);
+        const item = quote.clips.find((value) => value.clipId === receipt.clipId);
+        if (
+          !clip ||
+          !item ||
+          item.seconds !== clip.seconds ||
+          (receipt.prompt !== undefined && receipt.prompt !== clip.prompt)
+        )
+          continue;
+        const snapshot = clipGenerationSnapshot(clip, workflow, profile);
+        if (
+          (item.provider && item.provider !== snapshot.provider) ||
+          (item.model && item.model !== snapshot.model) ||
+          (item.videoProfileId && item.videoProfileId !== snapshot.videoProfileId) ||
+          (item.ratio && item.ratio !== snapshot.ratio) ||
+          (item.nativeWidth && item.nativeWidth !== snapshot.nativeWidth) ||
+          (item.nativeHeight && item.nativeHeight !== snapshot.nativeHeight)
+        )
+          continue;
+        await this.inputImage(session.id, clip, workflow);
+        if (receipt.status === 'passed') await this.verifyClip(job, clip.id, receipt.attempt);
+        const current = await this.options.repository.get(session.id);
+        this.options.repository.checkVersion(current, session.version);
+        this.options.workflows.checkVersion(
+          await this.options.workflows.get(workflow.id),
+          workflow.version,
+        );
+        await this.options.repository.recordClipProvenance(
+          clipProvenanceSchema.parse({
+            schemaVersion: 1,
+            sessionId: session.id,
+            jobId: job.id,
+            planId: plan.id,
+            clipId: clip.id,
+            attempt: receipt.attempt,
+            snapshot,
+            fingerprint: clipGenerationFingerprint(snapshot),
+            output: receipt.status === 'passed' ? receipt.output : null,
+            kind: 'legacy_current_plan',
+            capturedAt: new Date().toISOString(),
+          }),
+        );
+        captured++;
+      }
+    }
+    return captured;
+  }
+  /** Check every reused file and audit before any admission, narration or new provider dispatch. */
+  async preflightReuses(
+    session: CreatorSession,
+    workflow: Workflow,
+    quote: CreatorQuote,
+  ): Promise<void> {
+    const plan = session.plan!;
+    const profile = productionProfiles(this.options.video, plan.clips, this.options.videoProviders);
+    const provenance = await this.options.repository.clipProvenance(session.id);
+    for (const clip of plan.clips) {
+      await this.inputImage(session.id, clip, workflow);
+      const item = quote.clips.find((value) => value.clipId === clip.id);
+      if (!item?.reuse) continue;
+      const oldJob = await this.options.repository.job(session.id, item.reuse.jobId);
+      const receipt = oldJob.clips.find(
+        (value) =>
+          value.clipId === clip.id &&
+          value.attempt === item.reuse!.attempt &&
+          value.status === 'passed',
+      );
+      const expected = clipGenerationFingerprint(clipGenerationSnapshot(clip, workflow, profile));
+      if (
+        !receipt?.output ||
+        receipt.output.sha256 !== item.reuse.sha256 ||
+        !provenance.some((record) => provenanceMatches(oldJob, receipt, record, expected))
+      )
+        throw new ApiError(
+          409,
+          'CREATOR_REUSE_STALE',
+          'A reused clip no longer matches its immutable generation inputs. Request a new quote.',
+        );
+      await this.verifyClip(oldJob, clip.id, item.reuse.attempt);
+    }
   }
   async startAnalysis(session: CreatorSession, workflow: Workflow): Promise<CreatorJob> {
     return this.start(session, workflow, 'analysis', randomUUID());
@@ -227,6 +389,8 @@ export class CreatorJobs {
         'CREATOR_QUOTE_STALE',
         'The plan, reference assets or provider changed. Review a new quote.',
       );
+    await this.captureCurrentPlanProvenance(session, workflow);
+    await this.preflightReuses(session, workflow, quote);
     // Historical plans omit shot profiles and retain the original global
     // production preflight error. Explicit shot choices report their own errors.
     if (
@@ -491,6 +655,7 @@ export class CreatorJobs {
         await mkdir(directory, { recursive: true });
         const accepted: string[] = [];
         const quote = await this.options.repository.quote(job.quoteId!);
+        await this.preflightReuses(session, workflow, quote);
         const paidClips = quote.clips.filter((item) => item.costCents > 0);
         const total = plan.clips.reduce((sum, clip) => sum + clip.seconds, 0);
         const soundtrack: CreatorSoundtrack = {
@@ -629,27 +794,7 @@ export class CreatorJobs {
               'CREATOR_RESERVATION_REQUIRED',
               'No spending reservation exists for this clip.',
             );
-          const asset = workflow.assets.find((value) => value.id === clip.assetId);
-          let image = asset ? await this.options.assets.load(workflow.id, asset) : undefined;
-          if (clip.storyboardFrameId) {
-            if (!this.options.loadStoryboard || clip.assetId)
-              throw new ApiError(
-                409,
-                'CREATOR_IMAGE_SOURCE',
-                'Choose one verified image source for this shot.',
-              );
-            const frame = await this.options.loadStoryboard(session.id, clip.storyboardFrameId);
-            if (
-              !clip.storyboardFrameSha256 ||
-              frame.record.output?.sha256 !== clip.storyboardFrameSha256
-            )
-              throw new ApiError(
-                409,
-                'CREATOR_IMAGE_SOURCE_CHANGED',
-                'The storyboard source changed. Review a new quote.',
-              );
-            image = frame.bytes;
-          }
+          const image = await this.inputImage(session.id, clip, workflow);
           const video = resolveCreatorVideoProvider(
             clip,
             this.options.video,
@@ -683,6 +828,26 @@ export class CreatorJobs {
               },
             ],
           }));
+          const generationSnapshot = clipGenerationSnapshot(
+            clip,
+            workflow,
+            productionProfiles(this.options.video, plan.clips, this.options.videoProviders),
+          );
+          await this.options.repository.recordClipProvenance(
+            clipProvenanceSchema.parse({
+              schemaVersion: 1,
+              sessionId: session.id,
+              jobId: job.id,
+              planId: plan.id,
+              clipId: clip.id,
+              attempt: number,
+              snapshot: generationSnapshot,
+              fingerprint: clipGenerationFingerprint(generationSnapshot),
+              output: null,
+              kind: 'generated_input',
+              capturedAt: new Date().toISOString(),
+            }),
+          );
           const update = async (
             change: (receipt: CreatorJob['clips'][number]) => CreatorJob['clips'][number],
           ) => {
@@ -761,6 +926,24 @@ export class CreatorJobs {
               'CREATOR_CLIP_AUDIT_FAILED',
               'A clip failed review. No automatic paid retry was made. Request a new quote and explicitly approve another attempt.',
             );
+          await this.options.repository.recordClipProvenance(
+            clipProvenanceSchema.parse({
+              schemaVersion: 1,
+              sessionId: session.id,
+              jobId: job.id,
+              planId: plan.id,
+              clipId: clip.id,
+              attempt: number,
+              snapshot: generationSnapshot,
+              fingerprint: clipGenerationFingerprint(generationSnapshot),
+              output: {
+                bytes: bytes.length,
+                sha256: createHash('sha256').update(bytes).digest('hex'),
+              },
+              kind: 'generated',
+              capturedAt: new Date().toISOString(),
+            }),
+          );
           accepted.push(path);
         }
         signal.throwIfAborted();

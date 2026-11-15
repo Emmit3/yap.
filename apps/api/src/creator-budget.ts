@@ -17,6 +17,12 @@ import {
 } from './creator-video-factory.js';
 import { resolveOutputProfile } from './creator-output-profiles.js';
 import { ApiError } from './errors.js';
+import {
+  clipGenerationSnapshot,
+  clipGenerationFingerprint,
+  provenanceMatches,
+  type ClipProvenance,
+} from './creator-clip-provenance.js';
 import { createSubtitleSnapshot, sceneSubtitleWindows } from './creator-subtitles.js';
 import {
   VOICEOVER_CENTS_PER_LINE,
@@ -275,6 +281,7 @@ export function buildCreatorQuote(
   history: CreatorJob[],
   now = new Date(),
   visionCentsPerClip = 10,
+  provenance: ClipProvenance[] = [],
 ): CreatorQuote {
   const plan = session.plan;
   if (
@@ -289,9 +296,13 @@ export function buildCreatorQuote(
       'CREATOR_PROVIDER_CHANGED',
       'Prepare a new plan for the configured production provider.',
     );
-  const jobs = planHistory(history, session);
+  const jobs = history.filter((job) => job.kind === 'production' && job.sessionId === session.id);
+  const samePlanJobs = new Set(planHistory(jobs, session).map((job) => job.id));
   const clips = plan.clips.map((clip) => {
     const selected = profile.clipProfiles?.[clip.id] ?? profile;
+    const generationFingerprint = clipGenerationFingerprint(
+      clipGenerationSnapshot(clip, workflow, profile),
+    );
     if (selected.retired)
       throw new ApiError(
         503,
@@ -330,11 +341,32 @@ export function buildCreatorQuote(
         .filter(
           (receipt) =>
             receipt.clipId === clip.id &&
-            (!clip.videoProfileId || receipt.videoProfileId === clip.videoProfileId),
+            (!clip.videoProfileId || receipt.videoProfileId === clip.videoProfileId) &&
+            (samePlanJobs.has(job.id) ||
+              provenance.some(
+                (record) =>
+                  record.sessionId === session.id &&
+                  record.jobId === job.id &&
+                  record.planId === job.planId &&
+                  record.clipId === clip.id &&
+                  record.attempt === receipt.attempt &&
+                  record.fingerprint === generationFingerprint &&
+                  clipGenerationFingerprint(record.snapshot) === generationFingerprint,
+              )),
         )
         .map((receipt) => ({ job, receipt })),
     );
-    const passed = previous.find(({ receipt }) => receipt.status === 'passed' && receipt.output);
+    const passed = previous.find(
+      ({ job, receipt }) =>
+        receipt.status === 'passed' &&
+        receipt.output &&
+        receipt.audit?.technicalPassed === true &&
+        receipt.audit.visionPassed === true &&
+        (samePlanJobs.has(job.id) ||
+          provenance.some((record) =>
+            provenanceMatches(job, receipt, record, generationFingerprint),
+          )),
+    );
     if (passed)
       return {
         clipId: clip.id,
