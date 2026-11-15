@@ -2,7 +2,17 @@ import { z } from 'zod';
 
 const text = (maximum: number) => z.string().trim().min(1).max(maximum);
 export const posterReferenceIdSchema = z.string().regex(/^[a-z0-9][a-z0-9-]{0,79}$/);
-export const posterCategorySchema = z.enum(['party', 'music', 'popup', 'craft', 'market']);
+export const posterCategorySchema = z.enum([
+  'party',
+  'music',
+  'popup',
+  'craft',
+  'market',
+  'campaign',
+  'portrait',
+  'editorial',
+  'cinema',
+]);
 export const posterSourceSchema = z
   .object({
     url: z
@@ -31,7 +41,8 @@ export const posterSourceSchema = z
     timestampSeconds: z
       .number()
       .min(0)
-      .max(24 * 60 * 60),
+      .max(24 * 60 * 60)
+      .optional(),
   })
   .strict();
 export const posterObservedSchema = z
@@ -51,6 +62,91 @@ export const posterReconstructionSchema = z
   })
   .strict();
 const pixels = z.number().int().nonnegative();
+const hexColor = z.string().regex(/^#[a-f0-9]{6}$/i);
+export const posterCanvasSchema = z
+  .object({
+    width: pixels.min(320).max(4096),
+    height: pixels.min(320).max(4096),
+  })
+  .strict();
+export const posterRegionSchema = z
+  .object({
+    x: z.number().min(0).max(1),
+    y: z.number().min(0).max(1),
+    width: z.number().positive().max(1),
+    height: z.number().positive().max(1),
+  })
+  .strict()
+  .refine(
+    (region) => region.x + region.width <= 1.000001 && region.y + region.height <= 1.000001,
+    'The complete region must fit inside the canvas.',
+  );
+export const posterCopyRoleSchema = z.enum(['headline', 'subheading', 'details']);
+const exactCopy = (maximum: number) =>
+  z
+    .string()
+    .min(1)
+    .max(maximum)
+    .refine((value) => Boolean(value.trim()), 'Supply nonempty approved copy.');
+export const posterCopySchema = z
+  .object({
+    headline: exactCopy(160).optional(),
+    subheading: exactCopy(280).optional(),
+    details: exactCopy(1200).optional(),
+  })
+  .strict();
+export const posterBriefSchema = z
+  .object({
+    copy: posterCopySchema.default({}),
+    canvas: posterCanvasSchema.optional(),
+  })
+  .strict();
+/** Private pack data. A layout describes intent; it is not a rendered poster. */
+export const posterCompositionSchema = z
+  .object({
+    canvas: posterCanvasSchema,
+    palette: z.array(hexColor).min(1).max(8),
+    artwork: z
+      .array(
+        z
+          .object({
+            id: posterReferenceIdSchema,
+            region: posterRegionSchema,
+            treatment: text(1000),
+            layer: pixels.max(20),
+            transparentBackground: z.boolean(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(8),
+    text: z
+      .array(
+        z
+          .object({
+            role: posterCopyRoleSchema,
+            region: posterRegionSchema,
+            fontRole: z.enum(['display', 'body']),
+            fontScale: z.number().min(0.01).max(0.5),
+            color: hexColor,
+            align: z.enum(['left', 'center', 'right']),
+            layer: pixels.max(20),
+            maxCharacters: z.number().int().min(1).max(1200),
+            allowArtworkOverlap: z.boolean().default(false),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(3),
+  })
+  .strict()
+  .refine(
+    (composition) =>
+      new Set(composition.text.map((slot) => slot.role)).size === composition.text.length &&
+      new Set(composition.artwork.map((asset) => asset.id)).size === composition.artwork.length &&
+      composition.text.some((slot) => slot.role === 'headline'),
+    'Provide one headline slot and no duplicate copy roles.',
+  );
 export const posterReferenceSchema = z
   .object({
     id: posterReferenceIdSchema,
@@ -85,6 +181,7 @@ export const posterReferenceSchema = z
       .strict(),
     observed: posterObservedSchema,
     reconstruction: posterReconstructionSchema,
+    composition: posterCompositionSchema.optional(),
   })
   .strict()
   .refine(
@@ -142,6 +239,7 @@ export const createPosterDesignSchema = z
     styleId: posterReferenceIdSchema,
     styleSha256: z.string().regex(/^[a-f0-9]{64}$/),
     changes: text(4000),
+    brief: posterBriefSchema.optional(),
   })
   .strict();
 export const posterDesignSchema = z
@@ -151,6 +249,7 @@ export const posterDesignSchema = z
     changes: text(4000),
     status: z.literal('prepared'),
     createdAt: z.iso.datetime(),
+    brief: posterBriefSchema.optional(),
   })
   .strict();
 export const posterStylesResponseSchema = z
@@ -161,3 +260,38 @@ export const posterDesignResponseSchema = z.object({ design: posterDesignSchema 
 export type PosterStyle = z.infer<typeof posterStyleSchema>;
 export type PosterDesign = z.infer<typeof posterDesignSchema>;
 export type CreatePosterDesign = z.infer<typeof createPosterDesignSchema>;
+
+export const posterProductionPlanSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    reference: z
+      .object({
+        id: posterReferenceIdSchema,
+        sha256: z.string().regex(/^[a-f0-9]{64}$/),
+        instructionsSha256: z.string().regex(/^[a-f0-9]{64}$/),
+      })
+      .strict(),
+    changes: text(4000),
+    brief: posterBriefSchema,
+    composition: posterCompositionSchema.nullable(),
+    issues: z
+      .array(
+        z
+          .object({
+            code: z.enum([
+              'missing-composition',
+              'missing-headline',
+              'copy-exceeds-slot',
+              'unsupported-copy-role',
+            ]),
+            role: posterCopyRoleSchema.optional(),
+          })
+          .strict(),
+      )
+      .max(8),
+    fingerprint: z.string().regex(/^[a-f0-9]{64}$/),
+  })
+  .strict();
+export type PosterBrief = z.infer<typeof posterBriefSchema>;
+export type PosterComposition = z.infer<typeof posterCompositionSchema>;
+export type PosterProductionPlan = z.infer<typeof posterProductionPlanSchema>;

@@ -6,10 +6,12 @@ import { z } from 'zod';
 import {
   posterDesignSchema,
   posterReferenceSchema,
+  posterProductionPlanSchema,
   type PosterDesign,
 } from '@yap/contracts/posters';
 import { ApiError, StorageError } from './errors.js';
 import type { PreparedPosterStyle } from './poster-references.js';
+import { posterPlanMatchesReference } from './poster-production.js';
 
 const MAX_DESIGNS = 250;
 const MAX_STORAGE_BYTES = 16 * 1024 * 1024;
@@ -23,13 +25,18 @@ const storedDesignSchema = posterDesignSchema
     originalStylePrompt: privatePrompt,
     combinedPrompt: privatePrompt,
     reference: posterReferenceSchema,
+    // Optional on old records; never reconstruct a historical plan from a newer catalog.
+    productionPlan: posterProductionPlanSchema.optional(),
   })
   .strict()
   .refine(
     (record) =>
       record.reference.id === record.style.id &&
       record.reference.crop.sha256 === record.style.crop.sha256 &&
-      record.combinedPrompt.startsWith(record.originalStylePrompt),
+      record.combinedPrompt.startsWith(record.originalStylePrompt) &&
+      (!record.productionPlan ||
+        (record.productionPlan.changes === record.changes &&
+          posterPlanMatchesReference(record.productionPlan, record.reference))),
     'The private design must retain its selected style and original prompt.',
   );
 const storageSchema = z
@@ -51,6 +58,7 @@ function customerDesign(record: StoredDesign): PosterDesign {
     changes: record.changes,
     status: record.status,
     createdAt: record.createdAt,
+    ...(record.productionPlan ? { brief: structuredClone(record.productionPlan.brief) } : {}),
   };
 }
 
@@ -149,6 +157,7 @@ export class PosterDesignRepository {
         originalStylePrompt: prepared.originalStylePrompt,
         combinedPrompt: prepared.combinedPrompt,
         reference: prepared.reference,
+        productionPlan: prepared.productionPlan,
       });
       await this.persist([...designs, record]);
       return structuredClone(customerDesign(record));
