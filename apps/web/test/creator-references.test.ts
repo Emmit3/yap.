@@ -60,6 +60,34 @@ test('malformed or unverified catalogs never become invented example cards', () 
   );
 });
 
+test('verified public preview metadata survives parsing without entering creator reference context', () => {
+  const previewUrl = 'https://player.mux.com/j1ppGEgL3KUlOWbx02UzLWDt7zL4M2QiI4KAJ4o700Y100';
+  const previewVerifiedAt = '2026-11-14T21:54:58.390Z';
+  const film = parseFilmCatalog({
+    schemaVersion: 1,
+    films: [{ ...record, previewUrl, previewVerifiedAt }],
+  })[0]!;
+  assert.equal(film.previewUrl, previewUrl);
+  assert.equal(film.previewVerifiedAt, previewVerifiedAt);
+  const context = selectedFilm(film, ['Match cuts']);
+  assert.equal('previewUrl' in context, false);
+  assert.equal('previewVerifiedAt' in context, false);
+
+  for (const preview of [
+    { previewUrl },
+    { previewUrl, previewVerifiedAt: 'unknown' },
+    { previewUrl: 'http://player.mux.com/example', previewVerifiedAt },
+    { previewUrl: 'https://user:secret@cdn.example.com/film.mp4', previewVerifiedAt },
+    { previewUrl: 'https://127.0.0.1/film.mp4', previewVerifiedAt },
+    { previewUrl: 'https://videos.internal/film.mp4', previewVerifiedAt },
+  ]) {
+    const parsed = parseFilmCatalog({ schemaVersion: 1, films: [{ ...record, ...preview }] });
+    assert.equal(parsed.length, 1, 'bad optional media never removes a valid original source');
+    assert.equal(parsed[0]!.previewUrl, undefined);
+    assert.equal(parsed[0]!.previewVerifiedAt, undefined);
+  }
+});
+
 test('selections preserve attribution and only explicitly chosen catalog techniques', () => {
   const film = parseFilmCatalog({ schemaVersion: 1, films: [record] })[0];
   const selected = selectedFilm(film, ['Match cuts', 'Match cuts']);

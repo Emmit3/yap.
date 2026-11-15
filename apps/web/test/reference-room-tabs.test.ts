@@ -92,28 +92,66 @@ function mount(props: Props) {
   function ProductGallery() {
     return null;
   }
+  const icons = { DotsThree: () => null, X: () => null };
+  const focusEvents: string[] = [];
+  const navigationButton = {
+    focus(options: { preventScroll: boolean }) {
+      assert.equal(options.preventScroll, true);
+      focusEvents.push('navigation');
+    },
+  };
+  const navigationToggle = {
+    focus(options: { preventScroll: boolean }) {
+      assert.equal(options.preventScroll, true);
+      focusEvents.push('toggle');
+    },
+  };
+  const browserWindow = new EventTarget();
+  const browserDocument = {
+    querySelector(selector: string) {
+      assert.equal(selector, '.side-nav button');
+      return navigationButton;
+    },
+  };
   const exported = { ReferenceRoom: (_props: Props): unknown => null };
   const mockRequire = (name: string) => {
     if (name === 'react') return hooks;
     if (name === 'react/jsx-runtime') return require(name);
+    if (name === '@phosphor-icons/react') return icons;
     if (name.endsWith('/keyboard')) return { rovingIndex };
     if (name.endsWith('/PosterWorkspace')) return { PosterWorkspace };
     if (name.endsWith('/ProductGallery')) return { ProductGallery };
     if (name.endsWith('.css')) return {};
     throw new Error(`Unexpected component dependency: ${name}`);
   };
-  new Function('require', 'exports', code)(mockRequire, exported);
+  new Function('require', 'exports', 'document', 'window', code)(
+    mockRequire,
+    exported,
+    browserDocument,
+    browserWindow,
+  );
   return {
     PosterWorkspace,
     ProductGallery,
+    focusEvents,
+    navigationKey(key: string) {
+      const event = new Event('keydown');
+      Object.defineProperty(event, 'key', { value: key });
+      browserWindow.dispatchEvent(event);
+    },
     render(next: Partial<Props> = {}) {
       props = { ...props, ...next };
       cursor = 0;
-      const tree = exported.ReferenceRoom(props);
+      const tree = elements(exported.ReferenceRoom(props));
+      for (const node of tree) {
+        if (node.props.className !== 'inspiration-menu-toggle') continue;
+        const ref = node.props.ref;
+        if (ref && typeof ref === 'object' && 'current' in ref) ref.current = navigationToggle;
+      }
       const pending = effects;
       effects = [];
       pending.forEach((effect) => effect());
-      return elements(tree);
+      return tree;
     },
     unmount() {
       slots.forEach((item) => item.cleanup?.());
@@ -213,6 +251,56 @@ test('reference tabs support roving arrows, Home and End while preserving native
   key('ArrowRight', true);
   assert.equal(prevented, 4);
   room.unmount();
+});
+
+test('workspace navigation toggling preserves child identity and the hidden draft guard, with Escape focus recovery', () => {
+  const dirty: boolean[] = [];
+  const room = mount({ onDirty: (value) => dirty.push(value), onUseReferences() {} });
+  let tree = room.render();
+  const poster = tree.find((node) => node.type === room.PosterWorkspace)!;
+  const gallery = tree.find((node) => node.type === room.ProductGallery)!;
+  const toggle = () => tree.find((node) => node.props.className === 'inspiration-menu-toggle')!;
+  const roomNode = () => tree.find((node) => node.props.className === 'creation-reference-room')!;
+  assert.equal(toggle().props['aria-expanded'], false);
+  call(poster.props.onDirty, true);
+  call(toggle().props.onClick);
+  tree = room.render();
+  assert.equal(toggle().props['aria-expanded'], true);
+  assert.equal(roomNode().props['data-navigation-open'], true);
+  assert.deepEqual(room.focusEvents, ['navigation']);
+  const posterWhileOpen = tree.find((node) => node.type === room.PosterWorkspace)!;
+  assert.equal(posterWhileOpen.key, poster.key);
+  assert.equal(posterWhileOpen.props.onDirty, poster.props.onDirty);
+  assert.equal(tree.find((node) => node.type === room.ProductGallery)!.key, gallery.key);
+  call(byRole(tree, 'tab')[1]!.props.onClick);
+  tree = room.render();
+  assert.equal(tree.find((node) => node.type === room.PosterWorkspace)!.props.active, true);
+  assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, false);
+  assert.equal(toggle().props['aria-expanded'], true);
+  room.navigationKey('Enter');
+  assert.deepEqual(room.focusEvents, ['navigation']);
+  room.navigationKey('Escape');
+  tree = room.render();
+  assert.equal(toggle().props['aria-expanded'], false);
+  assert.equal(roomNode().props['data-navigation-open'], undefined);
+  assert.deepEqual(room.focusEvents, ['navigation', 'toggle']);
+  assert.equal(
+    tree.find((node) => node.type === room.PosterWorkspace)!.props.onDirty,
+    poster.props.onDirty,
+  );
+  assert.deepEqual(
+    byRole(tree, 'tabpanel').map((node) => node.props.hidden),
+    [true, false],
+  );
+  assert.deepEqual(dirty, [true], 'opening or closing navigation does not discard poster changes');
+  room.navigationKey('Escape');
+  assert.deepEqual(
+    room.focusEvents,
+    ['navigation', 'toggle'],
+    'the closed menu removes its keyboard listener',
+  );
+  room.unmount();
+  assert.deepEqual(dirty, [true, false]);
 });
 
 test('native product inspiration forwards selected source IDs without a full-page film iframe', () => {

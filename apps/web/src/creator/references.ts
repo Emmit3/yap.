@@ -11,7 +11,40 @@ export type FilmReference = CreatorExternalReference & {
   year: number | null;
   featured: boolean;
   videoEvidence: string;
+  previewUrl?: string;
+  previewVerifiedAt?: string;
 };
+
+/** Optional catalog media remains separate from the reference handed into a creation. */
+function catalogPreview(record: Record<string, unknown>) {
+  const verifiedAt = record.previewVerifiedAt;
+  if (
+    typeof record.previewUrl !== 'string' ||
+    record.previewUrl.length > 4096 ||
+    typeof verifiedAt !== 'string' ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(verifiedAt) ||
+    !Number.isFinite(Date.parse(verifiedAt))
+  )
+    return {};
+  try {
+    const url = new URL(record.previewUrl);
+    const host = url.hostname.toLowerCase();
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.port ||
+      !host.includes('.') ||
+      host.includes(':') ||
+      /^\d+(?:\.\d+){3}$/.test(host) ||
+      /(?:^|\.)(?:localhost|local|internal|test|invalid)$/.test(host)
+    )
+      return {};
+    return { previewUrl: url.href, previewVerifiedAt: verifiedAt };
+  } catch {
+    return {};
+  }
+}
 
 export function parseFilmCatalog(value: unknown): FilmReference[] {
   if (
@@ -59,6 +92,7 @@ export function parseFilmCatalog(value: unknown): FilmReference[] {
       year: typeof record.year === 'number' ? record.year : null,
       featured: record.featured === true,
       videoEvidence: typeof record.videoEvidence === 'string' ? record.videoEvidence : '',
+      ...catalogPreview(record),
     });
   }
   if (!films.length) throw new Error('The campaign catalog has no readable references.');
