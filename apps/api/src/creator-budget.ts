@@ -341,7 +341,6 @@ export function buildCreatorQuote(
         .filter(
           (receipt) =>
             receipt.clipId === clip.id &&
-            (!clip.videoProfileId || receipt.videoProfileId === clip.videoProfileId) &&
             (samePlanJobs.has(job.id) ||
               provenance.some(
                 (record) =>

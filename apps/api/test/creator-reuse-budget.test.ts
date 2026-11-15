@@ -212,6 +212,20 @@ test('a new twenty-second plan reuses three reviewed shots and quotes only the c
   assert.deepEqual(old, before, 'quoting must not rewrite historical generation evidence');
 });
 
+test('selecting the same effective default profile cannot renew unchanged failed attempts', () => {
+  const old = original();
+  delete old.session.plan!.clips[3]!.videoProfileId;
+  delete old.job.clips[3]!.videoProfileId;
+  old.job.clips.push({ ...old.job.clips[3]!, attempt: 2 });
+  old.provenance.push({ ...old.provenance[3]!, attempt: 2 });
+  const next = revised(old);
+  next.session.plan!.clips[3]!.assetId = old.session.plan!.clips[3]!.assetId;
+  next.session.plan!.clips[3]!.videoProfileId = 'fal-seedance2.5-portrait';
+  assert.throws(() => quote(next, [old.job], old.provenance), {
+    code: 'CREATOR_ATTEMPTS_EXHAUSTED',
+  });
+});
+
 test('changing a shot identity or generation input prevents that shot from reusing old footage', async (t) => {
   type Revision = ReturnType<typeof revised>;
   const cases: Array<{
