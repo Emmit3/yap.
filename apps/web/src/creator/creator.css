@@ -47,6 +47,13 @@
   outline: none;
   box-shadow: none;
 }
+.creator-workspace ::selection {
+  background: #181818;
+  color: #fff;
+}
+.creator-workspace :is(input, textarea) {
+  caret-color: var(--creator-ink);
+}
 .creator-workspace :is(input, textarea)::placeholder {
   color: #707070;
 }
@@ -187,7 +194,7 @@
   grid-template-columns: minmax(0, 1fr) var(--creator-aside);
   align-items: end;
   gap: var(--creator-gutter);
-  margin-bottom: 40px;
+  margin-bottom: 32px;
 }
 .creator-back {
   display: inline-flex;
@@ -469,7 +476,7 @@
   box-shadow: none;
 }
 .creator-context-fields {
-  padding: 0 24px 24px;
+  padding: 0 24px 20px;
 }
 .creator-context-fields > summary {
   font-size: 12px;
@@ -496,9 +503,12 @@
 }
 .creator-format-controls {
   display: grid;
-  grid-template-columns: 1.2fr 0.8fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
-  margin-top: 20px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  border-top: 1px solid #ececec;
+  border-bottom: 1px solid #ececec;
 }
 .creator-format-controls select {
   margin-top: 8px;
@@ -2061,12 +2071,16 @@
   .creator-context-fields {
     padding: 0 16px 20px;
   }
-  .creator-context-grid,
-  .creator-format-controls {
+  .creator-context-grid {
     grid-template-columns: 1fr;
   }
   .creator-format-controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
+    padding: 16px;
+  }
+  .creator-format-controls > label:first-child {
+    grid-column: 1 / -1;
   }
   .creator-composer-bottom {
     align-items: flex-start;
