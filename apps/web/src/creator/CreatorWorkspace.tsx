@@ -760,7 +760,7 @@ function SourceComposer({
             }
             disabled={locked}
           >
-            {[15, 30, 60].map((seconds) => (
+            {[15, 20, 30, 60].map((seconds) => (
               <option key={seconds} value={seconds}>
                 {seconds} seconds
               </option>

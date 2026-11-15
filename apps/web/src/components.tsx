@@ -191,6 +191,7 @@ export function BriefFields({
             onChange={(e) => set('duration', Number(e.target.value) as ProjectBrief['duration'])}
           >
             <option value={15}>15 seconds</option>
+            <option value={20}>20 seconds</option>
             <option value={30}>30 seconds</option>
             <option value={60}>60 seconds</option>
           </select>

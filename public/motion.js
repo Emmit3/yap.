@@ -6,6 +6,93 @@ export const smooth = (value) => {
 };
 export const phase = (progress, from, to) => smooth((progress - from) / (to - from));
 
+/** Offscreen embedded browsers can report visible while withholding their first animation frame. */
+export function firstPaintWatchdog(
+  hasPainted,
+  paint,
+  schedule = setTimeout,
+  cancel = clearTimeout,
+) {
+  const timer = schedule(() => {
+    if (!hasPainted()) paint();
+  }, 250);
+  return () => cancel(timer);
+}
+
+/** Briefly recover interrupted media startup even when an embedded browser withholds RAF. */
+export function playbackRecoveryWindow(
+  reconcile,
+  now = () => performance.now(),
+  schedule = setTimeout,
+  cancel = clearTimeout,
+) {
+  const deadline = now() + 5000;
+  let stopped = false;
+  let timer;
+  const tick = () => {
+    if (stopped || now() > deadline) return;
+    reconcile();
+    if (now() < deadline) timer = schedule(tick, 500);
+  };
+  timer = schedule(tick, 500);
+  return () => {
+    stopped = true;
+    cancel(timer);
+  };
+}
+
+/** Prefer an actual film for the initial phone preview, without overriding a shared still. */
+export function initialReelIndex(reels, limit = reels.length, requested = -1) {
+  const count = Math.max(0, Math.min(reels.length, Math.floor(limit)));
+  if (!count) return -1;
+  if (Number.isInteger(requested) && requested >= 0 && requested < count) return requested;
+  const center = Math.floor(count / 2);
+  let selected = center;
+  let distance = Infinity;
+  for (let index = 0; index < count; index++) {
+    if (reels[index]?.video && Math.abs(index - center) < distance) {
+      selected = index;
+      distance = Math.abs(index - center);
+    }
+  }
+  return selected;
+}
+
+/** Recover interrupted autoplay while keeping pause intent and permanent media errors authoritative. */
+export function reconcileWallVideo(entry, wanted, time, force = false) {
+  entry.active = wanted && !entry.failed;
+  if (!entry.active) {
+    entry.node.pause();
+    return;
+  }
+  if (!entry.node.paused) {
+    if (entry.node.readyState >= 2) entry.tile.classList.add('is-playing');
+    return;
+  }
+  if (entry.playPending) return;
+  if (!force && (entry.autoplayBlocked || time < (entry.retryAfter ?? 0))) return;
+  if (!entry.node.getAttribute('src')) entry.node.src = entry.src;
+  entry.playPending = true;
+  return Promise.resolve()
+    .then(() => (entry.active ? entry.node.play() : undefined))
+    .then(() => {
+      if (entry.active && !entry.node.paused) {
+        entry.tile.classList.add('is-playing');
+        entry.retryAfter = 0;
+        entry.autoplayBlocked = false;
+      } else entry.node.pause();
+    })
+    .catch((error) => {
+      // Metadata seeks and tab suspension can abort a play request; they are not bad media.
+      entry.autoplayBlocked = error?.name === 'NotAllowedError';
+      entry.retryAfter = time + 500;
+      entry.tile.classList.remove('is-playing');
+    })
+    .finally(() => {
+      entry.playPending = false;
+    });
+}
+
 export function wallLayout(width, height, capacity = Infinity) {
   const mobile = width < 700;
   const gap = mobile ? 12 : 14;

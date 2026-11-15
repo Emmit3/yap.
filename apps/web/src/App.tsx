@@ -16,6 +16,7 @@ import { NewProject } from './NewProject';
 import { ProjectLibrary } from './ProjectLibrary';
 import { ProjectEditor } from './ProjectEditor';
 import { LandingPage } from './landing/LandingPage';
+import { exampleCreationPath } from './landing/messages';
 import { PromoLibrary } from './promo/PromoLibrary';
 import { CreatorLibrary } from './CreatorLibrary';
 import { CreationWorkspace } from './creation/CreationWorkspace';
@@ -27,6 +28,8 @@ import { readPendingResearch, savePendingResearch } from './research-context';
 function currentRoute() {
   return window.location.hash.replace(/^#/, '') || '/';
 }
+
+const exampleRoute = exampleCreationPath(import.meta.env.VITE_EXAMPLE_CREATION_ID);
 
 export function App() {
   const [route, setRoute] = useState(currentRoute);
@@ -197,7 +200,8 @@ export function App() {
   if (path === '/') {
     return (
       <LandingPage
-        onEnterStudio={() => navigate('/create')}
+        onEnterStudio={() => navigate(exampleRoute ?? '/create')}
+        exampleMode={exampleRoute !== null}
         onOpenSocial={() => navigate('/create?view=analytics')}
         onOpenInspiration={() => navigate('/references')}
         onUseReferences={(ids) =>

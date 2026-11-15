@@ -4,7 +4,7 @@ import { socialHandoffSchema } from './social.js';
 export const platformSchema = z.enum(['instagram', 'tiktok', 'youtube']);
 export const toneSchema = z.enum(['conversational', 'educational', 'bold']);
 export const goalSchema = z.enum(['educate', 'entertain', 'promote']);
-export const durationSchema = z.union([z.literal(15), z.literal(30), z.literal(60)]);
+export const durationSchema = z.union([z.literal(15), z.literal(20), z.literal(30), z.literal(60)]);
 export const statusSchema = z.enum(['draft', 'ready']);
 
 export const projectBriefSchema = z

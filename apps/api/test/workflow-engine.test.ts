@@ -18,7 +18,7 @@ import {
   verifyWorkflow,
 } from '../src/workflow-engine.js';
 
-function complete(duration: 15 | 30 | 60 = 30): Workflow {
+function complete(duration: 15 | 20 | 30 | 60 = 30): Workflow {
   return createWorkflow({
     input: 'Make a video about a reusable water bottle.',
     brief: {
@@ -111,7 +111,7 @@ test('explicit answers refine the brief without guessing image facts or mutating
 });
 
 test('brief, script, and scenes require ordered approvals and exact target timing', () => {
-  for (const duration of [15, 30, 60] as const) {
+  for (const duration of [15, 20, 30, 60] as const) {
     let workflow = complete(duration);
     assert.equal(verifyWorkflow(workflow).brief.state, 'needs_review');
     assert.throws(() => buildGuidedScript(workflow), /Approve/);

@@ -133,6 +133,10 @@ test('refinement sends image bytes and strict structured output requirements, re
         assert.equal(body.text.format.strict, true);
         assert.equal(body.text.format.schema.additionalProperties, false);
         assert.deepEqual(body.text.format.schema.required.sort(), ['brief', 'message']);
+        assert.deepEqual(
+          body.text.format.schema.properties.brief.properties.duration.anyOf[0].enum,
+          [15, 20, 30, 60],
+        );
         assert.match(body.input[0].content, /untrusted source material/);
         const supplied = body.input[1].content.find(
           (part: { type: string }) => part.type === 'input_image',
@@ -140,7 +144,7 @@ test('refinement sends image bytes and strict structured output requirements, re
         assert.equal(supplied.image_url, `data:image/png;base64,${image.toString('base64')}`);
         assert.ok(init?.signal);
         return completed({
-          brief: { ...emptyBrief, productName: 'Morning Matcha' },
+          brief: { ...emptyBrief, productName: 'Morning Matcha', duration: 20 },
           message:
             'The image suggests a drink presentation; confirm its ingredients before using any ingredient claims.',
         });
@@ -149,7 +153,7 @@ test('refinement sends image bytes and strict structured output requirements, re
   );
   const result = await provider.refine(source, { message: 'Highlight the presentation.' });
   assert.equal(imagesLoaded, 1);
-  assert.deepEqual(result.brief, { productName: 'Morning Matcha' });
+  assert.deepEqual(result.brief, { productName: 'Morning Matcha', duration: 20 });
   assert.match(result.message, /confirm/);
   assert.deepEqual(source, snapshot);
 });

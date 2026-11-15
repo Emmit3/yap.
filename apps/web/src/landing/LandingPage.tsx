@@ -8,6 +8,7 @@ export interface LandingPageProps {
   onOpenSocial: () => void;
   onOpenInspiration?: () => void;
   onUseReferences?: (ids: string[]) => void;
+  exampleMode?: boolean;
 }
 
 export function LandingPage({
@@ -15,6 +16,7 @@ export function LandingPage({
   onOpenSocial,
   onUseReferences,
   onOpenInspiration,
+  exampleMode = false,
 }: LandingPageProps) {
   const frameRef = useRef<HTMLIFrameElement>(null);
 
@@ -49,7 +51,7 @@ export function LandingPage({
       <iframe
         ref={frameRef}
         className="landing-page__frame"
-        src="/showcase/index.html?embedded=1"
+        src={`/showcase/index.html?embedded=1${exampleMode ? '&example=matcha' : ''}`}
         title="Yap — good ideas, made REEL"
         allow="autoplay; fullscreen"
         allowFullScreen
