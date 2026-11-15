@@ -35,8 +35,11 @@ export function filmPlaybackUrl(clip: ClipPreview, preview = true): string | nul
       playsinline: '1',
       disablekb: '1',
       rel: '0',
+      enablejsapi: '1',
     }))
       player.searchParams.set(name, value);
+    if (typeof window !== 'undefined' && /^https?:\/\//.test(window.location?.origin ?? ''))
+      player.searchParams.set('origin', window.location.origin);
     return player.href;
   }
   if (vimeo) {
@@ -67,6 +70,165 @@ export function filmPlaybackUrl(clip: ClipPreview, preview = true): string | nul
   }))
     url.searchParams.set(name, value);
   return url.href;
+}
+
+export type FilmPlaybackState = 'playing' | 'waiting' | 'error';
+type PlaybackHost = EventTarget & {
+  setInterval(callback: () => void, delay: number): number;
+  clearInterval(id: number): void;
+};
+let playbackSession = 0;
+
+/** Public Vimeo SDK, YouTube widget API and Mux's documented Player.js messages.
+ * Ready/load only installs subscriptions: neither is evidence of video playback.
+ * https://github.com/vimeo/player.js/blob/master/src/player.js
+ * https://developers.google.com/youtube/iframe_api_reference
+ * https://www.mux.com/docs/guides/player-mux-com-reference#playerjs-control
+ */
+export function observeFilmPlayback(
+  frame: HTMLIFrameElement,
+  source: string,
+  state: (value: FilmPlaybackState) => void,
+  host: PlaybackHost = window,
+) {
+  const url = new URL(source);
+  const origin = url.origin;
+  const provider =
+    url.hostname === 'player.vimeo.com'
+      ? 'vimeo'
+      : url.hostname === 'www.youtube-nocookie.com'
+        ? 'youtube'
+        : url.hostname === 'player.mux.com'
+          ? 'mux'
+          : null;
+  const sender = frame.contentWindow;
+  if (!provider || !sender) return () => undefined;
+  const session = `yap-preview-${++playbackSession}`;
+  let alive = true,
+    subscribed = false,
+    attempts = 0;
+  let poll: number | undefined;
+  const send = (data: Record<string, unknown>) => {
+    if (!alive) return;
+    try {
+      sender.postMessage(JSON.stringify(data), origin);
+    } catch {
+      /* A removed frame needs no commands. */
+    }
+  };
+  const stopPolling = () => {
+    if (poll !== undefined) host.clearInterval(poll);
+    poll = undefined;
+  };
+  const subscribe = () => {
+    if (subscribed) return;
+    subscribed = true;
+    stopPolling();
+    if (provider === 'vimeo') {
+      for (const event of ['playing', 'timeupdate', 'bufferstart', 'error'])
+        send({ method: 'addEventListener', value: event });
+    } else if (provider === 'youtube') {
+      for (const event of ['onStateChange', 'onError', 'onAutoplayBlocked'])
+        send({
+          event: 'command',
+          func: 'addEventListener',
+          args: [event],
+          id: session,
+          channel: 'widget',
+        });
+    } else {
+      for (const event of ['play', 'timeupdate', 'pause', 'error'])
+        send({
+          context: 'player.js',
+          version: '0.0.11',
+          method: 'addEventListener',
+          value: event,
+          listener: `${session}:${event}`,
+        });
+    }
+  };
+  const handshake = () => {
+    if (attempts++ >= 12) {
+      stopPolling();
+      return;
+    }
+    if (provider === 'vimeo') send({ method: 'ping' });
+    else if (provider === 'youtube') send({ event: 'listening', id: session, channel: 'widget' });
+    else
+      send({
+        context: 'player.js',
+        version: '0.0.11',
+        method: 'addEventListener',
+        value: 'ready',
+        listener: `${session}:ready`,
+      });
+  };
+  const object = (value: unknown): Record<string, unknown> | null =>
+    value !== null && typeof value === 'object' && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  const progressed = (value: unknown) =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0;
+  const receive = (raw: Event) => {
+    const event = raw as MessageEvent;
+    if (!alive || event.source !== sender || event.origin !== origin) return;
+    let payload: unknown = event.data;
+    if (typeof payload === 'string') {
+      if (payload.length > 16_384) return;
+      try {
+        payload = JSON.parse(payload);
+      } catch {
+        return;
+      }
+    }
+    const data = object(payload);
+    if (!data) return;
+    if (provider === 'vimeo') {
+      if (data.event === 'ready' || data.method === 'ping') subscribe();
+      if (
+        data.event === 'playing' ||
+        (data.event === 'timeupdate' && progressed(object(data.data)?.seconds))
+      )
+        state('playing');
+      else if (data.event === 'bufferstart') state('waiting');
+      else if (data.event === 'error') state('error');
+    } else if (provider === 'youtube') {
+      if (data.id !== session) return;
+      if (data.event === 'initialDelivery' || data.event === 'onReady') subscribe();
+      const info = object(data.info);
+      const playerState = data.event === 'onStateChange' ? data.info : info?.playerState;
+      if (playerState === 1) state('playing');
+      else if (playerState === 0 || playerState === 2 || playerState === 3) state('waiting');
+      if (data.event === 'onError' || data.event === 'onAutoplayBlocked') state('error');
+    } else {
+      if (data.context !== 'player.js') return;
+      if (data.event === 'ready') subscribe();
+      if (data.listener !== `${session}:${String(data.event)}`) return;
+      if (
+        data.event === 'play' ||
+        (data.event === 'timeupdate' && progressed(object(data.value)?.seconds))
+      )
+        state('playing');
+      else if (data.event === 'pause') state('waiting');
+      else if (data.event === 'error') state('error');
+    }
+  };
+  const startHandshake = () => {
+    if (!alive || subscribed) return;
+    stopPolling();
+    attempts = 0;
+    poll = host.setInterval(handshake, 500);
+    handshake();
+  };
+  host.addEventListener('message', receive);
+  frame.addEventListener('load', startHandshake);
+  startHandshake();
+  return () => {
+    alive = false;
+    stopPolling();
+    host.removeEventListener('message', receive);
+    frame.removeEventListener('load', startHandshake);
+  };
 }
 
 export interface VisibleClipPreviewOptions {

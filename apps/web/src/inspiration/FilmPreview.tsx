@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { publicMediaUrl, type ClipPreview } from './catalog';
-import { filmPlaybackUrl } from './preview-playback';
+import { filmPlaybackUrl, observeFilmPlayback } from './preview-playback';
 
 export interface FilmPreviewProps {
   clip: ClipPreview;
@@ -13,11 +13,33 @@ export interface FilmPreviewProps {
 /** Inactive previews render no player; the gallery keeps its verified thumbnail underneath. */
 export function FilmPreview({ clip, active, label, preview = true }: FilmPreviewProps) {
   const video = useRef<HTMLVideoElement>(null);
+  const frame = useRef<HTMLIFrameElement>(null);
   const [failedSource, setFailedSource] = useState('');
   const [blockedSource, setBlockedSource] = useState('');
+  const [readySource, setReadySource] = useState('');
   const url = filmPlaybackUrl(clip, preview);
-  const identity = `${clip.kind}:${preview}:${url ?? ''}`;
+  const session = useRef({ active, url, preview, revision: 0 });
+  if (
+    session.current.active !== active ||
+    session.current.url !== url ||
+    session.current.preview !== preview
+  )
+    session.current = { active, url, preview, revision: session.current.revision + 1 };
+  const identity = `${clip.kind}:${preview}:${url ?? ''}:${session.current.revision}`;
   const failed = failedSource === identity;
+  const ready = readySource === identity;
+  useEffect(() => {
+    if (!active || !preview || !url || failed || clip.kind !== 'embed' || !frame.current) return;
+    return observeFilmPlayback(frame.current, url, (state) => {
+      if (state === 'error') setFailedSource(identity);
+      else setReadySource(state === 'playing' ? identity : '');
+    });
+  }, [active, preview, url, failed, clip.kind, identity]);
+  useEffect(() => {
+    if (!active || !preview || !url || failed || ready) return;
+    const deadline = setTimeout(() => setFailedSource(identity), 15_000);
+    return () => clearTimeout(deadline);
+  }, [active, preview, url, failed, ready, identity]);
   useEffect(() => {
     const node = video.current;
     if (!active || !url || failed || clip.kind !== 'video' || !node) return;
@@ -44,6 +66,7 @@ export function FilmPreview({ clip, active, label, preview = true }: FilmPreview
     height: '100%',
     border: 0,
     objectFit: preview ? 'cover' : 'contain',
+    opacity: !preview || ready ? 1 : 0,
     ...(preview ? { position: 'absolute', inset: 0, pointerEvents: 'none' } : {}),
   };
   const shared = {
@@ -52,9 +75,11 @@ export function FilmPreview({ clip, active, label, preview = true }: FilmPreview
     tabIndex: preview ? -1 : 0,
     'aria-hidden': preview || undefined,
     'data-preview': preview,
+    'data-playback-ready': !preview || ready,
   };
   return clip.kind === 'video' ? (
     <video
+      key={identity}
       {...shared}
       ref={video}
       src={url}
@@ -68,10 +93,14 @@ export function FilmPreview({ clip, active, label, preview = true }: FilmPreview
       aria-label={preview ? undefined : label}
       data-autoplay-blocked={blockedSource === identity || undefined}
       onError={() => setFailedSource(identity)}
+      onPlaying={() => setReadySource(identity)}
+      onWaiting={() => setReadySource('')}
     />
   ) : (
     <iframe
+      key={identity}
       {...shared}
+      ref={frame}
       src={url}
       title={label}
       allow={
