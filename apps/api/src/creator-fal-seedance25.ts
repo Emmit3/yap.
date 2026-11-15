@@ -15,6 +15,18 @@ const TASK_PREFIX = 'fal:seedance-2.5:';
 const submitSchema = z.object({ request_id: z.uuid() });
 const statusSchema = z.object({ status: z.enum(['IN_QUEUE', 'IN_PROGRESS', 'COMPLETED']) });
 const resultSchema = z.object({ video: z.object({ url: z.url() }) });
+const contentRejectionSchema = z.object({ type: z.literal('content_policy_violation') });
+
+function isContentPolicyRejection(bytes: Buffer): boolean {
+  try {
+    const parsed = z.object({ detail: z.unknown() }).safeParse(JSON.parse(bytes.toString('utf8')));
+    if (!parsed.success) return false;
+    const details = Array.isArray(parsed.data.detail) ? parsed.data.detail : [parsed.data.detail];
+    return details.some((detail) => contentRejectionSchema.safeParse(detail).success);
+  } catch {
+    return false;
+  }
+}
 
 /** Seedance 2.5's bounded 720p queue API. A paid POST is never replayed. */
 export function createSeedance25CreatorVideoProvider(
@@ -67,7 +79,13 @@ export function createSeedance25CreatorVideoProvider(
       redirect: 'error',
     });
     const bytes = await readBounded(response, 256 * 1024, signal);
-    if (!response.ok)
+    if (!response.ok) {
+      if (response.status === 422 && isContentPolicyRejection(bytes))
+        throw new ApiError(
+          422,
+          'CREATOR_VIDEO_CONTENT_REJECTED',
+          'The video provider rejected this content. Choose a different suitable reference photo and review the shot before trying again.',
+        );
       throw new ApiError(
         response.status === 429 ? 429 : 502,
         'CREATOR_VIDEO_PROVIDER_ERROR',
@@ -75,6 +93,7 @@ export function createSeedance25CreatorVideoProvider(
           ? 'The video provider is busy. No paid request was automatically repeated.'
           : 'The video provider rejected the request. Check its configuration, balance and content restrictions.',
       );
+    }
     try {
       return JSON.parse(bytes.toString('utf8'));
     } catch {
