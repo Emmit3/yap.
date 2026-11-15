@@ -1,5 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowUpRight, Check, MagnifyingGlass, Sparkle } from '@phosphor-icons/react';
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CaretDown,
+  Check,
+  MagnifyingGlass,
+  Sparkle,
+} from '@phosphor-icons/react';
 import type { PosterDesign, PosterStyle } from '@yap/contracts/posters';
 import { PosterCarousel } from './PosterCarousel';
 import { posterApi } from './api';
@@ -51,11 +58,9 @@ export function PosterWorkspace({
   const field = useRef<HTMLTextAreaElement>(null);
   const editorHeading = useRef<HTMLHeadingElement>(null);
   const opener = useRef<HTMLElement | null>(null);
-  const editorDialog = useRef<HTMLDialogElement>(null);
   const editorImage = useRef<HTMLImageElement>(null);
   const sourceBounds = useRef<DOMRect | null>(null);
   const pointerAction = useRef(false);
-  const suspendedClose = useRef(false);
   const restored = useRef(false);
 
   useEffect(() => {
@@ -121,15 +126,10 @@ export function PosterWorkspace({
   }, [editingId, active]);
   useLayoutEffect(() => {
     if (!active) {
-      if (editorDialog.current?.open) {
-        suspendedClose.current = true;
-        sourceBounds.current = null;
-        editorDialog.current.close();
-      }
+      sourceBounds.current = null;
       return;
     }
-    if (!editingId || !editorDialog.current) return;
-    if (!editorDialog.current.open) editorDialog.current.showModal();
+    if (!editingId) return;
     const image = editorImage.current;
     const source = sourceBounds.current;
     if (!image || !source || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
@@ -166,7 +166,6 @@ export function PosterWorkspace({
   const currentSaved = Boolean(draft.saved && draft.saved.changes === draft.changes.trim());
 
   function open(style: PosterStyle) {
-    suspendedClose.current = false;
     opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     sourceBounds.current = pointerAction.current
       ? (opener.current?.querySelector('img')?.getBoundingClientRect() ?? null)
@@ -244,11 +243,15 @@ export function PosterWorkspace({
         pointerAction.current = false;
       }}
     >
-      <div>
+      <div hidden={Boolean(editingStyle)}>
         <header className="poster-studio-heading">
           <div>
-            <h1 id="poster-studio-title">Find your next poster.</h1>
-            <p>Pick a look. Add your words, your details, your twist.</p>
+            <h1 id="poster-studio-title">
+              Find a feeling.
+              <br />
+              Make it yours.
+            </h1>
+            <p>A wall of possibilities. Pick a poster and put your own spin on it.</p>
           </div>
           {lastStyle && (
             <button className="poster-resume" onClick={() => open(lastStyle)}>
@@ -260,29 +263,50 @@ export function PosterWorkspace({
             </button>
           )}
         </header>
-        <div className="poster-studio-tools">
-          <div className="poster-categories" role="group" aria-label="Poster categories">
-            {categories.map(([value, label]) => (
+        <details className="poster-discovery">
+          <summary>
+            <MagnifyingGlass size={16} />
+            Find a style
+            {(category !== 'all' || query.trim()) && (
+              <span className="poster-filter-active">Filtered</span>
+            )}
+            <CaretDown size={14} />
+          </summary>
+          <div className="poster-studio-tools">
+            <div className="poster-categories" role="group" aria-label="Poster categories">
+              {categories.map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={category === value}
+                  onClick={() => setCategory(value!)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <label className="poster-style-search">
+              <MagnifyingGlass size={18} />
+              <input
+                aria-label="Search poster styles"
+                placeholder="Find a style"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+              />
+            </label>
+            {(category !== 'all' || query.trim()) && (
               <button
-                key={value}
-                type="button"
-                aria-pressed={category === value}
-                onClick={() => setCategory(value!)}
+                className="poster-filter-clear"
+                onClick={() => {
+                  setCategory('all');
+                  setQuery('');
+                }}
               >
-                {label}
+                Clear filters
               </button>
-            ))}
+            )}
           </div>
-          <label className="poster-style-search">
-            <MagnifyingGlass size={18} />
-            <input
-              aria-label="Search poster styles"
-              placeholder="Find a style"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </label>
-        </div>
+        </details>
         {loading ? (
           <div className="poster-studio-loading" role="status">
             <span>Finding your next look…</span>
@@ -325,21 +349,19 @@ export function PosterWorkspace({
         )}
         {!loading && styles.length > 0 && (
           <div className="poster-studio-footnote">
-            <p>Hover to take a closer look. Choose a poster to start.</p>
+            <p>Something catch your eye? Make it your starting point.</p>
             <p>Original sources are linked with each selected style.</p>
           </div>
         )}
       </div>
       {editingStyle && (
-        <dialog
-          ref={editorDialog}
+        <section
           className="poster-customization"
           aria-labelledby="poster-editor-title"
-          onClose={() => {
-            if (suspendedClose.current) {
-              suspendedClose.current = false;
-              return;
-            }
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            event.stopPropagation();
             back();
           }}
         >
@@ -444,7 +466,7 @@ export function PosterWorkspace({
               </p>
             </div>
           </div>
-        </dialog>
+        </section>
       )}
     </section>
   );

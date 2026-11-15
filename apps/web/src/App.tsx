@@ -105,7 +105,7 @@ export function App() {
   useEffect(() => {
     document.title =
       path === '/references'
-        ? 'Reference room — Yap'
+        ? 'Inspiration — Yap'
         : path === '/'
           ? 'yap. — good ideas, made REEL'
           : path === '/films'
@@ -197,6 +197,7 @@ export function App() {
       <LandingPage
         onEnterStudio={() => navigate('/create')}
         onOpenSocial={() => navigate('/create?view=analytics')}
+        onOpenInspiration={() => navigate('/references')}
         onUseReferences={(ids) =>
           navigate(`/create?${ids.map((id) => `reference=${encodeURIComponent(id)}`).join('&')}`)
         }
@@ -254,7 +255,7 @@ export function App() {
             onClick={() => navigate('/references')}
             aria-current={path === '/references' ? 'page' : undefined}
           >
-            <Lightbulb size={20} /> Reference room
+            <Lightbulb size={20} /> Inspiration
           </button>
           <button className="nav-item" onClick={() => setAbout(true)} aria-haspopup="dialog">
             <Question size={20} /> Workspace guide
@@ -275,7 +276,7 @@ export function App() {
             <span>/</span>
             <strong>
               {path === '/references'
-                ? 'Reference room'
+                ? 'Inspiration'
                 : path === '/films'
                   ? 'Your creations'
                   : path === '/create' || creatorId

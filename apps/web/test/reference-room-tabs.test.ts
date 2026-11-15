@@ -6,8 +6,6 @@ import { isValidElement, type ReactElement } from 'react';
 import ts from 'typescript';
 import { rovingIndex } from '../src/creator/keyboard';
 import { parseFilmCatalog } from '../src/creator/references';
-import { referenceIdsFromMessage } from '../src/creation/bridge';
-import { createReferenceCatalogReader } from '../src/creation/reference-loader';
 
 const require = createRequire(import.meta.url);
 const source = await readFile(
@@ -28,7 +26,6 @@ const films = parseFilmCatalog(
 );
 type Slot = { value: unknown; deps?: unknown[]; cleanup?: () => void };
 type Props = { onDirty(value: boolean): void; onUseReferences(ids: string[]): void };
-const nextTick = () => new Promise<void>((resolve) => setImmediate(resolve));
 
 // Execute the actual parent component and callbacks without a browser. Child component
 // identity/key and continued presence are the React contract for retaining their state.
@@ -36,13 +33,6 @@ function mount(props: Props) {
   let cursor = 0;
   const slots: Slot[] = [];
   let effects: Array<() => void> = [];
-  const listeners = new Map<string, (event: unknown) => void>();
-  const window = {
-    location: { origin: 'https://yap.example' },
-    addEventListener: (name: string, listener: (event: unknown) => void) =>
-      listeners.set(name, listener),
-    removeEventListener: (name: string) => listeners.delete(name),
-  };
   const slot = () => {
     const index = cursor++;
     return slots[index] ?? (slots[index] = { value: undefined });
@@ -99,25 +89,23 @@ function mount(props: Props) {
   function PosterWorkspace() {
     return null;
   }
+  function ProductGallery() {
+    return null;
+  }
   const exported = { ReferenceRoom: (_props: Props): unknown => null };
   const mockRequire = (name: string) => {
     if (name === 'react') return hooks;
     if (name === 'react/jsx-runtime') return require(name);
-    if (name === '@phosphor-icons/react')
-      return { ArrowUpRight: () => null, FilmSlate: () => null };
-    if (name.endsWith('/references')) return { loadFilmCatalog: async () => films };
     if (name.endsWith('/keyboard')) return { rovingIndex };
     if (name.endsWith('/PosterWorkspace')) return { PosterWorkspace };
-    if (name.endsWith('/bridge')) return { referenceIdsFromMessage };
-    if (name.endsWith('/reference-loader')) return { createReferenceCatalogReader };
+    if (name.endsWith('/ProductGallery')) return { ProductGallery };
     if (name.endsWith('.css')) return {};
     throw new Error(`Unexpected component dependency: ${name}`);
   };
-  new Function('require', 'exports', 'window', code)(mockRequire, exported, window);
+  new Function('require', 'exports', code)(mockRequire, exported);
   return {
     PosterWorkspace,
-    listeners,
-    window,
+    ProductGallery,
     render(next: Partial<Props> = {}) {
       props = { ...props, ...next };
       cursor = 0;
@@ -152,7 +140,8 @@ test('switching reference tabs retains both child trees and a stable poster dirt
   const room = mount({ onDirty: (value) => dirty.push(value), onUseReferences() {} });
   let tree = room.render();
   const poster = tree.find((node) => node.type === room.PosterWorkspace)!;
-  const film = tree.find((node) => node.type === 'iframe')!;
+  const gallery = tree.find((node) => node.type === room.ProductGallery)!;
+  assert.equal(gallery.props.active, true);
   assert.deepEqual(
     byRole(tree, 'tabpanel').map((node) => node.props.hidden),
     [false, true],
@@ -167,7 +156,9 @@ test('switching reference tabs retains both child trees and a stable poster dirt
   const keptPoster = tree.find((node) => node.type === room.PosterWorkspace)!;
   assert.equal(keptPoster.key, poster.key);
   assert.equal(keptPoster.props.onDirty, poster.props.onDirty);
-  assert.equal(tree.find((node) => node.type === 'iframe')!.props.ref, film.props.ref);
+  const keptGallery = tree.find((node) => node.type === room.ProductGallery)!;
+  assert.equal(keptGallery.key, gallery.key);
+  assert.equal(keptGallery.props.active, false);
   call(keptPoster.props.onDirty, true);
   call(byRole(tree, 'tab')[0]!.props.onClick);
   room.render();
@@ -224,41 +215,22 @@ test('reference tabs support roving arrows, Home and End while preserving native
   room.unmount();
 });
 
-test('the retained film frame still requires a trusted origin, source and known catalog ID', async () => {
+test('native product inspiration forwards selected source IDs without a full-page film iframe', () => {
   const used: string[][] = [];
   const room = mount({ onDirty() {}, onUseReferences: (ids) => used.push(ids) });
   let tree = room.render();
-  const frame = tree.find((node) => node.type === 'iframe')!.props.ref;
-  assert.ok(frame && typeof frame === 'object' && 'current' in frame);
-  const source = {};
-  frame.current = { contentWindow: source };
-  await nextTick();
-  const emit = (filmId: string, origin = room.window.location.origin, sender = source) =>
-    call(room.listeners.get('message'), {
-      origin,
-      source: sender,
-      data: { type: 'yap:film-reference', filmId },
-    });
-  emit(films[0]!.id, 'https://other.example');
-  emit(films[0]!.id, room.window.location.origin, {});
-  emit('unknown-film');
-  await nextTick();
-  assert.deepEqual(used, []);
-  assert.equal(byRole(room.render(), 'alert').length, 1);
-  emit(films[0]!.id);
-  await nextTick();
+  const gallery = tree.find((node) => node.type === room.ProductGallery)!;
+  assert.equal(
+    tree.some((node) => node.type === 'iframe'),
+    false,
+  );
+  call(gallery.props.onUseReferences, [films[0]!.id]);
   assert.deepEqual(used, [[films[0]!.id]]);
-  tree = room.render();
   call(byRole(tree, 'tab')[1]!.props.onClick);
   tree = room.render();
-  emit(films[0]!.id);
-  await nextTick();
-  assert.equal(used.length, 1);
+  assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, false);
   call(byRole(tree, 'tab')[0]!.props.onClick);
-  room.render();
-  emit(films[0]!.id);
-  await nextTick();
-  assert.equal(used.length, 2);
+  tree = room.render();
+  assert.equal(tree.find((node) => node.type === room.ProductGallery)!.props.active, true);
   room.unmount();
-  assert.equal(room.listeners.has('message'), false);
 });

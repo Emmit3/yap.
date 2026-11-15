@@ -53,6 +53,7 @@ export function normalizeFilmCatalog(payload) {
         kind: ['campaign', 'spec', 'unclear'].includes(entry.kind) ? entry.kind : 'unclear',
         url,
         watchUrl: safeFilmUrl(entry.watchUrl) ?? url,
+        previewUrl: safeFilmUrl(entry.previewUrl),
         year:
           Number.isInteger(entry.year) && entry.year >= 1900 && entry.year <= 2200
             ? entry.year
@@ -177,4 +178,76 @@ export function filmShortlistExport(films, selectedIds, exportedAt = new Date().
         watchUrl: film.watchUrl,
       })),
   };
+}
+
+/** Only recognised player URLs and explicit media files become inline previews. */
+export function filmEmbedSource(value, { autoplay = true } = {}) {
+  const safe = safeFilmUrl(value);
+  if (!safe) return null;
+  const url = new URL(safe);
+  if (url.port) return null;
+  const host = url.hostname.toLowerCase();
+  const play = autoplay ? '1' : '0';
+  let youtubeId = null;
+  if (host === 'youtu.be') youtubeId = /^\/([A-Za-z0-9_-]{11})\/?$/.exec(url.pathname)?.[1];
+  else if (
+    ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'www.youtube-nocookie.com'].includes(host)
+  ) {
+    youtubeId =
+      url.pathname === '/watch'
+        ? url.searchParams.get('v')
+        : /^\/(?:embed|shorts|live)\/([A-Za-z0-9_-]{11})\/?$/.exec(url.pathname)?.[1];
+  }
+  if (youtubeId && /^[A-Za-z0-9_-]{11}$/.test(youtubeId))
+    return {
+      kind: 'iframe',
+      provider: 'YouTube',
+      src: `https://www.youtube-nocookie.com/embed/${youtubeId}?autoplay=${play}&mute=1&loop=${play}&playlist=${youtubeId}&playsinline=1&controls=1&rel=0`,
+    };
+  if (['vimeo.com', 'www.vimeo.com', 'player.vimeo.com'].includes(host)) {
+    const match = /^\/(?:video\/)?([0-9]{3,15})(?:\/([a-f0-9]{10}))?\/?$/i.exec(url.pathname);
+    const hash = url.searchParams.get('h') ?? match?.[2];
+    if (hash && !/^[a-f0-9]{10}$/i.test(hash)) return null;
+    if (match)
+      return {
+        kind: 'iframe',
+        provider: 'Vimeo',
+        src: `https://player.vimeo.com/video/${match[1]}?${hash ? `h=${hash}&` : ''}autoplay=${play}&muted=1&loop=${play}&autopause=0&playsinline=1&controls=1&dnt=1`,
+      };
+  }
+  const muxId =
+    host === 'player.mux.com'
+      ? /^\/([A-Za-z0-9]{16,128})\/?$/.exec(url.pathname)?.[1]
+      : host === 'stream.mux.com'
+        ? /^\/([A-Za-z0-9]{16,128})\.m3u8$/.exec(url.pathname)?.[1]
+        : null;
+  if (muxId)
+    return {
+      kind: 'iframe',
+      provider: 'Mux',
+      src: `https://player.mux.com/${muxId}?autoplay=${autoplay}&muted=true&loop=${autoplay}&playsinline=true&disable-mux-data=true`,
+    };
+  if (
+    (host === 'stream.mux.com' &&
+      /^\/[A-Za-z0-9]+\/(?:low|medium|high|[0-9]+p)\.mp4$/i.test(url.pathname)) ||
+    (host === 'panoply.co.uk' &&
+      url.pathname.startsWith('/api/media/file/') &&
+      /\.(?:mp4|webm)$/i.test(url.pathname))
+  )
+    return { kind: 'video', provider: 'Creator video', src: url.href };
+  return null;
+}
+
+/** Prefer an explicit player; use a single verified evidence URL rather than guessing a video. */
+export function filmPreviewSource(film, options) {
+  for (const candidate of [film.previewUrl, film.watchUrl]) {
+    const embed = filmEmbedSource(candidate, options);
+    if (embed) return embed;
+  }
+  const candidates = new Map();
+  for (const match of (film.videoEvidence ?? '').matchAll(/https:\/\/[^\s<>"']+/g)) {
+    const embed = filmEmbedSource(match[0].replace(/[),.;]+$/, ''), options);
+    if (embed) candidates.set(embed.src, embed);
+  }
+  return candidates.size === 1 ? [...candidates.values()][0] : null;
 }

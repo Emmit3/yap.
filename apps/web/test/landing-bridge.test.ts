@@ -25,6 +25,20 @@ test('the showcase iframe can request social research', () => {
   );
 });
 
+test('inspiration opens the native product gallery only from the trusted showcase frame', () => {
+  const data = { type: 'yap:open-inspiration' };
+  assert.equal(destinationForShowcaseMessage(message(data), origin, iframe), 'inspiration');
+  assert.equal(
+    destinationForShowcaseMessage(
+      message(data, { origin: 'https://other.example' }),
+      origin,
+      iframe,
+    ),
+    null,
+  );
+  assert.equal(destinationForShowcaseMessage(message(data, { source: {} }), origin, iframe), null);
+});
+
 test('an iframe message must match the exact parent origin', () => {
   for (const otherOrigin of [
     'https://untrusted.example',

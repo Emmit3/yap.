@@ -142,6 +142,8 @@ async function room({
   stored = null,
   failLoad = false,
   films = [film('one'), film('two')],
+  observe = false,
+  reducedMotion = false,
 } = {}) {
   const html = await readFile(new URL('../public/film-references.html', import.meta.url), 'utf8');
   const source = await readFile(new URL('../public/film-references.js', import.meta.url), 'utf8');
@@ -177,7 +179,29 @@ async function room({
     search: '',
     assign: (href) => navigations.push(href),
   };
-  const window = { location, addEventListener() {}, parent: null };
+  const window = {
+    location,
+    addEventListener() {},
+    parent: null,
+    matchMedia: () => ({ matches: reducedMotion, addEventListener() {} }),
+  };
+  const observers = [];
+  class PreviewObserver {
+    constructor(callback) {
+      this.callback = callback;
+      this.targets = [];
+      observers.push(this);
+    }
+    observe(target) {
+      this.targets.push(target);
+    }
+    disconnect() {
+      this.targets = [];
+    }
+    show(target, visible) {
+      this.callback([{ target, isIntersecting: visible, intersectionRatio: visible ? 1 : 0 }]);
+    }
+  }
   window.parent = embedded
     ? {
         location: { origin: location.origin },
@@ -194,6 +218,7 @@ async function room({
   }
   const context = vm.createContext({
     ...core,
+    ...(observe ? { IntersectionObserver: PreviewObserver } : {}),
     document,
     window,
     location,
@@ -227,30 +252,68 @@ async function room({
     catalog,
     $: (id) => document.elements.get(id),
     context,
+    observers,
   };
 }
 
-test('film titles and use actions are real links, and embedded use sends only a catalog ID', async () => {
-  const ui = await room();
+test('films preview inline without title click-through and use sends only a catalog ID', async () => {
+  const ui = await room({ films: [{ ...film('one'), watchUrl: 'https://vimeo.com/123456789' }] });
   const row = ui.$('fr-films').children[0];
-  const title = row.querySelector('h3 a');
-  assert.ok(title, 'A film title must be an actionable original-player link.');
-  assert.equal(title.href, ui.catalog.films[0].watchUrl);
-  assert.equal(title.target, '_blank');
-  assert.equal(title.rel, 'noopener noreferrer');
-  assert.equal((await title.click()).defaultPrevented, false);
-  assert.equal(ui.messages.length, 0, 'Watching the original does not send a creation request.');
+  const title = row.querySelector('.fr-film-title');
+  assert.equal(title.tagName, 'SPAN');
+  assert.equal(row.querySelector('h3 a'), null);
+  assert.equal(row.textContent.includes('Watch original'), false);
+  const player = row.querySelector('iframe');
+  assert.ok(player, 'The video player must be present without opening a preview toggle.');
+  const src = new URL(player.src);
+  assert.equal(src.origin, 'https://player.vimeo.com');
+  assert.equal(src.searchParams.get('autoplay'), '1');
+  assert.equal(src.searchParams.get('muted'), '1');
+  assert.equal(src.searchParams.get('controls'), '1');
+  assert.match(player.allow, /autoplay/);
+  assert.equal(ui.messages.length, 0);
   const source = row.querySelector('.fr-source');
   assert.equal(source.href, ui.catalog.films[0].url);
-  assert.equal(source.target, '_blank');
   const use = row.querySelector('[data-reference-id]');
-  assert.ok(use, 'Each catalog row must offer a usable creative-reference handoff.');
   assert.equal(new URL(use.href, ui.context.location.origin).hash, '#/create?reference=one');
-  const clicked = await use.click();
-  assert.equal(clicked.defaultPrevented, true);
+  assert.equal((await use.click()).defaultPrevented, true);
   assert.deepEqual(JSON.parse(JSON.stringify(ui.messages)), [
     { message: { type: 'yap:film-reference', filmId: 'one' }, origin: 'https://yap.example' },
   ]);
+});
+
+test('only visible film players mount and leaving the viewport releases them', async () => {
+  const ui = await room({
+    observe: true,
+    films: [{ ...film('one'), watchUrl: 'https://vimeo.com/123456789' }],
+  });
+  const row = ui.$('fr-films').children[0];
+  const holder = row.querySelector('.fr-film-preview');
+  const observer = ui.observers[0];
+  assert.equal(row.querySelector('iframe'), null, 'No offscreen provider request is started.');
+  observer.show(holder, true);
+  assert.ok(row.querySelector('iframe'));
+  observer.show(holder, false);
+  assert.equal(row.querySelector('iframe'), null, 'The player cannot keep running offscreen.');
+});
+
+test('reduced motion keeps an inline controlled player without automatic playback', async () => {
+  const ui = await room({
+    reducedMotion: true,
+    films: [{ ...film('one'), watchUrl: 'https://vimeo.com/123456789' }],
+  });
+  const src = new URL(ui.$('fr-films').children[0].querySelector('iframe').src);
+  assert.equal(src.searchParams.get('autoplay'), '0');
+  assert.equal(src.searchParams.get('loop'), '0');
+  assert.equal(src.searchParams.get('controls'), '1');
+});
+
+test('unsupported case pages stay in the library without arbitrary website iframes', async () => {
+  const ui = await room({ films: [{ ...film('one'), watchUrl: 'https://creator.example/case' }] });
+  const row = ui.$('fr-films').children[0];
+  assert.equal(row.querySelector('iframe'), null);
+  assert.match(row.textContent, /inline player is not available/);
+  assert.ok(row.querySelector('[data-reference-id]'));
 });
 
 test('shortlist actions update saved state and pass selected catalog IDs without source payloads', async () => {
