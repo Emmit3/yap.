@@ -434,3 +434,46 @@ test('a failed narration scope cannot dispatch a detached request after releasin
   );
   assert.equal(calls, 0);
 });
+
+test('external narration failures are not proof that no request was submitted', async (t) => {
+  const { ledger } = await fixture(t);
+  const gate = createCreatorPaidRequests(async () => {
+    throw new Error('The external adapter does not use the paid fetch gate.');
+  });
+  gate.attach(ledger);
+  const uncertain = new Error('The external narration response was lost.');
+  await assert.rejects(
+    gate.prepaid(
+      async () => {
+        throw uncertain;
+      },
+      undefined,
+      1,
+      'external',
+    ),
+    (error: unknown) => error === uncertain,
+  );
+});
+
+test('aborting at the final narration check proves zero transport even after admission', async (t) => {
+  const { ledger } = await fixture(t);
+  let calls = 0;
+  const gate = createCreatorPaidRequests(async () => {
+    calls++;
+    return audio();
+  });
+  gate.attach(ledger);
+  const controller = new AbortController();
+  const canceled = new Error('Canceled at the final check.');
+  await assert.rejects(
+    gate.prepaid(
+      () => gate.fetch(speechEndpoint, { ...speech(), signal: controller.signal }),
+      async () => {
+        controller.abort(canceled);
+      },
+      1,
+    ),
+    (error: unknown) => error instanceof UnsubmittedNarrationError && error.cause === canceled,
+  );
+  assert.equal(calls, 0);
+});

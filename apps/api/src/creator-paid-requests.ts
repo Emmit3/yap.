@@ -264,6 +264,7 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
       operation: () => Promise<T>,
       beforeSubmit?: () => Promise<void>,
       speechLimit = 0,
+      speechTransport: 'gated' | 'external' = 'gated',
     ): Promise<T> {
       if (covered.getStore()) return operation();
       const context = {
@@ -278,7 +279,9 @@ export function createCreatorPaidRequests(delegate: typeof globalThis.fetch = gl
         try {
           return await operation();
         } catch (error) {
-          if (speechLimit > 0 && context.delegatedSpeech === 0)
+          // Supplied adapters may submit outside this fetch gate. Its counters cannot
+          // prove that those adapters have not sent a request.
+          if (speechTransport === 'gated' && speechLimit > 0 && context.delegatedSpeech === 0)
             throw new UnsubmittedNarrationError(error);
           throw error;
         } finally {

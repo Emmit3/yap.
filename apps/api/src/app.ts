@@ -329,8 +329,23 @@ export async function createApp(options: AppOptions = {}) {
       voiceover: {
         configured: rawVoiceover.configured,
         // The production job's approved audio hold covers exactly one request per line.
-        narrate: (...args) =>
-          creatorSpending.prepaid(() => rawVoiceover.narrate(...args), args[4], args[0].length),
+        // The gate runs the pre-submit check as the last step before each request leaves, so
+        // the built-in adapter must not run it earlier. A supplied adapter does not send
+        // through the gate and has to run the check itself.
+        narrate: (lines, voice, tone, signal, beforeSubmit) =>
+          creatorSpending.prepaid(
+            () =>
+              rawVoiceover.narrate(
+                lines,
+                voice,
+                tone,
+                signal,
+                options.creatorOptions?.voiceover ? beforeSubmit : undefined,
+              ),
+            beforeSubmit,
+            lines.length,
+            options.creatorOptions?.voiceover ? 'external' : 'gated',
+          ),
       },
       withBudget(ledger) {
         workflowSpending.attach(ledger);

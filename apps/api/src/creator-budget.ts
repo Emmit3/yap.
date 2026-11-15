@@ -10,7 +10,12 @@ import { creatorQuoteSchema } from '@yap/contracts/creator';
 import type { Workflow } from '@yap/contracts/workflow';
 import { creatorVideoPrompt } from './creator-video-provider.js';
 import { ApiError } from './errors.js';
-import { VOICEOVER_CENTS_PER_LINE, assertVoiceoverFits, voiceoverLines } from './creator-audio.js';
+import {
+  VOICEOVER_CENTS_PER_LINE,
+  assertVoiceoverContiguous,
+  assertVoiceoverFits,
+  voiceoverLines,
+} from './creator-audio.js';
 
 export const CREATOR_BUDGET_LIMIT_CENTS = 3000;
 export const creatorReservationSchema = z
@@ -256,6 +261,7 @@ export function buildCreatorQuote(
       reuse: null,
     };
   });
+  assertVoiceoverContiguous(plan, workflow);
   const narration = voiceoverLines(plan, workflow);
   assertVoiceoverFits(
     narration,

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import type { Workflow } from '@yap/contracts/workflow';
 import { ApiError } from '../src/errors.js';
 import {
   assertVoiceoverFits,
@@ -7,6 +8,7 @@ import {
   defaultMusicTrack,
   layoutVoiceover,
   loadCreatorMusic,
+  voiceoverContiguous,
 } from '../src/creator-audio.js';
 
 test('recorded lines start with their scenes, never overlap and speed up only as needed', () => {
@@ -52,6 +54,28 @@ test('a script too wordy for the film is rejected before anything is quoted', ()
     () => assertVoiceoverFits([line(60)], 15),
     (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_TOO_LONG',
   );
+});
+
+test('a spoken line whose clips are split apart by another line cannot be narrated', () => {
+  const workflow = {
+    scenes: {
+      scenes: [
+        { id: 'one', scriptSegmentId: 'a' },
+        { id: 'two', scriptSegmentId: 'b' },
+        { id: 'three', scriptSegmentId: 'a' },
+        { id: 'four', scriptSegmentId: 'c' },
+      ],
+    },
+  } as unknown as Workflow;
+  const order = (...ids: string[]) =>
+    voiceoverContiguous(
+      ids.map((sceneId) => ({ sceneId })),
+      workflow,
+    );
+  assert.equal(order('one', 'one', 'three', 'two', 'four'), true);
+  assert.equal(order('two', 'four', 'one'), true);
+  assert.equal(order('one', 'two', 'three', 'four'), false, 'A, B, A, C returns to line A');
+  assert.equal(order('one', 'unknown', 'three'), false, 'an unspoken clip also splits a line');
 });
 
 test('bundled music matches its credits manifest and is chosen by tone', async () => {

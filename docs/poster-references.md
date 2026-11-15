@@ -6,6 +6,10 @@ The backend combines that style's private instructions with the customer's chang
 
 The preview remains the selected style reference. No poster image renderer or image generation provider is connected. Saving a direction does not generate a poster, make a paid provider request, or consume the existing production budget.
 
+Styles can come from static public posts as well as timestamped reels. The category filters also support campaigns, portraits, editorial work and cinema. Installed packs remain local; fresh clones do not include the reference images or their recipes.
+
+Saving now also compiles a private production plan when composition data is available. An optional structured brief keeps exact customer copy separate from creative instructions. See [the production foundation](poster-production.md) for its contracts, binary image-input preparation and current limits.
+
 ## Customer API
 
 | Route                                                      | Behavior                                                                                                      |
@@ -24,6 +28,8 @@ A save requires one available style, its current `crop.sha256`, and nonempty cha
 
 Repository guidance keeps reference material and its derivatives under ignored `local-context/`. The API reads `local-context/poster-references/manifest.json` relative to the repository, independently of the server's working directory. A fresh clone without an installed pack returns an empty style library.
 
+The empty collection has a **Try again** action. Installing or restoring a valid local pack, then retrying, loads its styles without resetting the workspace. An isolated preview in another worktree needs its own installed pack or an explicit `createApp({ posterReferencesDirectory: absolutePackDirectory })` pointing at an existing valid pack. Copying only the UI does not install the private reference images. Keep that pack and its recipes ignored; do not place them in the public asset directory.
+
 The versioned manifest contains a `schemaVersion` of `1` and a `references` array validated by `posterManifestSchema` in `apps/api/src/poster-references.ts`. Each local entry records source attribution, reviewed crop metadata, observed design attributes and authored reconstruction instructions. These instructions describe a visual reconstruction; they are not recovered designer source code or original generation prompts. Source collections may be curated, so attribution does not establish individual authorship, ownership or permission to reuse an artwork.
 
 The service accepts at most 64 catalog records and serves only reviewed, decodable PNG, JPEG or WebP crops. Missing or unreviewed crops remain unavailable. Invalid catalogs, unsafe paths, symlinks, mismatched hashes and inconsistent extraction dimensions are rejected. Source media, full frames and local helper files are not served by the poster routes. Reference resolution is preserved; a small crop is not a print master.
@@ -34,6 +40,7 @@ For each saved direction, the backend privately retains:
 - The customer's changes as a separate field.
 - The combined prompt, preserving the original style instructions and the customer's additions.
 - The selected crop's SHA-256 identity and source attribution.
+- The production plan, including any structured customer brief, private composition and unresolved input issues.
 
 In the full application, `createApp` defaults this private store to `poster-designs.json` beside the configured project data file. `AppOptions.posterDesignDataFile` can override it. A directly mounted `createPosterRouter` accepts a `dataFile` option and otherwise defaults to `data/poster-designs.json` under its working directory. Keep custom storage paths ignored and outside publicly served directories.
 

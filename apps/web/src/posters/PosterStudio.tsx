@@ -19,6 +19,10 @@ const categories = [
   ['popup', 'Pop ups'],
   ['craft', 'Arts and crafts'],
   ['market', 'Markets'],
+  ['campaign', 'Campaigns'],
+  ['portrait', 'Portraits'],
+  ['editorial', 'Editorial'],
+  ['cinema', 'Cinema'],
 ];
 const storageKey = 'yap.poster.last-design';
 type Draft = { changes: string; saved?: PosterDesign };
@@ -322,9 +326,15 @@ export function PosterWorkspace({
             </button>
           </div>
         ) : !styles.length ? (
-          <div className="poster-studio-empty">
-            <h2>A place for your next favorite design.</h2>
-            <p>There are no poster styles in this workspace yet.</p>
+          <div className="poster-studio-empty" role="status">
+            <h2>The poster collection isn’t available yet.</h2>
+            <p>Try loading it again. You can still explore videos in the meantime.</p>
+            <button
+              className="button button-secondary"
+              onClick={() => setRevision((value) => value + 1)}
+            >
+              Try again
+            </button>
           </div>
         ) : !filtered.length ? (
           <div className="poster-studio-empty">
@@ -346,9 +356,7 @@ export function PosterWorkspace({
         {!loading && styles.length > 0 && (
           <div className="poster-studio-footnote">
             <p>Something catch your eye? Make it your starting point.</p>
-            <a href={styles[0]?.source.url} target="_blank" rel="noreferrer">
-              Source collection <ArrowUpRight size={14} />
-            </a>
+            <p>Original sources are linked with each selected style.</p>
           </div>
         )}
       </div>
@@ -382,7 +390,14 @@ export function PosterWorkspace({
                 width={editingStyle.crop.width}
                 height={editingStyle.crop.height}
               />
-              <span className="poster-reference-label">Style reference</span>
+              <a
+                className="poster-reference-label"
+                href={editingStyle.source.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Style source <ArrowUpRight size={14} />
+              </a>
             </div>
             <div className="poster-changes-panel">
               <div className="poster-changes-title">

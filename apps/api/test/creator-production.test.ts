@@ -628,10 +628,11 @@ test('narration is quoted, held, recorded before any clip and mixed with music i
     },
     voiceover: {
       configured: true,
-      narrate: async (lines, voice) => {
+      narrate: async (lines, voice, _tone, _signal, beforeSubmit) => {
         order.push('narration');
         spoken.push(lines);
         assert.equal(voice, 'marin');
+        for (const _line of lines) await beforeSubmit?.();
         return lines.map(() => speech!);
       },
     },
@@ -702,7 +703,8 @@ test('a creator can turn sound off, and a rejected narration key stops productio
     },
     voiceover: {
       configured: true,
-      narrate: async () => {
+      narrate: async (_lines, _voice, _tone, _signal, beforeSubmit) => {
+        await beforeSubmit?.();
         throw new ApiError(502, 'CREATOR_VOICEOVER_REJECTED', 'OpenAI rejected the API key.');
       },
     },
@@ -754,63 +756,87 @@ test('a creator can turn sound off, and a rejected narration key stops productio
   assert.doesNotMatch(await streams(f.directory, Buffer.from(await final.arrayBuffer())), /Audio:/);
 });
 
-test('a stale plan before the first narration submission releases every unused hold', async (t) => {
-  let request: Fixture['request'] | undefined;
-  let sessionId = '',
-    narrated = 0,
+test('the narration hold is released when nothing was submitted and kept once a line was', async (t) => {
+  let clip: Buffer | undefined,
+    generated = 0,
     submitted = 0,
-    generated = 0;
+    lineCount = 0,
+    mode: 'changed' | 'failed' = 'changed';
+  const base = passingProduction(() => clip!);
   const f = await fixture(t, {
+    ...base,
     video: {
-      configured: true,
-      cancel: async () => {},
-      generate: async () => {
+      ...base.video,
+      generate: async (input) => {
         generated++;
-        throw new Error('No clip request should be submitted.');
-      },
-    },
-    auditor: {
-      configured: true,
-      audit: async () => {
-        throw new Error('No visual audit should be submitted.');
+        return base.video.generate(input);
       },
     },
     voiceover: {
       configured: true,
-      narrate: async (_lines, _voice, _tone, _signal, beforeSubmit) => {
-        narrated++;
-        assert.ok(request);
-        const current = creatorSessionResponseSchema.parse(
-          await (await request(`/sessions/${sessionId}`)).json(),
-        );
-        const edited = await request(
-          `/sessions/${sessionId}/plan`,
-          json('PATCH', {
-            expectedVersion: current.session.version,
-            expectedWorkflowVersion: current.workflow.version,
-            clips: current.session.plan!.clips,
-            caption: current.session.plan!.caption,
-            audio: { voice: 'cedar', musicTrackId: null },
-          }),
-        );
-        assert.equal(edited.status, 200, await edited.clone().text());
-        assert.ok(beforeSubmit);
-        await beforeSubmit();
+      narrate: async (lines, _voice, _tone, _signal, beforeSubmit) => {
+        lineCount = lines.length;
+        if (mode === 'changed') {
+          // The creator edits the plan after production starts but before the first line leaves.
+          const now = creatorSessionResponseSchema.parse(
+            await (await f.request(`/sessions/${sessionId}`)).json(),
+          );
+          const edited = await f.request(
+            `/sessions/${sessionId}/plan`,
+            json('PATCH', {
+              expectedVersion: now.session.version,
+              expectedWorkflowVersion: now.workflow.version,
+              clips: now.session.plan!.clips,
+              caption: now.session.plan!.caption,
+              audio: { voice: 'cedar', musicTrackId: null },
+            }),
+          );
+          assert.equal(edited.status, 200, await edited.clone().text());
+        }
+        await beforeSubmit?.();
         submitted++;
-        throw new Error('The stale source must stop narration before submission.');
+        throw new ApiError(502, 'CREATOR_VOICEOVER_FAILED', 'The narration provider failed.');
       },
     },
   });
-  request = f.request;
+  clip = await makeVideo(f.directory);
   const draft = await prepared(f);
-  sessionId = draft.session.id;
-  const result = await produce(f, await reviewQuote(f, draft));
-  assert.equal(result.job.status, 'failed');
-  assert.equal(result.job.error?.code, 'CREATOR_SOURCE_CHANGED');
-  assert.deepEqual([narrated, submitted, generated], [1, 0, 0]);
-  await f.shutdown();
-  const { budget } = await (await f.request('/budget')).json();
-  assert.deepEqual([budget.reservedCents, budget.chargedCents], [0, 0]);
+  const sessionId = draft.session.id;
+  const changed = await produce(f, await reviewQuote(f, draft));
+  assert.equal(changed.job.status, 'failed');
+  assert.equal(changed.job.error?.code, 'CREATOR_SOURCE_CHANGED');
+  assert.deepEqual([submitted, generated], [0, 0]);
+  // Failed status is saved before the worker's finally block releases unused clip holds.
+  const settledBudget = async (expected: number) => {
+    for (let attempt = 0; attempt < 100; attempt++) {
+      const { budget } = await (await f.request('/budget')).json();
+      if (budget.reservedCents + budget.chargedCents === expected) return budget;
+      await delay(20);
+    }
+    throw new Error(`The production budget did not settle to ${expected} cents.`);
+  };
+  let budget = await settledBudget(0);
+  assert.deepEqual(
+    [budget.reservedCents, budget.chargedCents],
+    [0, 0],
+    'a plan change before the first line leaves releases the whole narration hold',
+  );
+
+  mode = 'failed';
+  const current = creatorSessionResponseSchema.parse(
+    await (await f.request(`/sessions/${sessionId}`)).json(),
+  );
+  const failed = await produce(f, await reviewQuote(f, current));
+  assert.equal(failed.job.status, 'failed');
+  assert.equal(failed.job.error?.code, 'CREATOR_VOICEOVER_FAILED');
+  assert.deepEqual([submitted, generated], [1, 0]);
+  budget = await settledBudget(lineCount * 10);
+  assert.ok(lineCount > 0);
+  assert.equal(
+    budget.reservedCents + budget.chargedCents,
+    lineCount * 10,
+    'an uncertain outcome after a line left keeps the conservative narration hold',
+  );
 });
 
 test('partial and unknown narration submissions retain the approved audio ceiling', async (t) => {
@@ -873,65 +899,6 @@ test('partial and unknown narration submissions retain the approved audio ceilin
     });
 });
 
-test('live cancellation before narration refunds its hold while a crash snapshot stays conservative', async (t) => {
-  let announce = () => {};
-  const entered = new Promise<void>((resolve) => {
-    announce = resolve;
-  });
-  const f = await fixture(t, {
-    video: {
-      configured: true,
-      cancel: async () => {},
-      generate: async () => {
-        throw new Error('No clip should be submitted.');
-      },
-    },
-    auditor: {
-      configured: true,
-      audit: async () => {
-        throw new Error('No visual audit should be submitted.');
-      },
-    },
-    voiceover: {
-      configured: true,
-      narrate: async (_lines, _voice, _tone, signal) =>
-        new Promise<Buffer[]>((_resolve, reject) => {
-          signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-          announce();
-        }),
-    },
-  });
-  const reviewed = await reviewQuote(f, await prepared(f));
-  const response = await f.request(
-    `/sessions/${reviewed.session.id}/produce`,
-    json('POST', {
-      expectedVersion: reviewed.session.version,
-      approvalId: reviewed.session.approval!.id,
-      quoteId: reviewed.session.approval!.quoteId!,
-      requestId: randomUUID(),
-    }),
-  );
-  assert.equal(response.status, 202, await response.clone().text());
-  const { job } = creatorJobResponseSchema.parse(await response.json());
-  await entered;
-  const snapshot = join(f.directory, 'interrupted-audio.json');
-  await writeFile(snapshot, await readFile(join(f.directory, 'creator-sessions.json')));
-  const restarted = await CreatorRepository.open(snapshot);
-  assert.equal(
-    (await restarted.job(reviewed.session.id, job.id)).error?.code,
-    'CREATOR_INTERRUPTED',
-  );
-  await restarted.releaseUnusedReservations(reviewed.session.id, job.id);
-  assert.equal((await restarted.budget()).reservedCents, 30);
-  const canceled = await f.request(`/sessions/${reviewed.session.id}/jobs/${job.id}`, {
-    method: 'DELETE',
-  });
-  assert.equal(canceled.status, 200);
-  await f.shutdown();
-  const { budget } = await (await f.request('/budget')).json();
-  assert.deepEqual([budget.reservedCents, budget.chargedCents], [0, 0]);
-});
-
 test('narrated plans reject interleaved spoken groups while silent and contiguous clip orders remain valid', async (t) => {
   let narrated = 0;
   const video = {
@@ -965,7 +932,7 @@ test('narrated plans reject interleaved spoken groups while silent and contiguou
         productionProfile(video),
         [],
       ),
-    (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_SCENE_ORDER',
+    (error: unknown) => error instanceof ApiError && error.code === 'CREATOR_VOICEOVER_ORDER',
     'a previously saved interleaved plan must fail quote preflight',
   );
   const rejected = await f.request(
@@ -979,7 +946,7 @@ test('narrated plans reject interleaved spoken groups while silent and contiguou
     }),
   );
   assert.equal(rejected.status, 400);
-  assert.equal((await rejected.json()).error.code, 'CREATOR_VOICEOVER_SCENE_ORDER');
+  assert.equal((await rejected.json()).error.code, 'CREATOR_VOICEOVER_ORDER');
   const silentResponse = await f.request(
     `/sessions/${draft.session.id}/plan`,
     json('PATCH', {
@@ -1028,4 +995,72 @@ test('narrated plans reject interleaved spoken groups while silent and contiguou
     buildCreatorQuote(contiguous.session, contiguous.workflow, productionProfile(video), []),
   );
   assert.equal(narrated, 0);
+});
+
+test('narration cancellation and crash recovery release only holds whose submission never started', async (t) => {
+  for (const submitted of [false, true])
+    await t.test(submitted ? 'after submission' : 'before submission', async (t) => {
+      let announce = () => {};
+      const entered = new Promise<void>((resolve) => {
+        announce = resolve;
+      });
+      const f = await fixture(t, {
+        video: {
+          configured: true,
+          cancel: async () => {},
+          generate: async () => {
+            throw new Error('No clip should be submitted.');
+          },
+        },
+        auditor: {
+          configured: true,
+          audit: async () => {
+            throw new Error('No visual audit should be submitted.');
+          },
+        },
+        voiceover: {
+          configured: true,
+          narrate: async (_lines, _voice, _tone, signal, beforeSubmit) => {
+            if (submitted) {
+              assert.ok(beforeSubmit);
+              await beforeSubmit();
+            }
+            return new Promise<Buffer[]>((_resolve, reject) => {
+              signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+              announce();
+            });
+          },
+        },
+      });
+      const reviewed = await reviewQuote(f, await prepared(f));
+      const response = await f.request(
+        `/sessions/${reviewed.session.id}/produce`,
+        json('POST', {
+          expectedVersion: reviewed.session.version,
+          approvalId: reviewed.session.approval!.id,
+          quoteId: reviewed.session.approval!.quoteId!,
+          requestId: randomUUID(),
+        }),
+      );
+      assert.equal(response.status, 202, await response.clone().text());
+      const { job } = creatorJobResponseSchema.parse(await response.json());
+      await entered;
+      const snapshot = join(f.directory, 'interrupted-audio.json');
+      await writeFile(snapshot, await readFile(join(f.directory, 'creator-sessions.json')));
+      const restarted = await CreatorRepository.open(snapshot);
+      assert.equal(
+        (await restarted.job(reviewed.session.id, job.id)).error?.code,
+        'CREATOR_INTERRUPTED',
+      );
+      await restarted.releaseUnusedReservations(reviewed.session.id, job.id);
+      const expectedHold = submitted ? 30 : 0;
+      assert.equal((await restarted.budget()).reservedCents, expectedHold);
+      const canceled = await f.request(`/sessions/${reviewed.session.id}/jobs/${job.id}`, {
+        method: 'DELETE',
+      });
+      assert.equal(canceled.status, 200);
+      await f.shutdown();
+      const { budget } = await (await f.request('/budget')).json();
+      assert.deepEqual([budget.reservedCents, budget.chargedCents], [expectedHold, 0]);
+    });
 });

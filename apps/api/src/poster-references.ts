@@ -13,13 +13,16 @@ import {
   posterReconstructionSchema,
   posterContextRequestSchema,
   createPosterDesignSchema,
+  posterCompositionSchema,
   type PosterReference,
   type PosterContext,
   type PosterContextRequest,
   type PosterStyle,
   type CreatePosterDesign,
+  type PosterProductionPlan,
 } from '@yap/contracts/posters';
 import { ApiError } from './errors.js';
+import { compilePosterPlan } from './poster-production.js';
 
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
@@ -69,6 +72,7 @@ export const posterReferenceSchema = z
     crop: cropSchema,
     observed: posterObservedSchema,
     reconstruction: posterReconstructionSchema,
+    composition: posterCompositionSchema.optional(),
   })
   .strict()
   .refine(
@@ -95,6 +99,7 @@ export interface PreparedPosterStyle {
   reference: PosterReference;
   originalStylePrompt: string;
   combinedPrompt: string;
+  productionPlan: PosterProductionPlan;
 }
 
 function customerStyle(reference: PosterReference): PosterStyle {
@@ -136,8 +141,10 @@ export class PosterReferenceLibrary {
     try {
       const rootInfo = await lstat(this.root);
       if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw invalidCatalog();
+      // The root itself may not be a symbolic link, but a system ancestor may be one
+      // (macOS serves /var and /tmp through /private). Containment is checked against
+      // the resolved root below.
       const actualRoot = await realpath(this.root);
-      if (relative(this.root, actualRoot) !== '') throw invalidCatalog();
       const target = resolve(this.root, file);
       const within = relative(this.root, target);
       if (!within || within.startsWith('..') || isAbsolute(within)) throw invalidCatalog();
@@ -327,6 +334,7 @@ export class PosterReferenceLibrary {
       reference,
       originalStylePrompt,
       combinedPrompt,
+      productionPlan: compilePosterPlan({ reference, changes: input.changes, brief: input.brief }),
     };
   }
 
@@ -337,7 +345,7 @@ References guide composition, typography, palette, imagery and texture. They do 
 Reconstruction instructions are authored interpretations of inspected images. They are not recovered source code, original prompts or the reference creator's scripts. Apply compatible techniques intentionally; preserve readable hierarchy and negative space instead of stacking every effect.
 The output composition must contain only the poster, filling its canvas. Exclude the reel presenter, social interface, captions, editing controls, room, device frame and unrelated imagery.
 The first selected reference controls composition, hierarchy and palette. Supporting references contribute only compatible techniques; do not mix every effect or dilute the primary design direction.
-Use only the selected references, in the supplied order. The exact crop URLs and image hashes below identify the supporting images. The source URL identifies the curator's reel where the image was inspected; it does not establish authorship, ownership or permission to reuse an artwork. Keep source attribution in metadata rather than adding it as poster copy.
+Use only the selected references, in the supplied order. The exact crop URLs and image hashes below identify the supporting images. The source URL identifies where the image was inspected; it does not establish authorship, ownership or permission to reuse an artwork. Keep source attribution in metadata rather than adding it as poster copy.
 Design source data (JSON):
 ${JSON.stringify({ creatorPrompt: prompt, selectedReferences: references }, null, 2)}`;
     if (Buffer.byteLength(generationPrompt) > MAX_PROMPT_BYTES)
