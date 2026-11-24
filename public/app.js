@@ -13,6 +13,7 @@ import {
   playbackRecoveryWindow,
 } from './motion.js';
 import { uniqueReels, reelSelection } from './catalog.js';
+import { mountCinematicHome } from './cinematic-home.js';
 import {
   reelId,
   readReelPreferences,
@@ -400,7 +401,7 @@ function draw(time, staticPaint = false) {
   const headerReveal = phase(elapsed, 0.45, 1.15);
   siteHead.style.opacity = String(headerReveal);
   siteHead.style.transform = `translateY(${(1 - headerReveal) * -24}px)`;
-  siteHead.inert = headerReveal < 0.8;
+  siteHead.inert = headerReveal < 0.8 || document.body.classList.contains('is-cinematic-home');
   intro.inert = state.intro < 0.5;
   intro.setAttribute('aria-hidden', String(state.intro < 0.5));
   product.style.opacity = state.product;
@@ -865,6 +866,14 @@ function replayWall() {
   requestFrame();
 }
 $('#replay-intro').addEventListener('click', replayWall);
+mountCinematicHome($('#cinematic-home'), {
+  onReplay: replayWall,
+  onActiveChange: (active) => {
+    document.body.classList.toggle('is-cinematic-home', active);
+    siteHead.inert = active;
+    siteHead.setAttribute('aria-hidden', String(active));
+  },
+});
 
 const opening = $('#opening-cut');
 let openingTimer;

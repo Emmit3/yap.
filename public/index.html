@@ -24,6 +24,7 @@
     />
     <link rel="preload" as="image" href="./media/reel-night.jpg" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./cinematic-home.css" />
     <script type="module" src="./app.js"></script>
   </head>
   <body>
@@ -242,6 +243,55 @@
             </div>
           </div>
           <div class="scene-progress" aria-hidden="true"><span></span><i></i></div>
+        </div>
+      </section>
+
+      <section class="cinematic-home" id="cinematic-home" aria-labelledby="cinematic-home-title">
+        <div class="cinematic-home__picture" aria-hidden="true">
+          <img src="./media/home-frequency.jpg" alt="" loading="lazy" />
+          <video
+            class="cinematic-home__video"
+            data-src="./media/home-frequency.mp4"
+            poster="./media/home-frequency.jpg"
+            muted
+            loop
+            playsinline
+            preload="none"
+            tabindex="-1"
+          ></video>
+        </div>
+        <div class="cinematic-home__scrim" aria-hidden="true"></div>
+        <div class="cinematic-home__head">
+          <a class="wordmark" href="#top" aria-label="Yap home">yap<span>.</span></a>
+          <span class="cinematic-home__signature">Good ideas, made REEL.</span>
+          <button class="cinematic-home__replay" data-home-replay>
+            Replay opening <span aria-hidden="true">↖</span>
+          </button>
+        </div>
+        <div class="cinematic-home__body">
+          <h2 id="cinematic-home-title">Stay in<br />the idea.</h2>
+          <nav class="cinematic-home__actions" aria-label="Start creating">
+            <button data-studio data-example-entry>
+              Make a film <span aria-hidden="true">↗</span>
+            </button>
+            <a href="./film-references.html" data-inspiration>
+              Find inspiration <span aria-hidden="true">↗</span>
+            </a>
+          </nav>
+        </div>
+        <div class="cinematic-home__foot">
+          <a
+            class="cinematic-home__credit"
+            href="https://mixkit.co/free-stock-video/close-up-view-of-man-dancing-with-headphones-51764/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            Find your frequency <span>Stock film / Mixkit</span>
+          </a>
+          <button class="cinematic-home__pause" data-home-pause aria-pressed="false">
+            <svg class="icon" aria-hidden="true"><use href="#pause" /></svg>
+            <span data-home-pause-label>Pause film</span>
+          </button>
         </div>
       </section>
 
